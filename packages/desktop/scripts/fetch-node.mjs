@@ -28,7 +28,7 @@
 
 import { createWriteStream, existsSync } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { spawn } from 'node:child_process'
 
@@ -51,21 +51,39 @@ function nodeArchiveKind(platform) {
   throw new Error(`fetch-node: 不支持的平台 ${platform}（darwin|linux|win32）`)
 }
 
-async function run(label, command, args) {
+async function run(label, command, args, cwd) {
   await new Promise((resolveRun, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit' })
+    const child = spawn(command, args, { cwd: cwd ?? process.cwd(), stdio: 'inherit' })
     child.on('error', reject)
     child.on('exit', (code) => (code === 0 ? resolveRun() : reject(new Error(`${label} exited ${code}`))))
   })
 }
 
-/** 用系统 tar 解压（tar.gz）；zip 走 unzip。两者各平台都有对应实现。 */
+/** 解压：tar.gz 走系统 tar；zip 在 POSIX 走 unzip，Windows 走 Expand-Archive（系统 tar 可能是解不了 zip 的 GNU 版）。 */
 async function extract(archive, ext, into) {
+  // Windows 落盘路径是绝对盘符式（`D:\…`）：tar（GNU/bsdtar 皆带 rmt 客户端）
+  // 会把 `D:` 当远程主机解析 ⇒ `Cannot connect to D`（CI win32 挂的真因；
+  // EC2 上能过正是因为当时传的是相对路径）。一律切到归档所在目录，
+  // 只传无冒号的相对路径；-C 本地 chdir 不走 rmt，保持原样即可。
+  const cwd = dirname(archive)
+  const file = basename(archive)
   if (ext === 'zip') {
-    await run('extract node', 'unzip', ['-q', '-o', archive, '-d', into])
+    if (process.platform === 'win32') {
+      // Windows 的 `tar` 可能是 Git 自带的 GNU tar（解不了 zip），且 PATH 里谁先谁后
+      // 看环境脸色（CI runner 上就是 GNU 中了标）；Expand-Archive 系统自带
+      // （PS 5.0+，绝对路径直调，不赌 PATH）。-LiteralPath 防通配符，-Force 覆盖。
+      const systemRoot = process.env.SystemRoot ?? 'C:\\Windows'
+      const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      const q = (s) => `'${s.replace(/'/g, "''")}'`
+      await run('extract node', powershell,
+        ['-NoProfile', '-NonInteractive', '-Command',
+          `Expand-Archive -LiteralPath ${q(archive)} -DestinationPath ${q(into)} -Force`])
+      return
+    }
+    await run('extract node', 'unzip', ['-q', '-o', file, '-d', into], cwd)
     return
   }
-  await run('extract node', 'tar', ['-xzf', archive, '-C', into])
+  await run('extract node', 'tar', ['-xzf', file, '-C', into], cwd)
 }
 
 /**
