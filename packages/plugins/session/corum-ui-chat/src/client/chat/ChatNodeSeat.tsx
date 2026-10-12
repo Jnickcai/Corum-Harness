@@ -1,10 +1,10 @@
 import { memo, useCallback, useMemo } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@corum/corum-ui-conversation/client'
-import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, CommitProcessOwnerProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
-import { storedTurnProcessEntry } from '../stores.ts'
+import { storedCommitCardEntry, storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
 
@@ -18,7 +18,15 @@ interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly actions: ChatViewSlotProps['actions']
   readonly renderSlot: ChatViewSlotProps['renderSlot']
   readonly t: ChatViewSlotProps['t']
+  /**
+   * 本座位是提交卡片时：收进卡片内部的提交段成员 key（有序）。
+   * 由 ChatNodeList 的分组规划下发；成员座位自身不收（不递归）。
+   */
+  readonly commitMembers?: readonly string[] | undefined
 }
+
+/** 非卡片座位的稳定空成员表（避免每次渲染新建数组破坏 memo）。 */
+const EMPTY_MEMBER_KEYS: readonly string[] = []
 
 type RoutedChatNodeOwner = {
   [Kind in ChatNode['kind']]: ChatNodeOwnerProps & { readonly node: ChatNode<Kind> }
@@ -39,6 +47,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   selectedCallId, cwd, openFile, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
+  commitMembers,
 }: ChatNodeSeatProps) {
   const node = useChatNode(nodeKey)
   const routedNode = node as ChatNode | undefined
@@ -97,9 +106,36 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && processPresentation.compactAnswer
     && !processOpen
   const processHidden = controllerInactive || (foldable && processMember && !processOpen)
+
+  // ── 提交卡片 = 提交段容器（2026-10-12 用户定调）────────────────────────
+  // 卡片之后的同 turn 过程（LLM 思考/工具执行/最终结论）由 ChatNodeList 归组、
+  // 交给本座位**内嵌渲染**（成员不再占自己的会话流行）——这样过程真的在卡片
+  // 内部（同一玻璃容器），而不是卡片下方的独立行。默认收起，展开才可见。
+  // 展开态存 chat store（单一事实源），卡片头部点击经 `commitProcess.setOpen` 写回。
+  // commit-card 是 corum-ui-commit-card 贡献的合并 kind，本包编译期不可见
+  // （ChatNodeKind 联合里没有它），故按字符串判定而非类型收窄。
+  const isCommitCard = (routedNode?.kind as string | undefined) === 'commit-card'
+  const memberKeys = commitMembers ?? EMPTY_MEMBER_KEYS
+  const commitGrouped = isCommitCard && memberKeys.length > 0
+  const commitEntry = useStore(state => turn === undefined
+    ? undefined
+    : storedCommitCardEntry(state, turn))
+  // 默认收起（用户原话「只有用户展开才看得到」）；用户点过头部后尊重其选择。
+  const commitCardOpen = commitEntry?.open ?? false
+  const setCommitOpen = useCallback((open: boolean) => {
+    if (turn !== undefined) actions.setCommitCardOpen(turn, open)
+  }, [actions, turn])
+  // `commitProcess` 只在卡片被收进提交段容器时下发（该不变式让卡片知道
+  // 自己不画外壳、由容器提供玻璃底，见 CommitProcessOwnerProps 文档）。
+  const commitProcess = useMemo<CommitProcessOwnerProps | undefined>(() => (
+    commitGrouped ? { open: commitCardOpen, setOpen: setCommitOpen } : undefined
+  ), [commitGrouped, commitCardOpen, setCommitOpen])
+
   const revealProcess = useCallback(() => {
     if (processMember) setOpen(true)
-  }, [processMember, setOpen])
+    // 提交段成员的浏览器查找揭示：展开卡片（等价于用户点卡片头部）。
+    if (commitGrouped) setCommitOpen(true)
+  }, [processMember, setOpen, commitGrouped, setCommitOpen])
   const wrapperRef = useSearchableHidden(processHidden, revealProcess)
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
@@ -113,9 +149,20 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       renderMessageImages,
       fileMentions,
       turnProcess,
+      commitProcess,
     }, [
     node, selectedCallId, cwd, openFile, inspectCall, forkAt,
-    loadImage, renderMessageImages, fileMentions, turnProcess,
+    loadImage, renderMessageImages, fileMentions, turnProcess, commitProcess,
+  ])
+  // 传给内嵌成员座位的 props（排除自身的 commitMembers，避免递归分组）。
+  const seatProps = useMemo(() => ({
+    useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+    selectedCallId, cwd, openFile, inspectCall, forkAt,
+    loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
+  }), [
+    useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+    selectedCallId, cwd, openFile, inspectCall, forkAt,
+    loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
   ])
   if (routedNode === undefined || owner === null) return null
   const turnData = turnDataOf(routedNode)
@@ -123,6 +170,17 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   // keyed-slot entry passed alongside that same Node. TypeScript does not
   // distribute an object containing a union into a union of objects itself.
   const routedOwner = { ...owner, node: routedNode } as RoutedChatNodeOwner
+  const rendered = renderSlot('conversation.chat.node', routedOwner, {
+    entryKey: routedNode.kind,
+    hookContext: turnData,
+    fallback: (
+      <JsonBlock
+        label={t('message.unknownSurface', { type: routedNode.kind })}
+        payload={routedNode.data}
+        truncatedLabel={total => t('json.truncated', { total })}
+      />
+    ),
+  })
   return (
     <div
       ref={wrapperRef}
@@ -134,18 +192,23 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-turn-process-member={processMember || undefined}
       data-turn-process-hidden={processHidden || undefined}
       data-turn-process-answer={compactAnswer || undefined}
+      data-commit-group={commitGrouped || undefined}
+      data-commit-group-open={commitGrouped ? commitCardOpen : undefined}
     >
-      {renderSlot('conversation.chat.node', routedOwner, {
-        entryKey: routedNode.kind,
-        hookContext: turnData,
-        fallback: (
-          <JsonBlock
-            label={t('message.unknownSurface', { type: routedNode.kind })}
-            payload={routedNode.data}
-            truncatedLabel={total => t('json.truncated', { total })}
-          />
-        ),
-      })}
+      {commitGrouped
+        ? (
+          // 提交段容器：卡片头部（无自绘外壳）+ 收起/展开的过程成员，
+          // 同一玻璃底 —— 过程「在卡片里」而不是卡片下方的独立行。
+          <div className={css.commitGroup}>
+            {rendered}
+            {commitCardOpen && memberKeys.map(memberKey => (
+              <div key={memberKey} className={css.commitGroupMember} data-commit-group-member={memberKey}>
+                <ChatNodeSeat nodeKey={memberKey} {...seatProps} />
+              </div>
+            ))}
+          </div>
+        )
+        : rendered}
     </div>
   )
 })
