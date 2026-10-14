@@ -21,7 +21,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
-  Archive, Bell, Bot, Box, Brain, ChevronDown, Code, Command, Cpu, FolderOpen, Layers,
+  Archive, Bell, Bot, Box, Brain, ChevronDown, Code, Command, Cpu, Layers,
   Lock, Plug, Search, Settings as SettingsIcon, Shield, Sparkles,
   Star, Sun, Terminal, Trash2, User, Webhook, Repeat, Wrench, X,
 } from 'lucide-react'
@@ -60,10 +60,10 @@ function navIcon(id: string): ReactNode {
     permissions: <Lock className={cls} size={14} />,
     // ➖ rules 图标已随该分区移除（用户裁定：以 Agent 为单位管控，见
     //    SettingsSections.tsx 的 SECTION_DEFS 注释）。
-    // 记忆组三项（2026-09-21）：全局设置 = 齿轮、智能体记忆 = 大脑、项目记忆 = 文件夹。
+    // 记忆组两项（2026-09-21；2026-09-22「移除项目记忆」收敛为两项）：
+    // 全局设置 = 大脑、智能体记忆 = 机器人。项目记忆 icon 已随该 section 删除。
     'memory-settings': <Brain className={cls} size={14} />,
     'memory-agent': <Bot className={cls} size={14} />,
-    'memory-project': <FolderOpen className={cls} size={14} />,
     terminal: <Terminal className={cls} size={14} />,
     hooks: <Webhook className={cls} size={14} />,
     'agent-settings': <Repeat className={cls} size={14} />,
@@ -93,9 +93,9 @@ function navIcon(id: string): ReactNode {
 const NAV_GROUPS: { key: SettingsNavGroup; titleKey: SettingsKey }[] = [
   { key: 'general', titleKey: 'group.general' },
   { key: 'agent', titleKey: 'group.agent' },
-  // ➕ 记忆独立成组（2026-09-21 用户裁定「将记忆单独列一个项，放在智能体下方」）：
-  //    含「全局设置 / 智能体记忆 / 项目记忆」三个 section（由 @corum/corum-memory
-  //    插件自注册，归属见 SettingsSections.NAV_GROUP_BY_ID）。
+  // ➕ 记忆独立成组（2026-09-21 用户裁定「将记忆单独列一个项，放在智能体下方」；
+  //    2026-09-22「移除项目记忆」收敛为两项）：含「全局设置 / 智能体记忆」两个
+  //    section（由 @corum/corum-memory 插件自注册，归属见 SettingsSections.NAV_GROUP_BY_ID）。
   { key: 'memory', titleKey: 'group.memory' },
   { key: 'data', titleKey: 'group.data' },
   { key: 'extensions', titleKey: 'group.extensions' },

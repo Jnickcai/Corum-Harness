@@ -1,5 +1,5 @@
 /**
- * 记忆底座的**配置面与归属维度**测试（2026-09-21 三层信息架构）。
+ * 记忆底座的**配置面**测试（2026-09-22「移除项目记忆」后维度收敛为 Agent 单一维度）。
  *
  * 覆盖三类真源，全部走真实装配（官方存储栈 + 真实 settings 面 stub，不 mock 业务）：
  *
@@ -8,8 +8,8 @@
  *    · 存续期默认档 → 写入落库的 retention；
  *    · 读取升级阈值 → 命中多少次升级为长期；
  *    · 衰减强度 → 排序用的 effectiveScore。
- * 2. **归属维度**（agentId / projectId）——「每个项目有自己的记忆库，不同 Agent 可访问；
- *    每个 Agent 有自己的记忆，可带到不同项目」。
+ * 2. **归属维度**（agentId）——记忆只归属 Agent（经验归属 Agent（人），事务归属项目，
+ *    单一归宿）。`scope` / `projectId` 字段已删除。
  * 3. **策略闸门**——总开关 / 容量上限 + 超限策略 / 自动清理已到期；以及批量修剪。
  *
  * ⚠️ 两条与 `memory-service.spec.ts` 一致的纪律：
@@ -39,8 +39,7 @@ import {
 } from '../src/memory-config.ts'
 import type { CorumMemorySettings } from '../src/memory-config.ts'
 import { effectiveScoreFor, isRetained } from '../src/memory-policy.ts'
-import { memoryScopeSchema } from '../src/memory-entities.ts'
-import type { MemoryFact, MemoryScope } from '../src/memory-entities.ts'
+import type { MemoryFact } from '../src/memory-entities.ts'
 
 let home: string
 const prevCorumHome = process.env.CORUM_HOME
@@ -129,11 +128,10 @@ async function setup(
   return { ctx, mem }
 }
 
-/** 造一条写入入参（默认写进 Agent 库并带归属）。 */
+/** 造一条写入入参（默认带 agent 归属）。 */
 function input(overrides: Record<string, unknown> = {}) {
   return {
     fact: '用户偏好深色模式',
-    scope: 'agent' as MemoryScope,
     agentId: 'pm',
     author: 'agent:s1',
     ...overrides,
@@ -144,7 +142,7 @@ function input(overrides: Record<string, unknown> = {}) {
 function fact(overrides: Partial<MemoryFact> = {}): MemoryFact {
   return {
     id: 'f1', entity: '', relation: '', fact: '样本', importance: 80,
-    validAt: null, invalidAt: null, source: '', scope: 'agent', agentId: 'pm', projectId: '',
+    validAt: null, invalidAt: null, source: '', agentId: 'pm',
     retention: 'long', expiresAt: null, readCount: 0, supersedes: [], evidence: [],
     author: 'test', createdAt: 0, lastAccessedAt: null,
     ...overrides,
@@ -155,19 +153,15 @@ function fact(overrides: Partial<MemoryFact> = {}): MemoryFact {
  * 1. resolveMemoryConfig（纯函数）
  * ══════════════════════════════════════════════════════════════════ */
 
-describe('记忆维度：只有 agent / project（用户 2026-09-21 裁定）', () => {
-  it('scope 枚举恰好两个值——`global` 已被删除，不得被无意恢复', () => {
-    const values = memoryScopeSchema.options
-    expect(values).toEqual(['agent', 'project'])
-    expect(values).not.toContain('global')
-  })
-
-  it('传 global 会被 schema 拒绝（不是静默接受成一个无效维度）', async () => {
+describe('记忆维度：收敛为 Agent 单一维度（2026-09-22「移除项目记忆」）', () => {
+  it('scope 字段已删除——putFact 不再接受 scope 参数', async () => {
     const { mem } = await setup()
-    await expect(
-      // @ts-expect-error 有意传非法 scope：验证运行时确实拒绝，而不是静默落库。
-      mem.putFact({ fact: '不该存在的维度', scope: 'global', author: 'system' }),
-    ).rejects.toThrow()
+    // scope 已从 PutFactInput 删除；传入会被 zod schema 忽略（不落库、不报错）。
+    const { fact } = await mem.putFact(input({ fact: '无 scope 的事实' }))
+    expect(fact.fact).toBe('无 scope 的事实')
+    // 存储形态里没有 scope / projectId 字段。
+    expect((fact as Record<string, unknown>).scope).toBeUndefined()
+    expect((fact as Record<string, unknown>).projectId).toBeUndefined()
   })
 })
 
@@ -307,23 +301,21 @@ describe('设置面参数驱动底座行为', () => {
 })
 
 /* ══════════════════════════════════════════════════════════════════
- * 3. 归属维度（agentId / projectId）
+ * 3. 归属维度（agentId）
  * ══════════════════════════════════════════════════════════════════ */
 
-describe('归属维度：Agent 与项目（三层信息架构的第二层）', () => {
-  it('写入落归属：agentId / projectId 存得下、取得回', async () => {
+describe('归属维度：Agent（记忆只归属 Agent）', () => {
+  it('写入落归属：agentId 存得下、取得回', async () => {
     const { mem } = await setup()
-    const { fact: f } = await mem.putFact(input({ agentId: 'pm', projectId: 'prj-a' }))
+    const { fact: f } = await mem.putFact(input({ agentId: 'pm' }))
     const got = await mem.getFact(f.id)
     expect(got!.agentId).toBe('pm')
-    expect(got!.projectId).toBe('prj-a')
   })
 
   it('未给归属时落空串（老数据兼容：不因为缺字段而丢记录）', async () => {
     const { mem } = await setup()
-    const { fact: f } = await mem.putFact({ fact: '无归属', scope: 'project', author: 'system' })
+    const { fact: f } = await mem.putFact({ fact: '无归属', author: 'system' })
     expect(f.agentId).toBe('')
-    expect(f.projectId).toBe('')
   })
 
   it('listFacts 按 agentId 过滤：只看到该 Agent 的记忆', async () => {
@@ -335,48 +327,25 @@ describe('归属维度：Agent 与项目（三层信息架构的第二层）', (
     expect(pmOnly[0].fact).toBe('pm 的')
   })
 
-  it('项目库：同一项目下不同 Agent 的记忆都能被读到（项目库是共享的）', async () => {
-    const { mem } = await setup()
-    await mem.putFact(input({ fact: 'pm 在 prj-a', scope: 'project', agentId: 'pm', projectId: 'prj-a' }))
-    await mem.putFact(input({ fact: 'dev 在 prj-a', scope: 'project', agentId: 'dev', projectId: 'prj-a' }))
-    await mem.putFact(input({ fact: 'prj-b 的', scope: 'project', agentId: 'pm', projectId: 'prj-b' }))
-    const prjA = await mem.listFacts({ scope: 'project', projectId: 'prj-a' })
-    expect(prjA.map(v => v.fact).sort()).toEqual(['dev 在 prj-a', 'pm 在 prj-a'])
-  })
-
-  it('Agent 记忆跨项目：scope=agent 且 projectId 为空 ⇒ 任何项目上下文都能取到', async () => {
-    const { mem } = await setup()
-    await mem.putFact(input({ fact: '这个 Agent 的通用经验', scope: 'agent', agentId: 'pm', projectId: '' }))
-    const byAgent = await mem.listFacts({ scope: 'agent', agentId: 'pm' })
-    expect(byAgent).toHaveLength(1)
-    expect(byAgent[0].projectId).toBe('')
-  })
-
-  it('同一 Agent 在两个项目里的记忆可分（agentId + projectId 双维度）', async () => {
-    const { mem } = await setup()
-    await mem.putFact(input({ fact: 'pm@A', scope: 'project', agentId: 'pm', projectId: 'A' }))
-    await mem.putFact(input({ fact: 'pm@B', scope: 'project', agentId: 'pm', projectId: 'B' }))
-    const inA = await mem.listFacts({ scope: 'project', agentId: 'pm', projectId: 'A' })
-    expect(inA.map(v => v.fact)).toEqual(['pm@A'])
-  })
-
   it('listFacets 统计归属分布（按条数降序）', async () => {
     const { mem } = await setup()
     await mem.putFact(input({ fact: 'a1', agentId: 'pm' }))
     await mem.putFact(input({ fact: 'a2', agentId: 'pm' }))
     await mem.putFact(input({ fact: 'a3', agentId: 'dev' }))
-    const facets = await mem.listFacets('agent', { scope: 'agent' })
+    const facets = await mem.listFacets({})
     expect(facets[0]).toEqual({ id: 'pm', label: 'pm', count: 2 })
     expect(facets[1]).toEqual({ id: 'dev', label: 'dev', count: 1 })
   })
 
-  it('listFacets 按 project 维度分组，并受 filter 限制在指定库内', async () => {
+  it('listFacets 按 agentId 过滤后只统计该 Agent', async () => {
     const { mem } = await setup()
-    await mem.putFact(input({ fact: 'p1', scope: 'project', projectId: 'prj-a' }))
-    await mem.putFact(input({ fact: 'p2', scope: 'project', projectId: 'prj-b' }))
-    await mem.putFact(input({ fact: 'a1', scope: 'agent', agentId: 'pm' }))
-    const inProject = await mem.listFacets('project', { scope: 'project' })
-    expect(inProject.map(f => f.id).sort()).toEqual(['prj-a', 'prj-b'])
+    await mem.putFact(input({ fact: 'a1', agentId: 'pm' }))
+    await mem.putFact(input({ fact: 'a2', agentId: 'pm' }))
+    await mem.putFact(input({ fact: 'b1', agentId: 'dev' }))
+    const facets = await mem.listFacets({ agentId: 'pm' })
+    expect(facets).toHaveLength(1)
+    expect(facets[0].id).toBe('pm')
+    expect(facets[0].count).toBe(2)
   })
 
   it('searchFacts 也支持归属过滤（检索与列表同口径）', async () => {
@@ -590,23 +559,14 @@ describe('批量修剪（记忆库页的清空）', () => {
     expect(await mem.listFacts({})).toHaveLength(1)
   })
 
-  it('clearFacts 按作用域删：只删该 scope，不越界', async () => {
-    const { mem } = await setup()
-    await mem.putFact(input({ fact: 'agent库', scope: 'agent', agentId: 'pm' }))
-    await mem.putFact(input({ fact: 'project库', scope: 'project', agentId: 'pm', projectId: 'p' }))
-    const n = await mem.clearFacts({ scope: 'agent' })
-    expect(n).toBe(1)
-    const left = await mem.listFacts({})
-    expect(left.map(v => v.fact)).toEqual(['project库'])
-  })
-
-  it('clearFacts 按 agentId 删：只清那个 Agent 的', async () => {
+  it('clearFacts 按 agentId 删：只清那个 Agent 的，不越界', async () => {
     const { mem } = await setup()
     await mem.putFact(input({ fact: 'pm1', agentId: 'pm' }))
     await mem.putFact(input({ fact: 'pm2', agentId: 'pm' }))
     await mem.putFact(input({ fact: 'dev1', agentId: 'dev' }))
     expect(await mem.clearFacts({ agentId: 'pm' })).toBe(2)
-    expect((await mem.listFacts({})).map(v => v.fact)).toEqual(['dev1'])
+    const left = await mem.listFacts({})
+    expect(left.map(v => v.fact)).toEqual(['dev1'])
   })
 
   it('clearFacts 无参调用**拒绝执行**（防「空 filter = 清空全库」的误用）', async () => {
@@ -614,13 +574,5 @@ describe('批量修剪（记忆库页的清空）', () => {
     await mem.putFact(input({ fact: 'x' }))
     await expect(mem.clearFacts({})).rejects.toThrow(/refusing to clear the whole store/)
     expect(await mem.listFacts({})).toHaveLength(1)
-  })
-
-  it('clearFacts({ scope }) 与「清空全部」的差别：后者需显式逐维度调用', async () => {
-    const { mem } = await setup()
-    await mem.putFact(input({ fact: 'A', scope: 'agent', agentId: 'pm' }))
-    await mem.putFact(input({ fact: 'P', scope: 'project', agentId: 'pm', projectId: 'p' }))
-    for (const scope of ['agent', 'project'] as const) await mem.clearFacts({ scope })
-    expect(await mem.listFacts({})).toHaveLength(0)
   })
 })

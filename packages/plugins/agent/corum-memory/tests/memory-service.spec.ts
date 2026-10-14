@@ -8,7 +8,7 @@
  *   接口层 —— putFact / searchFacts / listFacts / getFact / invalidate / setImportance
  *             / deleteFact 七个公开方法（含 @Remote 端点的同名语义，端点即转发）。
  *   业务层 —— 写入幂等、recency-wins 合并（标失效不删 + supersedes 溯源）、
- *             applicable/recall 双模式检索（失效 ≠ 忘记）、scope 过滤、关键词、
+ *             applicable/recall 双模式检索（失效 ≠ 忘记）、agentId 过滤、关键词、
  *             访问强化、人工修剪三动作、硬删除不可逆。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -25,7 +25,7 @@ import {
 } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryService } from '../src/memory-service.ts'
 import { READ_PROMOTE_THRESHOLD } from '../src/memory-policy.ts'
-import type { MemoryFact, MemoryScope } from '../src/memory-entities.ts'
+import type { MemoryFact } from '../src/memory-entities.ts'
 
 let home: string
 const prevCorumHome = process.env.CORUM_HOME
@@ -55,7 +55,6 @@ async function setup(): Promise<{ ctx: Context; mem: MemoryService }> {
 function input(overrides: Partial<Parameters<MemoryService['putFact']>[0]> = {}) {
   return {
     fact: '用户偏好深色模式',
-    scope: 'agent' as MemoryScope,
     author: 'test',
     ...overrides,
   }
@@ -262,18 +261,18 @@ describe('MemoryService 业务层 — 检索（applicable / recall 双模式，�
     expect((await mem.searchFacts({ mode: 'recall' })).map(f => f.id)).toContain(fact.id)
   })
 
-  it('scope 过滤只返回对应维度（只有 agent / project 两个）', async () => {
+  it('agentId 过滤只返回对应 Agent 的记忆', async () => {
     const { mem } = await setup()
-    await mem.putFact(input({ fact: 'project 事实', scope: 'project' }))
-    await mem.putFact(input({ fact: 'agent 事实', scope: 'agent' }))
+    await mem.putFact(input({ fact: 'pm 的事实', agentId: 'pm' }))
+    await mem.putFact(input({ fact: 'dev 的事实', agentId: 'dev' }))
 
-    const projectOnly = await mem.searchFacts({ scope: 'project', mode: 'recall' })
-    expect(projectOnly).toHaveLength(1)
-    expect(projectOnly[0].fact).toBe('project 事实')
+    const pmOnly = await mem.searchFacts({ agentId: 'pm', mode: 'recall' })
+    expect(pmOnly).toHaveLength(1)
+    expect(pmOnly[0].fact).toBe('pm 的事实')
 
-    const agentOnly = await mem.searchFacts({ scope: 'agent', mode: 'recall' })
-    expect(agentOnly).toHaveLength(1)
-    expect(agentOnly[0].fact).toBe('agent 事实')
+    const devOnly = await mem.searchFacts({ agentId: 'dev', mode: 'recall' })
+    expect(devOnly).toHaveLength(1)
+    expect(devOnly[0].fact).toBe('dev 的事实')
   })
 
   it('query 关键词子串匹配（大小写不敏感）', async () => {

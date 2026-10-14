@@ -5,7 +5,7 @@
  *   - 事实级存储：单域 corum_memory、单表 facts，key = factId。
  *   - 写入：重要性写入门槛 + 同 entity+relation 的 recency-wins 合并（标失效不删）
  *     + 容量治理（超限淘汰）+ 自动清理已过期。
- *   - 检索：按 scope/agentId/projectId/关键词过滤，按读时降权 effectiveScore 排序；
+ *   - 检索：按 agentId/关键词过滤，按读时降权 effectiveScore 排序；
  *     命中即更新 lastAccessedAt（访问强化）。
  *   - 人工修剪三动作：失效标记（invalidate，可逆）/ 重要性调整（pin）/ 硬删除
  *     （delete，仅合规/用户显式要求，绕过策略）。
@@ -28,7 +28,7 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 // 拉进 declare module '@deepseek-ai/cordis' { storageDomain: DomainFacility } 合并面，
 // 使 ctx.get('storageDomain') 有正确类型（与 corum-orchestration 同款 import type {}）。
 import type {} from '@deepseek-ai/dsh-storage-domain'
-import type { MemoryFact, MemoryFactView, MemoryRetention, MemoryScope } from './memory-entities.ts'
+import type { MemoryFact, MemoryFactView, MemoryRetention } from './memory-entities.ts'
 import { memoryDomainSpec, memoryFactSchema } from './memory-entities.ts'
 import {
   conflictsToInvalidate,
@@ -68,11 +68,8 @@ export interface PutFactInput {
   validAt?: number
   invalidAt?: number
   source?: string
-  scope: MemoryScope
   /** 归属 Agent（profile id）。空串 = 未归属（顶层/系统写入）。 */
   agentId?: string
-  /** 归属项目（project id）。空串 = 未归属。 */
-  projectId?: string
   /**
    * 显式声明的存续期。缺省按「持久化判定」推导：
    *   - 'permanent'：用户明确要求的纪律 / 可判定永久的事实来源；
@@ -87,11 +84,8 @@ export interface PutFactInput {
 
 /** 检索过滤条件。 */
 export interface SearchFactsInput {
-  scope?: MemoryScope
   /** 只看该 Agent 的记忆（空/缺省 = 不按 Agent 过滤）。 */
   agentId?: string
-  /** 只看该项目的记忆（空/缺省 = 不按项目过滤）。 */
-  projectId?: string
   /** 关键词（在 fact 文本上做子串匹配，大小写不敏感）。 */
   query?: string
   /**
@@ -106,19 +100,20 @@ export interface SearchFactsInput {
 
 /** 列表过滤条件（面板浏览/人工修剪用；与 {@link SearchFactsInput} 不同：不做打分、不累加 readCount）。 */
 export interface ListFactsInput {
-  /** 作用域过滤（缺省 = 全部三库）。 */
-  scope?: MemoryScope
   /** Agent 过滤（空/缺省 = 不按 Agent 过滤）。 */
   agentId?: string
-  /** 项目过滤（空/缺省 = 不按项目过滤）。 */
-  projectId?: string
   /** 是否包含已到期/已失效（默认 true——面板要能看见并修剪它们；检索不看）。 */
   includeExpired?: boolean
 }
 
-/** 某一维度（Agent / 项目）的记忆条数，供记忆库页的 chip 列。 */
+/**
+ * 某一归属的记忆条数，供记忆库页的 chip 列。
+ *
+ * 2026-09-22「移除项目记忆」后维度收敛为 Agent 单一维度，归属即 agentId；
+ * `listFacets` 不再接受 `dimension` 参数（只按 agentId 分组）。
+ */
 export interface MemoryFacet {
-  /** Agent profile id 或 project id；空串 = 「未归属」。 */
+  /** Agent profile id；空串 = 「未归属」。 */
   id: string
   /** 展示名（由调用方给；缺省回落到 id）。 */
   label: string
@@ -278,9 +273,7 @@ export class MemoryService extends TypertRemoteService {
       validAt: input.validAt ?? null,
       invalidAt: input.invalidAt ?? null,
       source: input.source ?? '',
-      scope: input.scope,
       agentId: input.agentId ?? '',
-      projectId: input.projectId ?? '',
       retention,
       expiresAt: expiresAtFor(retention, now),
       readCount: 0,
@@ -411,7 +404,6 @@ export class MemoryService extends TypertRemoteService {
    *   - 关键词 query：多字段加权命中（fact/entity/relation/source/evidence，
    *     见 memory-policy.scoreMatch），排序 = 匹配分 × 记忆强度；
    *   - 无 query：退化为纯记忆强度（effectiveScore）排序；
-   *   - scope：作用域过滤；
    *   - mode='applicable'（默认）只返回断言成立的事实；
    *     mode='recall' 返回所有**仍被记住**（未到 expiresAt）的事实。
    */
@@ -425,18 +417,14 @@ export class MemoryService extends TypertRemoteService {
     if (!config.enabled) return []
 
     const ov = this.overrides()
-    const scope = input.scope
     const agentId = input.agentId
-    const projectId = input.projectId
     const q = input.query?.trim() ?? ''
     const mode = input.mode ?? 'applicable'
     const limit = input.limit ?? 100
 
     const rows: MemoryFact[] = []
     for (const [, f] of table.entries()) {
-      if (scope !== undefined && f.scope !== scope) continue
       if (agentId !== undefined && f.agentId !== agentId) continue
-      if (projectId !== undefined && f.projectId !== projectId) continue
       const view = toView(f, now, ov)
       if (mode === 'applicable' && !view.applicable) continue
       if (!view.retained) continue // 存续期耗尽 = 真正遗忘，两种模式都不召回
@@ -485,7 +473,7 @@ export class MemoryService extends TypertRemoteService {
    *   3. **可选包含已到期/已失效**（`includeExpired`，默认 true）—— 修剪的对象正是
    *      这些；隐藏它们等于让用户无法清理。
    *
-   * @param input - 过滤条件（作用域 / Agent / 项目 / 是否含已到期）。
+   * @param input - 过滤条件（Agent / 是否含已到期）。
    * @returns 按记忆强度降序的事实视图。
    */
   async listFacts(input: ListFactsInput = {}): Promise<MemoryFactView[]> {
@@ -496,9 +484,7 @@ export class MemoryService extends TypertRemoteService {
     const includeExpired = input.includeExpired ?? true
     const views: MemoryFactView[] = []
     for (const [, f] of table.entries()) {
-      if (input.scope !== undefined && f.scope !== input.scope) continue
       if (input.agentId !== undefined && f.agentId !== input.agentId) continue
-      if (input.projectId !== undefined && f.projectId !== input.projectId) continue
       const view = toView(f, now, ov)
       if (!includeExpired && !view.retained) continue // 存续期耗尽 = 真正遗忘
       views.push(view)
@@ -508,24 +494,22 @@ export class MemoryService extends TypertRemoteService {
   }
 
   /**
-   * 按维度统计条数（记忆库页的「哪些 Agent / 哪些项目有记忆」）。
+   * 统计各 Agent 的记忆条数（记忆库页的「哪些 Agent 有记忆」chip 列）。
    *
    * 与 {@link listFacts} 同口径：不累加 readCount、不按总开关短路。只统计**仍被
    * 记住**的（存续期耗尽的没有归属意义）。
    *
-   * @param dimension - 按哪个维度分组。
-   * @param filter - 先按这些条件筛（如「项目记忆库」页只统计 project 库里的 Agent 分布）。
+   * 2026-09-22「移除项目记忆」后维度收敛为 Agent 单一维度，不再接受 `dimension`
+   * 参数（只按 agentId 分组）。
+   *
+   * @param filter - 先按这些条件筛。
    * @returns 每个归属的条数，按条数降序；空串 id 表示「未归属」。
    */
-  async listFacets(
-    dimension: 'agent' | 'project',
-    filter: ListFactsInput = {},
-  ): Promise<MemoryFacet[]> {
+  async listFacets(filter: ListFactsInput = {}): Promise<MemoryFacet[]> {
     const views = await this.listFacts({ ...filter, includeExpired: false })
     const counts = new Map<string, number>()
     for (const v of views) {
-      const key = dimension === 'agent' ? v.agentId : v.projectId
-      counts.set(key, (counts.get(key) ?? 0) + 1)
+      counts.set(v.agentId, (counts.get(v.agentId) ?? 0) + 1)
     }
     return [...counts.entries()]
       .map(([id, count]) => ({ id, label: id, count }))
@@ -551,25 +535,23 @@ export class MemoryService extends TypertRemoteService {
   }
 
   /**
-   * 清空某个维度（Agent / 项目）的全部记忆。
+   * 清空某个 Agent 的全部记忆。
    *
    * 与 {@link deleteFacts} 的区别：这里按**语义范围**删，不需要前端先把 id 全捞下来
    * （前端捞 id 会在「列表加载后有新写入」时漏删，是静默的少删）。
    *
-   * @param filter - 要清空的范围；必须至少给一个维度（防「无参调用 = 清空全库」的误用）。
+   * @param filter - 要清空的范围；必须给 agentId（防「无参调用 = 清空全库」的误用）。
    * @returns 被删除的条数。
    */
   async clearFacts(filter: ListFactsInput = {}): Promise<number> {
-    if (filter.scope === undefined && filter.agentId === undefined && filter.projectId === undefined) {
-      throw new Error('memory.clearFacts: refusing to clear the whole store — pass scope / agentId / projectId')
+    if (filter.agentId === undefined) {
+      throw new Error('memory.clearFacts: refusing to clear the whole store — pass agentId')
     }
     const table = await this.table()
     if (table === undefined) return 0
     let n = 0
     for (const [key, f] of [...table.entries()]) {
-      if (filter.scope !== undefined && f.scope !== filter.scope) continue
-      if (filter.agentId !== undefined && f.agentId !== filter.agentId) continue
-      if (filter.projectId !== undefined && f.projectId !== filter.projectId) continue
+      if (f.agentId !== filter.agentId) continue
       if (await table.delete(key)) n += 1
     }
     return n
@@ -661,8 +643,8 @@ export class MemoryService extends TypertRemoteService {
   }
 
   @Remote('listFacets')
-  async listFacetsRemote(dimension: 'agent' | 'project', filter: ListFactsInput): Promise<MemoryFacet[]> {
-    return this.listFacets(dimension, filter ?? {})
+  async listFacetsRemote(filter: ListFactsInput): Promise<MemoryFacet[]> {
+    return this.listFacets(filter ?? {})
   }
 
   @Remote('getConfig')

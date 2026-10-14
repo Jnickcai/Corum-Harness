@@ -8,7 +8,7 @@
  *
  * 列表的**真源**是 `corumAgent/listProfiles` 的 `memoryEnabled`（= 服务侧
  * `memoryPolicy.scope !== 'none'`）——只有开了记忆的 Agent 才出现在这里；每个 Agent
- * 后面挂它在 `scope='agent'` 库里的条数。**点进去**才进 3D 空间（{@link MemorySpace}）。
+ * 后面挂它在记忆库里的条数。**点进去**才进 3D 空间（{@link MemorySpace}）。
  *
  * ## 为什么「有记忆的」与「已开记忆」分开显示
  *
@@ -36,7 +36,7 @@ export interface AgentSummary {
 
 /** 一个 Agent 在记忆库里的汇总。 */
 interface AgentStat {
-  /** 记忆条数（scope='agent' + 该 agentId）。 */
+  /** 记忆条数（该 agentId 的记忆）。 */
   count: number
   /** 其中 permanent 的条数（「含 N 条永久」）。 */
   permanent: number
@@ -65,9 +65,9 @@ export function MemoryAgentList({ call, onOpen }: {
     try {
       const [{ profiles }, facts] = await Promise.all([
         call<{ profiles: AgentSummary[] }>('corumAgent', 'listProfiles', {}),
-        // 一次拿全 Agent 库，本地按 agentId 聚合——比「每个 Agent 问一次」少 N-1 次 RPC。
+        // 一次拿全部记忆，本地按 agentId 聚合——比「每个 Agent 问一次」少 N-1 次 RPC。
         call<Array<{ agentId: string, retention: string, createdAt: number }>, { input: Record<string, unknown> }>(
-          'memory', 'listFacts', { input: { scope: 'agent' } },
+          'memory', 'listFacts', { input: {} },
         ),
       ])
       const byAgent: Record<string, AgentStat> = {}
