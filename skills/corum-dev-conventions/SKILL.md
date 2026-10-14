@@ -5,9 +5,9 @@ description: Use when changing anything in this repo (corum Agent OS / kkc-deskt
 
 # corum 开发规范（开发技能）
 
-本技能是 `AGENTS.md`（红线 + 入口）与 `docs/dev-conventions.md`（**规则的唯一家**）的**可执行投影**：它讲「动手时按什么顺序做、什么绝对不能做、做完拿什么证明」。规则全文不在这里复制——细节以 `docs/dev-conventions.md` 为准，两者冲突时以文档为准并回来修本技能。它是 guidance，不是脚本。
+本技能是 `docs/dev-conventions.md`（**规则的唯一家**）的**可执行投影**：它讲「动手时按什么顺序做、什么绝对不能做、做完拿什么证明」。规则全文不在这里复制——细节以 `docs/dev-conventions.md` 为准，两者冲突时以文档为准并回来修本技能。它是 guidance，不是脚本。
 
-> `.dbg/` 已随提交 `e74a5b44` 移出工作树：本文中的 `.dbg/...` 路径是历史证据锚点，取回方式与逐文件索引见 [docs/DBG-ARCHIVE-INDEX.md](../../docs/DBG-ARCHIVE-INDEX.md)。
+> `.dbg/` 已随提交 `5d21688` 移出工作树：本文中的 `.dbg/...` 路径是历史证据锚点，取回方式与逐文件索引见 [docs/DBG-ARCHIVE-INDEX.md](../../docs/DBG-ARCHIVE-INDEX.md)。
 
 ## 0. 一句话
 
@@ -15,17 +15,17 @@ description: Use when changing anything in this repo (corum Agent OS / kkc-deskt
 
 ## 1. 红线（违反即回滚）
 
-1. **跨 bundle 共享状态 = cordis service**，绝不用 window 全局或模块级单例。dsh 把 `@corum/*` 源码 inline 进每个 bundle，模块级状态按 bundle 分裂且永不合并（`__corumSidebarMode` 就是死写实例）；cordis service 的实例唯一性由 root context 的 `reflect.store` 保证，天然跨 bundle 单例。合法 window 挂载仅限「写一次、只读」的交接值：`window.corumDesktop`、`__corumNotify`、`__DSH_BOOT__`、`__corumSlotRegistry`。依据：`docs/dev-conventions.md` §1、`AGENTS.md` 红线 1。
-2. **不随意 externalize `@corum/*`**：dsh 模块表只有 8 个硬编码种子，走 `dsh.client` 插件路径自造共享模块会白屏（`.dbg/b1-boot-graph-findings.md`）。绕行方案是红线 1 的 cordis service。依据：`AGENTS.md` 红线 2、`docs/dev-conventions.md` §3。
-3. **跨 bundle 类型脸不匹配 → 用本地能力接口收窄**：consumer 注入到的可能是官方基线的窄接口（corum 运行时是超集），不要耦合到实现包。依据：`AGENTS.md` 红线 3。
-4. **消费 cordis service 走 `inject` 声明**，不要在未装配的服务上 `ctx.get`（`ctx.remote` 坑）。依据：`docs/dev-conventions.md` §2、`AGENTS.md` 红线 4。
-5. **host 插件改动必须重启应用**（只有 renderer 走 HMR）；跨包状态 / 壳 / 调度改动必须过**三层实机验证**：界面渲染 + 行为 + 零新增控制台报错。依据：`docs/dev-conventions.md` §6、`AGENTS.md` 红线 5。
+1. **跨 bundle 共享状态 = cordis service**，绝不用 window 全局或模块级单例。dsh 把 `@corum/*` 源码 inline 进每个 bundle，模块级状态按 bundle 分裂且永不合并（`__corumSidebarMode` 就是死写实例）；cordis service 的实例唯一性由 root context 的 `reflect.store` 保证，天然跨 bundle 单例。合法 window 挂载仅限「写一次、只读」的交接值：`window.corumDesktop`、`__corumNotify`、`__DSH_BOOT__`、`__corumSlotRegistry`。依据：`docs/dev-conventions.md` §1。
+2. **不随意 externalize `@corum/*`**：dsh 模块表有硬编码种子，走 `dsh.client` 插件路径自造共享模块会白屏（`.dbg/b1-boot-graph-findings.md`）。绕行方案是红线 1 的 cordis service。依据：`docs/dev-conventions.md` §3。
+3. **跨 bundle 类型脸不匹配 → 用本地能力接口收窄**：consumer 注入到的可能是官方基线的窄接口（corum 运行时是超集），不要耦合到实现包。依据：`docs/dev-conventions.md` §2。
+4. **消费 cordis service 走 `inject` 声明**，不要在未装配的服务上 `ctx.get`（`ctx.remote` 坑）。依据：`docs/dev-conventions.md` §2。
+5. **host 插件改动必须重启应用**（只有 renderer 走 HMR）；跨包状态 / 壳 / 调度改动必须过**三层实机验证**：界面渲染 + 行为 + 零新增控制台报错。依据：`docs/dev-conventions.md` §6。
 6. **三个平台，每次改动都要过（核心原则）**：改完问一句「这在 darwin / linux / win32 上是否不同——三个都覆盖了吗？」**「编译过」与「我机器上跑得通」在这里都不算完成**——本仓最贵的失败是**隐式假设**（硬编码 `/bin/zsh`、`~/.corum-desktop`、只用 `/` 拼路径、macOS 交通灯像素内边距、POSIX 专用命令白名单），它们在第三个平台上**不报错、只是行为不同**（≈35 处清单：`docs/PLATFORM-SPLIT.md` §4.2）。
    **两种合法布局**：corum 自有代码可用 `platform/` 目录（一平台一实现）；**官方 fork 包沿用官方「同级文件」惯例**（`fs-local/src/{fsio.ts, win32.ts}`）——**同一包内不混用**。
    **平台选择只跟随实际运行平台**（`getPlatform()` → `process.platform`），烘入常量（`__CORUM_TARGET_PLATFORM__`）只用于一致性断言与诊断，**不得用于选实现**。
    **两道守卫缺一不可**：运行时断言（默认开启，抓「烘入值 ≠ 产物目标」）+ 冲烟的 `checkNodeRuntimePlatform()`（抓「产物内部混装」）。
    **打包/发版另有一套纪律**（产物必须**可证能用**，不只是「打出来了」）——见红线 7。
-   依据：`docs/dev-conventions.md` **§16**、`AGENTS.md` 红线 7、`docs/PLAN-2026-10-07-platform-specialization.md`。
+   依据：`docs/dev-conventions.md` **§16**、`docs/PLAN-2026-10-07-platform-specialization.md`。
 7. **打包/发版：产物必须能证明它跑得起来，且平台专属依赖按「类」校正**（2026-10-12 Windows 白屏事故的直接对策，全文见 `docs/dev-conventions.md` **§17**）：
    - **出包必过产物启动断言**：`pnpm assert:boot`（= `scripts/assert-packaged-boot.mjs`），用**产物自带的** Node 跑**产物自己的** host 桥，断言 `exit 0` + `{"type":"ready"` + 无致命行。无 GUI 依赖 ⇒ 无头 CI 可跑，已接进 `build-matrix`（硬门禁）与 `release`（发布阻断）。
      **判据**：「Pack 步骤绿」**不等于**包能用——那次白屏的包**每一步都是绿的**，electron-builder 对一个插件树加载不起来的包照样报成功。
