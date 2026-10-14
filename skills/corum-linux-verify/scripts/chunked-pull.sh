@@ -14,6 +14,11 @@ echo "[chunked-pull] 远端分块中…"
 total=$(tr -d '\r\n' < "$tmp/count")
 echo "[chunked-pull] 共 $total 块"
 
+if [ "$total" -eq 0 ] 2>/dev/null || [ -z "$total" ]; then
+  echo "[chunked-pull] ⚠ 远端文件为空或不存在（0 块），跳过拉取"
+  exit 0
+fi
+
 mkdir -p "$(dirname "$local_path")"
 i=0
 for idx in $(seq -w 0 $((total - 1))); do
