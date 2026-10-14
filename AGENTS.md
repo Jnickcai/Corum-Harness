@@ -1,13 +1,13 @@
 # corum Agent OS — Development Conventions (auto-injected into every session)
 
 > This file is auto-injected into every new session by dsh agent-instructions
-> (project-root `AGENTS.md`; mechanism: `packages/context/agent-instructions`,
-> which walks up from cwd to the `.git` marker to locate this root).
+> (project-root `AGENTS.md`; mechanism walks up from cwd to the `.git` marker
+> to locate this root).
 > It lists **red lines + entry points only**; the full conventions live in
 > `docs/dev-conventions.md` (read it in full before touching cross-bundle state
 > or adding a plugin).
 
-> `.dbg/` was moved out of the working tree in commit `e74a5b44`: the `.dbg/...` paths in this document are historical evidence anchors — retrieval instructions and the per-file index are in [docs/DBG-ARCHIVE-INDEX.md](docs/DBG-ARCHIVE-INDEX.md).
+> `.dbg/` was moved out of the working tree in commit `5d21688`: the `.dbg/...` paths in this document are historical evidence anchors — retrieval instructions and the per-file index are in [docs/DBG-ARCHIVE-INDEX.md](docs/DBG-ARCHIVE-INDEX.md).
 
 ## Red Lines (know these first)
 
@@ -25,10 +25,11 @@
      `__DSH_BOOT__` (the only client-side read path), `__corumSlotRegistry`
      (the cordis-free `ui-base/grid.ts` handoff — deleting it breaks the
      slotRegistry singleton).
-2. **Don't casually externalize `@corum/*`**: the dsh module table has only 8
-   hardcoded seeds; a custom shared module via the `dsh.client` plugin path
-   white-screens the app (proof in `.dbg/b1-boot-graph-findings.md`). Route
-   around it with the cordis service from rule 1.
+2. **Don't casually externalize `@corum/*`**: the dsh module table has
+   hardcoded seeds (9 as of 0.1.5-rc.3); a custom shared module via the
+   `dsh.client` plugin path white-screens the app (proof in
+   `.dbg/b1-boot-graph-findings.md`). Route around it with the cordis service
+   from rule 1.
 3. **Cross-bundle type-face mismatch → narrow with a local capability
    interface**: the service type a consumer injects may be the official
    baseline's narrow interface (the corum runtime is a superset). Don't couple
@@ -86,7 +87,7 @@
   **未发布**，在 `/tmp/corum-win-test/`。**§3.1 = 可直接开工的作业单**：平台特化改造
   （**用户 2026-10-08 已决定开工，交由 corum-dev**；方案已定稿 = `docs/PLAN-2026-10-07-platform-specialization.md`
   的 P0→P2，含 `platform/` 目录 + host 侧 platform 侦测插件 + 跨平台硬断言 + 约 35 处隐式假设；
-  开工时 `@corum/corum-platform` 与 `platform/` **均尚不存在**）+ Windows 真机未验
+  开工时 `@corum/corum-platform` 已存在（`packages/plugins/agent/corum-platform`，2026-10-12 创建），`platform/` 目录尚不存在）+ Windows 真机未验
   （唯一前置 = 那台闲置笔记本）。
   **§5 = 本场事故**：`deepseek-v4.1-flash` 撞上下文天花板 ⇒ 会话卡死且应用内无法自愈。实测规则
   **`输入 + max_tokens ≤ context_window`**（本网关两者相加检查）；dsh 的压缩阈值从不扣预留输出、
@@ -131,7 +132,7 @@
   (2026-09), but its **§C3a still carries an uncorrected superseded
   "precondition not met" conclusion** — `NEXT-PHASE-DEFERRED.md` wins.
   (Tracked: ledger `docs.audit.c3a-contradiction`.)
-- `docs/HANDOFF-2026-09-29-official-0.1.5-upgrade.md` — **最新交接**
+- `docs/HANDOFF-2026-09-29-official-0.1.5-upgrade.md` — 上一份交接
   （2026-09-29 官方基座升级场：**0.1.3-alpha.1 → 0.1.5-rc.3 全量升级已完成** ✓
   三项守卫全绿：全仓 `--force` typecheck **0 错** / 测试 **1932 通过 0 失败** / fork-drift **通过** ✓。
   **§2 = 三条必读方法论**：① `tsc -b` 是增量编译会藏住破坏点（**必须 `--force`** ✗ 否则 31 处报错看不见）；
@@ -150,9 +151,9 @@
   fork 顶替名的 override 分档规则、命令级/环境级陷阱（`--filter` 裁剪、macOS 无 `timeout`、
   **本机 `diff` 是 HarmonyOS SDK 的会静默漏报**、`DSH_BASELINE_TAG`）。
   本次升级的逐步实录在 `docs/UPGRADE-0.1.5-rc3.md`。
-- `docs/fork-delta.md` — diff ledger of the fork packages (now 13, incl. the
-  sandbox fork) + official-upgrade runbook (required reading before touching
-  fork packages).
+- `docs/fork-delta.md` — diff ledger of the fork packages + official-upgrade
+  runbook (required reading before touching fork packages). See the file itself
+  for the current fork count.
 - `docs/HANDOFF-2026-09-10-orchestration-unification.md` — 编排统一化交接（官方四模式 +
   指挥模式 + orchestrate 双模式 + 隔离下沉 provider 层 + 提示词英文 + 非 git 降级核查）。
 - `docs/PENDING-conductor-readonly-bash-and-progressive-research.md` — **指挥模式待办登记册
@@ -169,8 +170,8 @@
   的方案与进度记账**（已收口；见下方「最新交接」为当前入口）。方案 + 执行进度 + 未完成项记账。
   本轮：用户先审方案、拍板四条（Q1 先建安全网 / Q2 `createAgentForTask` 不动 /
   **Q3 只到文件层面、不插件化** / Q4 D3+G 不混入），然后 P0→P3 执行。
-  **交付**：`tests/harness.ts`（造服务的唯一入口，状态搬家时 fail-loud 而不是静默失真）+
-  37 条特征化测试 + `tests/fold-equivalence.spec.ts`（拿历史版本原文跑等价判据）+
+  **交付**：`packages/plugins/agent/corum-agent/tests/harness.ts`（造服务的唯一入口，状态搬家时 fail-loud 而不是静默失真）+
+  37 条特征化测试 + `packages/plugins/agent/corum-agent/tests/fold-equivalence.spec.ts`（拿历史版本原文跑等价判据）+
   `scripts/verify-refactor-guard.sh`（25 项：RPC 面冻结 / 已知地雷 / 状态表直访预算只许降 /
   不得反向依赖）。抽出 `subagent-progress` / `change-summary` / `agent-registry` / `task-lane`
   四个模块；`agent-service.ts` 2877 → **2521** 行；测试 278 → **330**；**14 张可变表现在
@@ -276,13 +277,14 @@
   ui-base first). Typecheck uses the same package filter.
 - **Two checkouts — never confuse them**: this repo is the corum fork
   (`/Users/kukucai/work/kkc-desktop`, the working tree you edit); the official
-  upstream checkout kept for comparison is `/Users/kukucai/dsh` (baseline
-  `d347e70390` = tag `dsh-v0.1.3-alpha.1`). Official package sources
+  upstream checkout kept for comparison is `/Users/kukucai/dsh` (current
+  baseline: `dsh-v0.1.5-rc.3`). Official package sources
   (`packages/core`, `packages/api/*`, `packages/client/*`, `packages/subagent/*`)
   exist **only** in the dsh checkout: under this repo such a path resolves to
   nothing, so a repo-relative lookup like `packages/core` is a **path error, not
   an empty result**. Fork sources live here under `packages/plugins/**`
-  (mapping ledger: `docs/fork-delta.md`).
+  (mapping ledger: `docs/fork-delta.md`). Set `DSH_CHECKOUT` and
+  `DSH_BASELINE_TAG` env vars when running `verify-fork-drift.sh`.
 - Fork drift guard: `./scripts/verify-fork-drift.sh` (byte-identity of fork core
   files vs the dsh checkout, corum event declaration↔allowlist both ways,
   domain-event name alignment, host emit presence). Run it after any fork or

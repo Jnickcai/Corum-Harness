@@ -160,7 +160,7 @@ const AGENT_DIMENSIONS = ['研发', '产品', '设计', '市场', '自媒体', '
  * 固定顺序、仅内置角色、仅代码层面可增（用户不设 UI 入口加通用成员）。
  * 「专用」栏 = 其余内置角色 + 用户自建预设。
  */
-const GENERAL_PRESET_IDS = ['conductor-lead', 'general-assistant', 'minimal-assistant', 'corum-dev'] as const
+const GENERAL_PRESET_IDS = ['conductor-lead', 'general-assistant', 'minimal-assistant'] as const
 
 /** 按 prompt 生成「擅长什么」摘要（取首行，去 markdown 标记）。 */
 function promptToMotto(prompt: string): string {

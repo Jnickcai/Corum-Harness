@@ -149,10 +149,8 @@ check('shipped-modules 目录解析命中', () => {
 
 const modules = shippedRoot === undefined ? [] : listShippedModules(shippedRoot)
 
-check(`随包模块恰好 ${modules.length} 个`, () => {
+check(`随包模块至少 1 个`, () => {
   assert.ok(modules.length > 0, '没有随包模块')
-  const ids = modules.map(m => m.manifest.id)
-  assert.ok(ids.includes('corum-dev'), `缺少 corum-dev 模块（现有：${ids.join(', ')}）`)
 })
 
 /* ── A. module.json 校验 ───────────────────────────────────────────── */
@@ -209,52 +207,9 @@ check('contents.hasAvatar 与 assets/avatar.png 是否存在一致', () => {
   }
 })
 
-/* ── E. corum-dev agent.json 与 builtin spec 逐字一致 ────────────────── */
-
-console.log('\nE. corum-dev agent.json 与 builtin spec 逐字一致（防提示词漂移）')
-
-const corumDev = modules.find(m => m.manifest.id === 'corum-dev')
-const builtinSpec = loadBuiltinRoleSpec('corum-dev')
-
-if (corumDev === undefined) {
-  check('corum-dev 模块存在', () => {
-    assert.fail('缺少 corum-dev 模块')
-  })
-} else if (builtinSpec === null) {
-  // 产物读不到 ⇒ 回退硬编码（逐字抄自 builtin-profiles.ts:517-529），并标记。
-  // 这条路径诚实但不理想——理想态是 builtin spec 已 export。
-  console.log('  ⚠ 无法从 corum-agent/lib/types/builtin-profiles.js 提取 BUILTIN_ROLES，回退硬编码期望值')
-  const EXPECTED = {
-    id: 'corum-dev',
-    nickname: 'Corum 开发',
-    title: 'Corum 开发工程师',
-    dimension: '研发',
-    baseMode: 'standard',
-    personaPreset: 'efficient-executor',
-    prompt: 'You are the Corum development engineer: you build the Corum Agent OS desktop app (the kkc-desktop repo) — the desktop shell and IDE UI, the plugin and session mechanism, agents and orchestration. How you work: prove which surface owns the behavior before editing → build the artifact that actually loads (tsc && tsdown && inline-css for UI packages) → verify on a real CDP instance (UI renders + behavior + zero new console errors). Read the design file doc/UXDesign/design.pen for layout, follow the repo red lines (cordis service for cross-bundle state, inject declarations, restart after host-plugin changes), and treat "it compiles" as not done.',
-  }
-  const agentJson = JSON.parse(readFileSync(join(corumDev.dir, 'agent.json'), 'utf8'))
-  for (const [key, expected] of Object.entries(EXPECTED)) {
-    check(`corum-dev agent.json.${key} 与 builtin spec 逐字一致（硬编码回退）`, () => {
-      assert.equal(agentJson[key], expected, `${key} 不一致`)
-    })
-  }
-} else {
-  // 从产物成功提取了 spec —— 逐字段对账。
-  const agentJson = JSON.parse(readFileSync(join(corumDev.dir, 'agent.json'), 'utf8'))
-  const FIELDS = ['id', 'nickname', 'title', 'dimension', 'baseMode', 'prompt']
-  for (const key of FIELDS) {
-    check(`corum-dev agent.json.${key} 与 builtin spec 逐字一致`, () => {
-      assert.equal(agentJson[key], builtinSpec[key],
-        `${key} 不一致\n  agent.json: ${String(agentJson[key]).slice(0, 80)}\n  builtin spec: ${String(builtinSpec[key]).slice(0, 80)}`)
-    })
-  }
-  // personaPreset 不在 builtin spec 里（spec 没有该字段），是任务要求里指定的，
-  // 单独断言它等于 'efficient-executor'。
-  check('corum-dev agent.json.personaPreset = efficient-executor（任务指定，非 builtin spec）', () => {
-    assert.equal(agentJson.personaPreset, 'efficient-executor')
-  })
-}
+/* ── E. corum-dev 已移到独立仓库，不再在此校验 ────────────────────────── */
+// 2026-10-14：corum-dev 预设迁移到 https://github.com/kukucaiCndy/corum-dev-preset
+// builtin spec 对账随之移除。
 
 /* ── 收尾 ─────────────────────────────────────────────────────────── */
 

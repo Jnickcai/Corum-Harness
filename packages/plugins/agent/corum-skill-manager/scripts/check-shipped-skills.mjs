@@ -158,18 +158,7 @@ check('A2b 两处并集：shipped-skills(13) + shipped-modules/corum-dev/skills(
   // shipped-skills/ 真实子目录（一层 + 含 SKILL.md）
   const inShippedSkills = readdirSync(shippedRoot)
     .filter(n => /^[a-z0-9][a-z0-9-]*$/.test(n) && existsSync(join(shippedRoot, n, 'SKILL.md')))
-  // 模块布局的技能：直接读 shipped-modules/corum-dev/skills 下的子目录名
-  const modulesSkillsDir = resolve(shippedRoot, '..', 'shipped-modules', 'corum-dev', 'skills')
-  const inModule = existsSync(modulesSkillsDir)
-    ? readdirSync(modulesSkillsDir).filter(n => /^[a-z0-9][a-z0-9-]*$/.test(n) && existsSync(join(modulesSkillsDir, n, 'SKILL.md')))
-    : []
-  // 搬走的 4 个 corum 自研技能必须在模块里
-  const moved = ['corum-cdp-verify', 'corum-dev-conventions', 'corum-official-upgrade', 'pencil-to-corum-ide']
-  assert.deepEqual([...inModule].sort(), moved, '模块内技能名单不是搬走的 4 个')
-  // 这 4 个不得再出现在 shipped-skills/（防回搬）
-  for (const name of moved) {
-    assert.ok(!inShippedSkills.includes(name), `${name} 不应同时留在 shipped-skills/（重复实体）`)
-  }
+  // 2026-10-14：corum-dev 模块已移到独立仓库，不再检查 shipped-modules/corum-dev/skills
   // 两处不重叠
   const overlap = inShippedSkills.filter(n => inModule.includes(n))
   assert.deepEqual(overlap, [], `两处技能重叠：${overlap.join(', ')}`)

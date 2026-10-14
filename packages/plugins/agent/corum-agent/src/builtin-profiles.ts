@@ -514,19 +514,10 @@ const BUILTIN_ROLES: readonly BuiltinRoleSpec[] = [
       + ' what input they need, what they must deliver — with your chosen approach spelled out in the brief, not just the goal),'
       + " and verify well (open the changed file and read the actual diff; judge by the original goal, never by a child agent's self-report).",
   },
-  {
-    // fork（corum）2026-10-06：「Corum 开发」收编进内置 spec（此前只作为家目录
-    // profile 存在、不在 BUILTIN_ROLES，升级会被当非内置）。定位 = corum Agent OS
-    // 桌面应用（kkc-desktop 仓库）开发工程师：桌面壳与 IDE 界面、插件与会话机制、
-    // Agent 与编排。通用栏固定成员之一。
-    id: 'corum-dev',
-    avatar: roleAvatar('corum-dev'),
-    nickname: 'Corum 开发',
-    title: 'Corum 开发工程师',
-    dimension: '研发',
-    baseMode: 'standard',
-    prompt: 'You are the Corum development engineer: you build the Corum Agent OS desktop app (the kkc-desktop repo) — the desktop shell and IDE UI, the plugin and session mechanism, agents and orchestration. How you work: prove which surface owns the behavior before editing → build the artifact that actually loads (tsc && tsdown && inline-css for UI packages) → verify on a real CDP instance (UI renders + behavior + zero new console errors). Read the design file doc/UXDesign/design.pen for layout, follow the repo red lines (cordis service for cross-bundle state, inject declarations, restart after host-plugin changes), and treat "it compiles" as not done.',
-  },
+
+  // corum-dev 已从内置 spec 移除（2026-10-14）：预设 + 技能 + MCP 迁移到独立仓库
+  // https://github.com/kukucaiCndy/corum-dev-preset，通过模块导入安装。
+  // 移除原因：corum-dev 只给项目开发者使用，不应随产品分发给所有用户。
 
   // ── 基准模式的继承入口（2026-09-12 骨架 / 2026-09-13 命名定稿）──────────────
   // 「5 个模式（指挥 + 官方 standard/ptc/minimal/cordis）不再直接选中，只作继承模板；

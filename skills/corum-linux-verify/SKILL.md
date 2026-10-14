@@ -58,7 +58,8 @@ ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no \
 实测同一链路：10 MB 单独传 **1.4 s**（≈7.7 MB/s）；而一条 SSH 里 `cat` 传 52 MB
 **卡在 21 MB / 10 分钟**。⇒ **>几 MB 的文件一律分块 + 逐块 SHA256 + 收尾全文件 SHA256**。
 
-- 分块传输：`scripts/chunked-push.sh <本地文件> <远程路径> [块大小]`
+- 分块传输（上行）：`scripts/chunked-push.sh <本地文件> <远程路径> [块大小]`
+- 分块传输（下行）：`scripts/chunked-pull.sh <远程文件> <本地路径> [块大小]`（chunked-push 的反向，长连接会 stall 时用）
 - 小文件（脚本、配置、产物 JS）：**base64 内联进一条 SSH** 最稳，无外部依赖
   （`remote.sh push-run` 就是这条路径）。
 - **不用 `scp`/`rsync`**：Mac 侧 rsync 是 `openrsync 2.6.9`，且 stub 传输同样会 stall。
@@ -221,9 +222,10 @@ POSIX 命令名白名单）——它们在第三个平台上**静默走样**，�
 |---|---|
 | `scripts/remote.sh` | 统一入口：`run <cmd>` / `script <file>` / `push <local> <remote>` / `push-run <local> <remote> <cmd>` |
 | `scripts/chunked-push.sh` | 分块 + 逐块校验 + 重试的文件传输（>几 MB 必用） |
+| `scripts/chunked-pull.sh` | chunked-push 的反向：从远端分块拉取（长连接 stall 时用） |
 | `scripts/bootstrap-ubuntu.sh` | 目标机幂等引导（apt 依赖 / Node / pnpm / npmrc / 校验） |
 
-三个脚本都只从**环境变量**读密码（`SSH_PW`），**不含任何凭据**。
+四个脚本都只从**环境变量**读密码（`SSH_PW`），**不含任何凭据**。
 
 ## 8. 陷阱速查（每一条都花过时间）
 

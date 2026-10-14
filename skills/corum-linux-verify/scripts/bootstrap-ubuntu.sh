@@ -7,13 +7,13 @@
 #   REPO=/opt/corum/Corum-Harness        # 仓库落地路径（默认）
 #   NODE_VER=v22.20.0                    # 须满足 engines ^22.19.0 || >=24
 #   PNPM_VER=11.7.0                      # 须与 package.json packageManager 一致
-#   DSH_REGISTRY=http://192.168.1.4:4873/  # Mac 上的 verdaccio（dsh-tools 只在私服）
+#   DSH_REGISTRY=http://127.0.0.1:4873/  # Mac 上的 verdaccio（dsh-tools 只在私服）
 set -uo pipefail
 
 REPO="${REPO:-/opt/corum/Corum-Harness}"
 NODE_VER="${NODE_VER:-v22.20.0}"
 PNPM_VER="${PNPM_VER:-11.7.0}"
-DSH_REGISTRY="${DSH_REGISTRY:-http://192.168.1.4:4873/}"
+DSH_REGISTRY="${DSH_REGISTRY:-http://127.0.0.1:4873/}"
 
 say() { printf '\n=== %s ===\n' "$*"; }
 
