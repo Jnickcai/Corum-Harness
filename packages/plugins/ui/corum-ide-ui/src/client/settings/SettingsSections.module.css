@@ -2903,7 +2903,7 @@ body[data-ds-dark-theme] .btnDeleteGhost {
 }
 .wizardSegmented {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: calc(6px * var(--corum-density-scale, 1));
 }
 .wizardSegmentRow {
@@ -2912,14 +2912,19 @@ body[data-ds-dark-theme] .btnDeleteGhost {
   gap: calc(8px * var(--corum-density-scale, 1));
 }
 .wizardSegmentBtn {
-  padding: calc(5px * var(--corum-density-scale, 1)) calc(12px * var(--corum-density-scale, 1));
-  border: none;
+  padding: calc(5px * var(--corum-density-scale, 1)) calc(14px * var(--corum-density-scale, 1));
+  border: 1px solid var(--corum-glass-border, rgba(255, 255, 255, 0.08));
   border-radius: 8px;
-  background: transparent;
+  background: var(--corum-glass-1, rgba(255, 255, 255, 0.03));
   cursor: pointer;
   font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
   font-size: calc(11px * var(--corum-ui-font-scale, 1));
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-secondary);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.wizardSegmentBtn:hover {
+  border-color: var(--dsw-alias-brand-primary, rgba(139, 92, 246, 0.4));
+  color: var(--dsw-alias-label-primary);
 }
 /* 选中 = 紫描边白底胶囊（设计稿 P5） */
 .wizardSegmentActive {
@@ -2932,6 +2937,324 @@ body[data-ds-dark-theme] .btnDeleteGhost {
   font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
   font-size: calc(10px * var(--corum-ui-font-scale, 1));
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* per-item 冲突项行的徽标（设计稿 OkYeq：名称旁「已存在」chip） */
+.wizardConflictItemName {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary);
+}
+.wizardConflictChip {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--corum-glass-2);
+  border-radius: calc(6px * var(--corum-density-scale, 1));
+  padding: calc(2px * var(--corum-density-scale, 1)) calc(7px * var(--corum-density-scale, 1));
+}
+/* 「查看详情 ▸ · N 行变更」入口按钮（设计稿 OkYeq 的 diff-toggle） */
+.diffToggleBtn {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--corum-density-scale, 1));
+  width: 100%;
+  padding: calc(4px * var(--corum-density-scale, 1)) calc(8px * var(--corum-density-scale, 1));
+  border: none;
+  border-radius: 8px;
+  background: var(--corum-glass-1);
+  cursor: pointer;
+}
+.diffToggleBtn:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--corum-glass-1));
+}
+.diffToggleArrow {
+  color: var(--dsw-alias-label-secondary);
+  flex: none;
+}
+.diffToggleLabel {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-brand-primary);
+}
+.diffToggleHint {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── diff 详情面板（设计稿 ysfAN：全屏模态 split-view）── */
+.diffPanelOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+.diffPanel {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 92vw);
+  max-height: 86vh;
+  border-radius: 14px;
+  border: 1px solid var(--corum-glass-border);
+  background: var(--corum-glass-2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+/* 标题栏 */
+.diffPanelHeader {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--corum-density-scale, 1));
+  padding: calc(12px * var(--corum-density-scale, 1)) calc(16px * var(--corum-density-scale, 1));
+  background: var(--corum-glass-1);
+}
+.diffPanelTitle {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(14px * var(--corum-ui-font-scale, 1));
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary);
+}
+.diffPanelChips {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--corum-density-scale, 1));
+}
+.diffChipExisting {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-state-success-primary);
+}
+.diffChipVs {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+.diffChipModule {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-brand-primary);
+}
+.diffPanelClose {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+  padding: calc(4px * var(--corum-density-scale, 1));
+  border-radius: 6px;
+}
+.diffPanelClose:hover {
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-primary);
+}
+/* 工具栏：文件 tab + 统计 */
+.diffToolbar {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--corum-density-scale, 1));
+  padding: calc(8px * var(--corum-density-scale, 1)) calc(16px * var(--corum-density-scale, 1));
+  background: var(--corum-glass-1);
+}
+.diffTabs {
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--corum-density-scale, 1));
+  flex: 1;
+  flex-wrap: wrap;
+}
+.diffTab {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(4px * var(--corum-density-scale, 1));
+  padding: calc(4px * var(--corum-density-scale, 1)) calc(8px * var(--corum-density-scale, 1));
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-secondary);
+}
+.diffTabActive {
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-primary);
+}
+.diffTabCount {
+  font-size: calc(9px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+.diffStat {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  flex: none;
+}
+/* 列头：左红底「现有（你本机）」/ 右绿底「模块携带」 */
+.diffColHeader {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 24px;
+  column-gap: 1px;
+  background: var(--corum-border, rgba(128, 128, 128, 0.25));
+}
+.diffColExistingHeader {
+  display: flex;
+  align-items: center;
+  padding-left: calc(10px * var(--corum-density-scale, 1));
+  background: rgba(239, 68, 68, 0.08);
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  font-weight: 700;
+  color: var(--dsw-alias-state-error-primary);
+}
+.diffColDivider {
+  background: var(--corum-glass-border);
+}
+.diffColModuleHeader {
+  display: flex;
+  align-items: center;
+  padding-left: calc(10px * var(--corum-density-scale, 1));
+  background: rgba(34, 197, 94, 0.08);
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  font-weight: 700;
+  color: var(--dsw-alias-state-success-primary);
+}
+/* 主体：可滚动 */
+.diffBody {
+  flex: 1;
+  overflow: auto;
+  padding: calc(8px * var(--corum-density-scale, 1)) 0;
+  background: var(--corum-glass-1);
+}
+.diffEmpty {
+  padding: calc(24px * var(--corum-density-scale, 1));
+  text-align: center;
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+.diffHunk {
+  display: flex;
+  flex-direction: column;
+}
+/* 折叠相同段：跨两列的折叠条 */
+.diffFolded {
+  grid-column: 1 / -1;
+  padding: calc(3px * var(--corum-density-scale, 1)) calc(12px * var(--corum-density-scale, 1));
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  background: color-mix(in srgb, var(--corum-glass-border) 30%, transparent);
+  text-align: center;
+}
+/*
+ * split 行对齐：每行一个 grid，两列（现有侧 / 模块侧）+ 中间 1px 分隔。
+ * 同一行的两个 cell 高度取较大者，占位空行（无内容）与内容行等高，
+ * 故左右两列逐行对齐。行号 gutter 固定宽度，内容 code 可换行。
+ */
+.diffSplitRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: calc(18px * var(--corum-ui-font-scale, 1));
+  column-gap: 1px;
+  background: var(--corum-border, rgba(128, 128, 128, 0.25));
+}
+.diffColExisting {
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  background: var(--corum-glass-1, rgba(255, 255, 255, 0.03));
+}
+.diffColModule {
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  background: var(--corum-glass-1, rgba(255, 255, 255, 0.03));
+}
+.diffGutter {
+  flex: none;
+  width: calc(34px * var(--corum-density-scale, 1));
+  padding: 0 calc(6px * var(--corum-density-scale, 1));
+  text-align: right;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  user-select: none;
+  white-space: nowrap;
+}
+.diffCode {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding-right: calc(8px * var(--corum-density-scale, 1));
+}
+.diffMono {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  line-height: calc(18px * var(--corum-ui-font-scale, 1));
+}
+/* 行背景：del=红、add=绿、same=灰、占位空行=浅 */
+.diffDelBg {
+  background: rgba(239, 68, 68, 0.08);
+}
+.diffAddBg {
+  background: rgba(34, 197, 94, 0.08);
+}
+.diffSameBg {
+  background: transparent;
+}
+.diffEmptyBg {
+  background: rgba(128, 128, 128, 0.04);
+}
+/* 底部：选择 + 关闭 */
+.diffPanelFooter {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--corum-density-scale, 1));
+  padding: calc(12px * var(--corum-density-scale, 1)) calc(16px * var(--corum-density-scale, 1));
+  background: var(--corum-glass-1);
+}
+.diffPanelFooterNote {
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-secondary);
+}
+.diffPanelFooterBtns {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--corum-density-scale, 1));
+}
+.diffFooterBtn {
+  padding: calc(7px * var(--corum-density-scale, 1)) calc(16px * var(--corum-density-scale, 1));
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--corum-ui-font-family, 'Inter', -apple-system, sans-serif);
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-secondary);
+}
+.diffFooterBtnActive {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+  font-weight: 600;
+}
+.diffFooterBtnActiveBrand {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--corum-glass-1, #fff);
+  font-weight: 600;
 }
 
 /* ── 完成步（设计稿 P6）── */

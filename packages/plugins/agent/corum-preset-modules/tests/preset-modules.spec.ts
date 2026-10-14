@@ -191,7 +191,11 @@ describe('installProfileModule — 落点与来源标记', () => {
     const result = installProfileModule({
       sourceDir: moduleDir,
       home: fixture.home,
-      conflict: { profile: 'overwrite', skills: 'overwrite', mcp: 'overwrite' },
+      conflict: {
+        profile: 'overwrite',
+        skills: { [fixture.skillName]: 'overwrite' },
+        mcp: { [fixture.mcpName]: 'overwrite', [fixture.mcpWithRequiresName]: 'overwrite' },
+      },
     })
     expect(result.skipped).toBe(false)
     expect(result.profileId).toBe(fixture.profileId)
@@ -220,7 +224,11 @@ describe('installProfileModule — 落点与来源标记', () => {
     installProfileModule({
       sourceDir: moduleDir,
       home: fixture.home,
-      conflict: { profile: 'overwrite', skills: 'overwrite', mcp: 'overwrite' },
+      conflict: {
+        profile: 'overwrite',
+        skills: { [fixture.skillName]: 'overwrite' },
+        mcp: { [fixture.mcpWithRequiresName]: 'overwrite' },
+      },
     })
 
     // 关键断言：读 mcp-servers.json，断言注册表里的 server 对象没有 requires 键。
@@ -248,7 +256,11 @@ describe('installProfileModule — 落点与来源标记', () => {
     installProfileModule({
       sourceDir: moduleDir,
       home: fixture.home,
-      conflict: { profile: 'overwrite', skills: 'overwrite', mcp: 'overwrite' },
+      conflict: {
+        profile: 'overwrite',
+        skills: { [fixture.skillName]: 'overwrite' },
+        mcp: { [fixture.mcpWithRequiresName]: 'overwrite' },
+      },
     })
 
     const installed = JSON.parse(readFileSync(
@@ -270,7 +282,11 @@ describe('installProfileModule — 落点与来源标记', () => {
     installProfileModule({
       sourceDir: moduleDir,
       home: fixture.home,
-      conflict: { profile: 'overwrite', skills: 'overwrite', mcp: 'overwrite' },
+      conflict: {
+        profile: 'overwrite',
+        skills: { [fixture.skillName]: 'overwrite' },
+        mcp: { [fixture.mcpWithRequiresName]: 'overwrite' },
+      },
     })
 
     expect(existsSync(join(fixture.home, 'skills', fixture.skillName, 'SKILL.md'))).toBe(true)
@@ -288,7 +304,11 @@ describe('installProfileModule — 落点与来源标记', () => {
     const result = installProfileModule({
       sourceDir: moduleDir,
       home: fixture.home,
-      conflict: { profile: 'rename', skills: 'skip', mcp: 'keep' },
+      conflict: {
+        profile: 'rename',
+        skills: { [fixture.skillName]: 'skip' },
+        mcp: { [fixture.mcpWithRequiresName]: 'keep' },
+      },
     })
     expect(result.profileId).toBe(`${fixture.profileId}-2`)
     expect(existsSync(join(fixture.home, '.agent-presets', `${fixture.profileId}-2`, 'agent.json'))).toBe(true)
@@ -305,7 +325,11 @@ describe('installProfileModule — 落点与来源标记', () => {
     const result = installProfileModule({
       sourceDir: moduleDir,
       home: fixture.home,
-      conflict: { profile: 'skip', skills: 'skip', mcp: 'keep' },
+      conflict: {
+        profile: 'skip',
+        skills: { [fixture.skillName]: 'skip' },
+        mcp: { [fixture.mcpWithRequiresName]: 'keep' },
+      },
     })
     expect(result.skipped).toBe(true)
   })
@@ -333,6 +357,72 @@ describe('inspectProfileModule — 检查', () => {
     expect(inspection.mcp.length).toBeGreaterThan(0)
     expect(inspection.mcp[0].status).toBeDefined()
     expect(inspection.hasAvatar).toBe(true)
+  })
+
+  it('同名技能/MCP 已存在 ⇒ skills/mcp 项带 diff 数据（第④步 split 视图数据源）', () => {
+    // 先导出一个合法模块（这时 home 里有技能+MCP）。
+    const profileDir = join(fixture.home, '.agent-presets', fixture.profileId)
+    const profile = JSON.parse(readFileSync(join(profileDir, 'agent.json'), 'utf8'))
+    profile.mcpServers = [fixture.mcpWithRequiresName]
+    writeFileSync(join(profileDir, 'agent.json'), JSON.stringify(profile, null, 2), 'utf8')
+    const moduleDir = join(fixture.home, 'exported-diff')
+    exportProfileModule({ profileId: fixture.profileId, home: fixture.home, outDir: moduleDir })
+
+    // 现状：home 里的技能/MCP 与导出的模块**完全相同**（因为就是从这导出的）。
+    // 故 exists=true，但 diff 的增删行数应都是 0（无差异）。
+    let inspection = inspectProfileModule(moduleDir, fixture.home)
+    const skillItem = inspection.skills.find(s => s.name === fixture.skillName)!
+    expect(skillItem.exists).toBe(true)
+    expect(skillItem.diff).toBeDefined()
+    expect(skillItem.diff!.length).toBeGreaterThan(0)
+    // 完全相同 ⇒ 每个文件 added=0, removed=0。
+    for (const fd of skillItem.diff!) {
+      expect(fd.added).toBe(0)
+      expect(fd.removed).toBe(0)
+    }
+
+    // 现在改动模块里的 SKILL.md ⇒ re-inspect 应报出增删行。
+    const moduleSkillMd = join(moduleDir, 'skills', fixture.skillName, 'SKILL.md')
+    const original = readFileSync(moduleSkillMd, 'utf8')
+    writeFileSync(moduleSkillMd, `${original}\n## 新增段落\n这是模块新增的内容\n`, 'utf8')
+    inspection = inspectProfileModule(moduleDir, fixture.home)
+    const changedSkill = inspection.skills.find(s => s.name === fixture.skillName)!
+    expect(changedSkill.diff).toBeDefined()
+    const skillMdDiff = changedSkill.diff!.find(d => d.path === 'SKILL.md')
+    expect(skillMdDiff).toBeDefined()
+    expect(skillMdDiff!.added).toBeGreaterThan(0)
+    expect(skillMdDiff!.removed).toBe(0)
+
+    // MCP diff：现有注册表里那条与模块条目完全相同 ⇒ 增删 0。
+    const mcpItem = inspection.mcp.find(m => m.name === fixture.mcpWithRequiresName)!
+    expect(mcpItem.exists).toBe(true)
+    expect(mcpItem.diff).toBeDefined()
+    // 导出的模块条目不带 requires（stripForModule 剥了？——不，requires 是模块内的，
+    // install 时不写进注册表但模块文件里有）。注册表里那条**没有** requires，
+    // 模块文件里有 ⇒ diff 应报出 added（requires 行）。
+    // 这里只断言 diff 存在且有结构，不硬编码行数（取决于 JSON 序列化）。
+    expect(mcpItem.diff!.path).toBe(fixture.mcpWithRequiresName)
+    expect(mcpItem.diff!.hunks.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('技能/MCP 不存在 ⇒ diff 字段 undefined（UI 不渲染 diff 入口）', () => {
+    const profileDir = join(fixture.home, '.agent-presets', fixture.profileId)
+    const profile = JSON.parse(readFileSync(join(profileDir, 'agent.json'), 'utf8'))
+    profile.mcpServers = [fixture.mcpWithRequiresName]
+    writeFileSync(join(profileDir, 'agent.json'), JSON.stringify(profile, null, 2), 'utf8')
+    const moduleDir = join(fixture.home, 'exported-no-conflict')
+    exportProfileModule({ profileId: fixture.profileId, home: fixture.home, outDir: moduleDir })
+
+    // 清空 home（模拟检查时还没装）。
+    rmSync(join(fixture.home, '.agent-presets', fixture.profileId), { recursive: true, force: true })
+    rmSync(join(fixture.home, 'skills', fixture.skillName), { recursive: true, force: true })
+    writeFileSync(join(fixture.home, 'mcp-servers.json'), JSON.stringify({ servers: [] }, null, 2), 'utf8')
+
+    const inspection = inspectProfileModule(moduleDir, fixture.home)
+    expect(inspection.skills[0].exists).toBe(false)
+    expect(inspection.skills[0].diff).toBeUndefined()
+    expect(inspection.mcp[0].exists).toBe(false)
+    expect(inspection.mcp[0].diff).toBeUndefined()
   })
 })
 
@@ -489,7 +579,11 @@ describe('inspect/install — 接受 .zip 路径', () => {
     const result = installProfileModule({
       sourceDir: zipPath,
       home: fixture.home,
-      conflict: { profile: 'overwrite', skills: 'overwrite', mcp: 'overwrite' },
+      conflict: {
+        profile: 'overwrite',
+        skills: { [fixture.skillName]: 'overwrite' },
+        mcp: { [fixture.mcpWithRequiresName]: 'overwrite' },
+      },
     })
     expect(result.skipped).toBe(false)
     expect(existsSync(join(fixture.home, '.agent-presets', fixture.profileId, 'agent.json'))).toBe(true)

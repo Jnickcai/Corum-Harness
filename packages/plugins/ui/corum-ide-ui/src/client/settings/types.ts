@@ -103,6 +103,50 @@ export interface ModuleSource {
   installedAt: string
 }
 
+/* ── diff 镜像（契约 §2.1 + host `diff.ts` 的 UI 侧同名结构）─────────────
+ * 第④步「查看详情」弹出的 split-view diff 面板用这些类型渲染逐行差异。
+ * 与 host 侧 `@corum/corum-preset-modules/diff.ts` 同名同结构——本仓既有约定是
+ * 「跨包类型在 UI 侧镜像」（见本文件顶部「跨包类型镜像」注释），故这里不 import
+ * 该包（它是 host 侧 agent group 纯函数库，不是本 UI 包的依赖）。
+ */
+
+/** 一行 diff 的类型（host `DiffLineKind` 的 UI 镜像）。 */
+export type DiffLineKind = 'same' | 'del' | 'add'
+
+/**
+ * split-view 里的一行（host `DiffHunkLine` 的 UI 镜像）。
+ *
+ * `leftNum`/`rightNum` 为 1-based 行号；`null` 表示该侧无对应行
+ * （`add` 行 `leftNum===null`；`del` 行 `rightNum===null`）。
+ */
+export interface DiffHunkLine {
+  readonly leftNum: number | null
+  readonly rightNum: number | null
+  readonly content: string
+  readonly kind: DiffLineKind
+}
+
+/** 一个折叠的相同段（host `DiffFolded` 的 UI 镜像）。 */
+export interface DiffFolded {
+  readonly count: number
+  readonly startLeft: number
+  readonly startRight: number
+}
+
+/** 一个差异 hunk（host `DiffHunk` 的 UI 镜像）。`folded` 在 `lines` 之前。 */
+export interface DiffHunk {
+  readonly folded?: DiffFolded
+  readonly lines: readonly DiffHunkLine[]
+}
+
+/** 一个文件的 diff 结果（host `FileDiffResult` 的 UI 镜像）。 */
+export interface FileDiffResult {
+  readonly path: string
+  readonly hunks: readonly DiffHunk[]
+  readonly added: number
+  readonly removed: number
+}
+
 /** 模块检查结果（契约 §2.1 ModuleInspection）——导入向导第 ②③④ 步的数据源。 */
 export interface ModuleInspection {
   dir: string
@@ -116,8 +160,20 @@ export interface ModuleInspection {
    * `ModuleInspection.profile`（契约 §2.1 + 本轮补的 exists/existingNickname）。
    */
   profile: { id: string; name: string; persona?: string; personaPreset?: string; duties?: string; exists: boolean; existingNickname?: string }
-  skills: readonly { name: string; exists: boolean }[]
-  mcp: readonly { name: string; exists: boolean; status: ModuleRequirementStatus }[]
+  /**
+   * 技能冲突项。
+   *
+   * `diff` 只在 `exists===true` 时有值（逐文件 `FileDiffResult[]`），是第④步
+   * 「查看详情」diff 面板的数据源；不存在时 `undefined`，UI 不渲染 diff 入口。
+   */
+  skills: readonly { name: string; exists: boolean; diff?: readonly FileDiffResult[] }[]
+  /**
+   * MCP 冲突项。
+   *
+   * `diff` 只在 `exists===true` 时有值（单个 `FileDiffResult`，对比注册表条目
+   * vs 模块里的 `mcp/<name>.json` 序列化文本）。
+   */
+  mcp: readonly { name: string; exists: boolean; status: ModuleRequirementStatus; diff?: FileDiffResult }[]
   hasAvatar: boolean
   warnings: readonly string[]
 }
@@ -126,10 +182,18 @@ export interface ModuleInspection {
 export interface InstallModuleInput {
   sourceDir: string
   home: string
+  /**
+   * 冲突策略。
+   *
+   * `profile` 仍全局一档（同名预设只有一个）。`skills`/`mcp` 改为 **per-item**
+   * ——key=技能名/MCP 服务名，值是该项的策略。取不到时安装函数按默认
+   * （skills→'skip'，mcp→'keep'）处理，故空对象 `{}` 即「全部默认」，
+   * 向后兼容旧的「全局一档」调用方。
+   */
   conflict: {
     profile: 'overwrite' | 'skip' | 'rename'
-    skills: 'skip' | 'overwrite'
-    mcp: 'keep' | 'overwrite'
+    skills: Record<string, 'skip' | 'overwrite'>
+    mcp: Record<string, 'keep' | 'overwrite'>
   }
 }
 

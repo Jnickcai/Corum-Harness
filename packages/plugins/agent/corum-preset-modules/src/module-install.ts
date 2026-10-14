@@ -23,11 +23,12 @@
  * @module @corum/corum-preset-modules/module-install
  */
 
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { resolveCorumHome } from './home.ts'
 import { unpackModuleArchive } from './module-archive.ts'
+import { diffText, type FileDiffResult } from './diff.ts'
 import { saveServer } from '@corum/corum-mcp-manager'
 import type { McpServerConfig } from '@corum/corum-mcp-manager'
 import {
@@ -70,8 +71,21 @@ export interface ModuleInspection {
     /** 已存在时那份的昵称（给人看的差异说明；不存在则无）。 */
     readonly existingNickname?: string
   }
-  readonly skills: readonly { readonly name: string; readonly exists: boolean }[]
-  readonly mcp: readonly { readonly name: string; readonly exists: boolean; readonly status: RequirementStatus }[]
+  /**
+   * 技能冲突项。
+   *
+   * `diff` 只在 `exists===true` 时有值（逐文件 `FileDiffResult[]`，对比现有技能目录
+   * vs 模块技能目录下的每个文件）；不存在时 `undefined`，UI 不渲染 diff 入口。
+   * 这是导入向导第④步「逐文件 diff split 视图」的数据源。
+   */
+  readonly skills: readonly { readonly name: string; readonly exists: boolean; readonly diff?: readonly FileDiffResult[] }[]
+  /**
+   * MCP 冲突项。
+   *
+   * `diff` 只在 `exists===true` 时有值（单个 `FileDiffResult`，对比注册表里该服务条目
+   * vs 模块里的 `mcp/<name>.json` 序列化文本）；不存在时 `undefined`。
+   */
+  readonly mcp: readonly { readonly name: string; readonly exists: boolean; readonly status: RequirementStatus; readonly diff?: FileDiffResult }[]
   readonly hasAvatar: boolean
   /** 清单 `contents` 与磁盘实况不一致时的逐条差异（导入时必须报出来）。 */
   readonly warnings: readonly string[]
@@ -81,10 +95,21 @@ export interface ModuleInspection {
 export interface InstallModuleInput {
   readonly sourceDir: string
   readonly home: string
+  /**
+   * 冲突策略。
+   *
+   * `profile` 仍全局一档（同名预设只有一个）。`skills`/`mcp` 是 **per-item**：
+   * key=技能名/MCP 服务名，值是该项的策略。取不到时安装函数按默认
+   * （skills→'skip'，mcp→'keep'）处理，故空对象 `{}` 即「全部默认」，
+   * 向后兼容旧的「全局一档」调用方（若它给空对象则与旧默认行为一致）。
+   *
+   * per-item 让用户可以「保留这个技能、覆盖那个」——配合第④步 diff 详情面板，
+   * 用户看 diff 后逐项选。这是本轮（diff split-view + per-item）的收口形态。
+   */
   readonly conflict: {
     readonly profile: 'overwrite' | 'skip' | 'rename'
-    readonly skills: 'skip' | 'overwrite'
-    readonly mcp: 'keep' | 'overwrite'
+    readonly skills: Record<string, 'skip' | 'overwrite'>
+    readonly mcp: Record<string, 'keep' | 'overwrite'>
   }
 }
 
@@ -193,10 +218,144 @@ export function inspectProfileModule(sourceDir: string, home: string): ModuleIns
   // `.zip` 来源：先解到临时目录再走原逻辑（调用方 = RPC 层不关心临时目录）。
   const { dir: effectiveDir, tmpDir } = resolveSourceDir(sourceDir)
   try {
-    return inspectProfileModuleImpl(effectiveDir, home)
+    const inspection = inspectProfileModuleImpl(effectiveDir, home)
+    // `inspection.dir` 返回**原始 sourcePath**（可能是 .zip 路径），而非临时解压目录——
+    // 临时目录在 finally 块里会被删掉，若 dir 指向它，后续 installProfileModule
+    // 拿这个 dir 当 sourceDir 会找不到 module.json（2026-10-14 zip 导入实测事故）。
+    // install 时 resolveSourceDir 会对 .zip 重新解压，对目录路径直接用。
+    return { ...inspection, dir: sourceDir }
   } finally {
     if (tmpDir !== undefined) rmSync(tmpDir, { recursive: true, force: true })
   }
+}
+
+/**
+ * 递归收集一个目录下所有**文件**的相对路径（相对该目录，POSIX 风格）。
+ *
+ * 用于技能 diff：技能目录是树形（`SKILL.md` + `scripts/*.sh` + `agents/*.yaml`），
+ * 要逐文件对比，故需先扁平化出文件列表。目录本身不计入，符号链接跳过（`statSync`
+ * 而非 `lstatSync`——技能目录里不该有链接，有就走不到这里）。
+ *
+ * @param root - 目录绝对路径。
+ * @returns 相对路径数组（如 `['SKILL.md', 'scripts/run.sh']`），空目录返回空数组。
+ */
+function collectFilesRecursive(root: string): string[] {
+  const out: string[] = []
+  const walk = (dir: string): void => {
+    let entries: string[] = []
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry)
+      let st: ReturnType<typeof statSync>
+      try {
+        st = statSync(full)
+      } catch {
+        continue
+      }
+      if (st.isDirectory()) {
+        walk(full)
+      } else if (st.isFile()) {
+        // `relative` 在 win32 用 `\`，技能文件路径用 POSIX 风格（与导出时一致）。
+        out.push(relative(root, full).split(/[\\/]/).join('/'))
+      }
+    }
+  }
+  walk(root)
+  return out
+}
+
+/**
+ * 对比现有技能目录 vs 模块技能目录，逐文件产出 `FileDiffResult[]`。
+ *
+ * 策略：
+ * - 收集两侧所有文件的**并集**（相对路径，POSIX 风格）。
+ * - 每个文件：两侧都有 ⇒ 行级 diff；仅现有侧有 ⇒ 全删（hunk 含 N 条 `del`）；
+ *   仅模块侧有 ⇒ 全增（hunk 含 N 条 `add`）。
+ * - 读文件失败（非 utf8 文本） ⇒ 跳过该文件（不产出 diff 项），避免二进制文件搞坏 diff。
+ *
+ * `path` 字段用相对路径（如 `SKILL.md`、`scripts/run.sh`），是 UI split 视图里
+ * 每个对照面板的标题。
+ *
+ * @param existingDir - 现有技能目录（`<home>/skills/<name>`）。
+ * @param moduleDir - 模块技能目录（`<sourceDir>/skills/<name>`）。
+ * @returns 逐文件 diff（两侧都无文件时返回空数组；正常情况下至少有 SKILL.md）。
+ */
+function computeSkillDiff(existingDir: string, moduleDir: string): FileDiffResult[] {
+  const existingFiles = new Set(collectFilesRecursive(existingDir))
+  const moduleFiles = new Set(collectFilesRecursive(moduleDir))
+  const allFiles = new Set<string>([...existingFiles, ...moduleFiles])
+  const results: FileDiffResult[] = []
+  // 排序保证输出稳定（SKILL.md 常排前）。
+  const sorted = Array.from(allFiles).sort()
+  for (const rel of sorted) {
+    const leftPath = join(existingDir, ...rel.split('/'))
+    const rightPath = join(moduleDir, ...rel.split('/'))
+    const left = existingFiles.has(rel) ? readTextSafe(leftPath) : undefined
+    const right = moduleFiles.has(rel) ? readTextSafe(rightPath) : undefined
+    // 两侧都读不出来（二进制/权限）⇒ 跳过，diff 不产出该项。
+    if (left === undefined && right === undefined) continue
+    const leftText = left ?? ''
+    const rightText = right ?? ''
+    const r = diffText(leftText, rightText)
+    results.push({ path: rel, hunks: r.hunks, added: r.added, removed: r.removed })
+  }
+  return results
+}
+
+/**
+ * 安全读 utf8 文本文件：失败返回 `undefined`（不抛异常）。
+ *
+ * 技能/MCP 内容应全是文本；遇到二进制（PNG 等）或权限问题 ⇒ 返回 undefined，
+ * 让调用方跳过该文件的 diff，避免一个坏文件搞垮整个检查。
+ */
+function readTextSafe(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 对比注册表里某个 MCP 服务条目 vs 模块里的 `mcp/<name>.json`，产出单个 `FileDiffResult`。
+ *
+ * MCP 是单个 JSON 配置，故 diff 整个 JSON 序列化文本（2-space 缩进，与 `saveServer` 落盘
+ * 形态一致）。`path` 字段用服务名（UI 据此标对照面板）。
+ *
+ * 现有侧从注册表里按 `name` 找出那一条，序列化成文本；模块侧直接读条目文件文本。
+ * 找不到现有条目（理论上 `exists===true` 时不会发生）⇒ 现有侧为空，diff 全增。
+ *
+ * @param homeRoot - CORUM_HOME 根（`mcp-servers.json` 所在）。
+ * @param moduleEntryPath - 模块里 `mcp/<name>.json` 的绝对路径。
+ * @param name - MCP 服务名（diff.path 用）。
+ * @returns 文件 diff 结果。
+ */
+function computeMcpDiff(homeRoot: string, moduleEntryPath: string, name: string): FileDiffResult {
+  // 现有侧：从注册表里找出同名条目，序列化成文本。
+  let leftText = ''
+  const registryPath = join(homeRoot, 'mcp-servers.json')
+  if (existsSync(registryPath)) {
+    try {
+      const reg = JSON.parse(readFileSync(registryPath, 'utf8')) as { servers?: unknown[] }
+      if (Array.isArray(reg.servers)) {
+        const found = reg.servers.find((s): s is Record<string, unknown> =>
+          typeof s === 'object' && s !== null && (s as { name?: unknown }).name === name)
+        if (found !== undefined) {
+          leftText = `${JSON.stringify(found, null, 2)}\n`
+        }
+      }
+    } catch {
+      // 注册表坏掉 ⇒ 现有侧为空（diff 全增）。
+    }
+  }
+  // 模块侧：直接读条目文件文本（保持原始格式，不做重序列化）。
+  const rightText = readTextSafe(moduleEntryPath) ?? ''
+  const r = diffText(leftText, rightText)
+  return { path: name, hunks: r.hunks, added: r.added, removed: r.removed }
 }
 
 /** inspect 的实际实现（effectiveDir 已是解包后的目录或原始目录）。 */
@@ -232,20 +391,26 @@ function inspectProfileModuleImpl(sourceDir: string, home: string): ModuleInspec
     ...(existingNickname !== undefined ? { existingNickname } : {}),
   }
 
-  // 技能：清单声明的 vs 磁盘实况。
+  // 技能：清单声明的 vs 磁盘实况。当 exists=true 时附带逐文件 diff（第④步 split 视图数据源）。
   const skillsRoot = join(homeRoot, 'skills')
   const skills = manifest.contents.skills.map(name => {
-    const exists = existsSync(join(skillsRoot, name))
+    const existingSkillDir = join(skillsRoot, name)
+    const exists = existsSync(existingSkillDir)
     // 清单声明了技能但模块目录里没有实体 ⇒ 逐条差异。
     const moduleSkillDir = join(sourceDir, MODULE_SKILLS_DIR, name)
     if (!existsSync(moduleSkillDir)) {
       warnings.push(`清单声明技能 "${name}" 但模块目录里没有实体`)
     }
-    return { name, exists }
+    // 仅当同名已存在（冲突）时才算 diff；否则 undefined，UI 不渲染 diff 入口。
+    let diff: readonly FileDiffResult[] | undefined
+    if (exists && existsSync(moduleSkillDir)) {
+      diff = computeSkillDiff(existingSkillDir, moduleSkillDir)
+    }
+    return { name, exists, ...(diff !== undefined ? { diff } : {}) }
   })
 
-  // MCP：第①层探测 + 磁盘实况（注册表里是否已有同名服务）。
-  const mcpEntries: { name: string; exists: boolean; status: RequirementStatus }[] = []
+  // MCP：第①层探测 + 磁盘实况（注册表里是否已有同名服务）。当 exists=true 时附带 diff。
+  const mcpEntries: { name: string; exists: boolean; status: RequirementStatus; diff?: FileDiffResult }[] = []
   for (const name of manifest.contents.mcp) {
     const entry = loadMcpEntry(sourceDir, name)
     if (entry === undefined) {
@@ -273,7 +438,13 @@ function inspectProfileModuleImpl(sourceDir: string, home: string): ModuleInspec
         // 注册表坏掉不阻断检查（导入时按「不存在」处理，导入会新建）。
       }
     }
-    mcpEntries.push({ name, exists: registryExists, status })
+    // 仅当同名已存在（冲突）时才算 diff；否则 undefined。
+    let diff: FileDiffResult | undefined
+    if (registryExists) {
+      const moduleEntryPath = join(sourceDir, MODULE_MCP_DIR, `${name}.json`)
+      diff = computeMcpDiff(homeRoot, moduleEntryPath, name)
+    }
+    mcpEntries.push({ name, exists: registryExists, status, ...(diff !== undefined ? { diff } : {}) })
   }
 
   // 头像。
@@ -364,7 +535,10 @@ function installProfileModuleImpl(input: InstallModuleInput): InstallModuleResul
     }
     const dest = join(skillsRoot, name)
     if (existsSync(dest)) {
-      if (input.conflict.skills === 'skip') {
+      // per-item：取不到默认 'skip'（向后兼容——旧的全局一档调用方给空对象
+      // {} 时，每项都走默认 skip，与旧行为一致）。
+      const skillStrategy = input.conflict.skills[name] ?? 'skip'
+      if (skillStrategy === 'skip') {
         skippedSkills.push(name)
         continue
       }
@@ -397,7 +571,10 @@ function installProfileModuleImpl(input: InstallModuleInput): InstallModuleResul
         // 注册表坏掉 ⇒ 按不存在处理（saveServer 会新建一份）。
       }
     }
-    if (registryHas && input.conflict.mcp === 'keep') {
+    // per-item：取不到默认 'keep'（向后兼容——旧的全局一档调用方给空对象 {}
+    // 时，每项都走默认 keep，与旧行为一致）。
+    const mcpStrategy = input.conflict.mcp[name] ?? 'keep'
+    if (registryHas && mcpStrategy === 'keep') {
       mcpKept.push(name)
       continue
     }

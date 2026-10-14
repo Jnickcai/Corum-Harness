@@ -67,11 +67,18 @@ describe('导入向导 — 状态机门禁（行为规格 §2）', () => {
     expect(WIZARD).toContain('testMcp')
   })
 
-  it('第 ④ 步默认值 = 设计稿选中的那个（profile=skip, skills=skip, mcp=keep）', () => {
-    // 行为规格 §4：三组默认值必须与设计稿一致。
+  it('第 ④ 步默认值 = 设计稿选中的那个（profile=skip；per-item skills/mcp 默认 skip/keep）', () => {
+    // 行为规格 §4：默认值必须与设计稿一致。
+    // per-item 改造后（本轮）：DEFAULT_CONFLICT 的 skills/mcp 是空对象 {}（全部走默认），
+    // 「默认值」本身落到安装函数的 `?? 'skip'` / `?? 'keep'` 回退里。故同时断言：
+    //   ① DEFAULT_CONFLICT 仍 profile: 'skip'；
+    //   ② 回退默认 skills→'skip'、mcp→'keep' 仍在源码里（安装逻辑靠它向后兼容）。
     expect(WIZARD).toContain("profile: 'skip'")
-    expect(WIZARD).toContain("skills: 'skip'")
-    expect(WIZARD).toContain("mcp: 'keep'")
+    expect(WIZARD).toContain("skills: {}")
+    expect(WIZARD).toContain("mcp: {}")
+    // per-item 回退默认（取不到时）：skills→'skip'、mcp→'keep'。
+    expect(WIZARD).toContain("?? 'skip'")
+    expect(WIZARD).toContain("?? 'keep'")
   })
 })
 
