@@ -198,15 +198,18 @@ export function toView(
  * 合并裁决（recency-wins with explicit invalidation）：写入新事实时，若它与
  * 某条已存在的「同 entity + 同 relation」**且当前适用**的事实冲突，旧事实应被
  * 标 invalidAt（失效），并把新事实的 supersedes 指向旧事实 id——不物理删除。
+ *
+ * ⚠️ 2026-09-22「移除项目记忆」后记忆只归属 Agent，不再按 scope 区分冲突域；
+ *    冲突判定退化为纯 `entity + relation` 匹配（同前）。旧 fact 里残留的 `scope`
+ *    字段被 schema 忽略，不影响判定。
  */
 export function conflictsToInvalidate(
-  incoming: Pick<MemoryFact, 'entity' | 'relation' | 'scope'>,
+  incoming: Pick<MemoryFact, 'entity' | 'relation'>,
   existing: readonly MemoryFact[],
   now: number = Date.now(),
 ): MemoryFact[] {
   if (incoming.entity === '' && incoming.relation === '') return []
   return existing.filter(f =>
-    f.scope === incoming.scope &&
     f.entity === incoming.entity &&
     f.relation === incoming.relation &&
     isApplicable(f, now),

@@ -1,18 +1,16 @@
 /**
- * @corum/corum-memory client half —— 在设置中心「记忆」分组注册**三个** section。
+ * @corum/corum-memory client half —— 在设置中心「记忆」分组注册**两个** section。
  *
- * ## 导航结构（用户 2026-09-21 裁定）
+ * ## 导航结构（2026-09-22 用户裁定「移除项目记忆」后的收敛态）
  *
- * > 「我建议直接将记忆单独列一个项，放在智能体下方，将全局设置、智能体记忆、项目记忆
- * > 这些 section 放进去。」
- *
- * 故「记忆」是**独立的导航分组**（紧邻「智能体」下方），组内三项：
+ * 经验归属 Agent（人），事务归属项目——单一归宿，不两头记账。故「项目记忆」
+ * section 已删除，记忆维度收敛为 Agent 单一维度。导航「记忆」独立分组（紧邻
+ * 「智能体」下方），组内两项：
  *
  * ```
  * 设置 › 记忆
  *   ├─ 全局设置     （id 'memory-settings'，order 60）—— 全局策略
- *   ├─ 智能体记忆   （id 'memory-agent'，   order 61）—— Agent 列表 → 三维记忆空间
- *   └─ 项目记忆     （id 'memory-project'， order 62）—— scope='project' 库
+ *   └─ 智能体记忆   （id 'memory-agent'，   order 61）—— Agent 列表 → 三维记忆空间
  * ```
  *
  * **「智能体记忆」是两步流程**（用户 2026-09-21 裁定：「先有个 Agent 列表，列出已经
@@ -24,15 +22,12 @@
  *        └────────────────  ‹ Agent 列表  ────────────────────┘
  * ```
  *
- * 「项目记忆」仍是**平铺的库视图**（MemoryLibrary）：项目没有「一个项目一个空间」的分层
- * 需求强度——它更像一张表。两者共用同一套后端与操作，差别只在展现。若将来项目也需要
- * 空间视图，{@link MemorySpace} 只需多传一个 `projectId`。
+ * ⚠️ **记忆只归属 Agent**（2026-09-22 裁定）：`scope` / `projectId` 字段已从底座
+ * 删除，记忆维度不再分 agent / project。旧存储里残留的 `scope='project'` fact 是
+ * 无害孤儿（schema 忽略、检索不取值），不专门清理。
  *
- * ⚠️ **记忆维度只有 Agent 和项目**（同一次裁定：「不做全局记忆」）——底座 `scope`
- * 枚举里的 `global` 已删除，曾有过的 `memory-store` 单页（内含三库 Tab）也随之拆开。
- *
- * 分组归属由壳的 `NAV_GROUP_BY_ID` 决定（`memory-settings` / `memory-agent` /
- * `memory-project` → `'memory'`）——壳侧已同步声明 `group.memory` 组标题（中/英）。
+ * 分组归属由壳的 `NAV_GROUP_BY_ID` 决定（`memory-settings` / `memory-agent`
+ * → `'memory'`）——壳侧已同步声明 `group.memory` 组标题（中/英）。
  *
  * ## 数据通路
  *
@@ -55,10 +50,9 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { MemorySettingsPage } from './MemorySettingsPage.tsx'
 import type { MemoryCall, MemorySettingsFace } from './MemorySettingsPage.tsx'
-import { MemoryLibrary } from './MemoryLibrary.tsx'
 import { MemoryAgentList } from './MemoryAgentList.tsx'
 import type { AgentSummary } from './MemoryAgentList.tsx'
 import { MemorySpace } from './MemorySpace.tsx'
@@ -83,11 +77,6 @@ function makeCall(connection: ConnectionHandle): MemoryCall {
     return result.value as T
   }
 }
-
-/** corum Agent profile 列表端点（取 agentId → 展示名）。 */
-type ProfilesReply = { profiles: Array<{ id: string; nickname?: string; title?: string }> }
-/** corum 项目列表端点（取 projectId → 展示名）。 */
-type ProjectsReply = { projects: Array<{ id: string; name?: string }> }
 
 /**
  * 「记忆 › 全局设置」的 React 包装。
@@ -125,54 +114,6 @@ function AgentSectionHost({ call }: { call: MemoryCall }) {
   )
 }
 
-/**
- * 「记忆 › 项目记忆」的 React 包装：额外拉 Agent / 项目名册，把归属 id 显示成人能读的名字。
- *
- * 为什么在这里拉而不是在记忆 RPC 里 join：底座**不认识** Agent / 项目（它只知道
- * `agentId` / `projectId` 字符串，这是刻意的解耦——底座不绑定任何来源）。名字映射
- * 属于展现层，故由 client 侧用 corum 自己的两个端点拼。
- *
- * ⚠️ 与「智能体记忆」各自拉一次名册（两个 React 实例），这是**有意的**：名册是廉价的
- * 本地索引读取，而为共享它引入一个跨 section 的缓存服务，收益不抵复杂度（红线 1
- * 的教训是「别用模块级单例做跨 bundle 共享」，不是「别重复读一次本地索引」）。
- *
- * @param props.call - host RPC（同一个 call 面，换 service 名）。
- * @returns 项目维度的记忆库页。
- */
-function ProjectSectionHost({ call }: { call: MemoryCall }) {
-  const [profileNames, setProfileNames] = useState<Record<string, string>>({})
-  const [projectNames, setProjectNames] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      // 名册拉不到不是致命错误——回落显示 id（记忆库必须仍然可用）。
-      const [profiles, projects] = await Promise.all([
-        call<ProfilesReply>('corumAgent', 'listProfiles', {}).catch(() => ({ profiles: [] })),
-        call<ProjectsReply>('corumProject', 'listProjects', {}).catch(() => ({ projects: [] })),
-      ])
-      if (!alive) return
-      const pm: Record<string, string> = {}
-      for (const p of profiles.profiles ?? []) pm[p.id] = p.nickname ?? p.title ?? p.id
-      const jm: Record<string, string> = {}
-      for (const p of projects.projects ?? []) jm[p.id] = p.name ?? p.id
-      setProfileNames(pm)
-      setProjectNames(jm)
-    }
-    void load()
-    return () => { alive = false }
-  }, [call])
-
-  return (
-    <MemoryLibrary
-      scope="project"
-      call={call}
-      profileNames={profileNames}
-      projectNames={projectNames}
-    />
-  )
-}
-
 export const inject = ['slots', 'connection', 'remote', 'settingsScope']
 
 export function apply(ctx: ClientContext): void {
@@ -200,11 +141,4 @@ export function apply(ctx: ClientContext): void {
     order: 61,
     label: '智能体记忆',
   }, () => <AgentSectionHost call={call} />))
-
-  slots.inject('settings.section', () => slots.register({
-    name: 'settings.section',
-    id: 'memory-project',
-    order: 62,
-    label: '项目记忆',
-  }, () => <ProjectSectionHost call={call} />))
 }

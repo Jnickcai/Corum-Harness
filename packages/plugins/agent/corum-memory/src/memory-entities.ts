@@ -4,10 +4,24 @@
  * 设计（讨论定稿）：
  *   - 最小单元是「事实」而非消息/文档：一条带元数据的原子断言。
  *   - 存储复用官方 dsh-storage-domain（defineDomain + domainTable），零 fork。
- *   - 单一域 `corum_memory`、单表 `facts`，key = factId；scope 字段区分
- *     agent / project 两个维度，检索时按 scope + 归属过滤。
+ *   - 单一域 `corum_memory`、单表 `facts`，key = factId；记忆归属 Agent，
+ *     按 agentId 过滤。
  *   - 「记什么」由写入方决定（schema 只是容器形状，不绑定领域）；底座只承载
  *     「组织形式」。
+ *
+ * ## 记忆维度收敛（2026-09-22 用户裁定「移除项目记忆」）
+ *
+ * > 「项目的经验最终沉淀到 Agent 的记忆中，而不是项目中……经验归属 Agent（人），
+ * > 事务归属项目——单一归宿，不两头记账。」
+ *
+ * 据此**删除**了两个维度：
+ *   - `scope` 字段：曾区分 `'agent' | 'project'`，project 维度移除后已无区分
+ *     意义，整字段删除（见方案 §9.7 / §6）。
+ *   - `projectId` 字段：归属项目的 id，随 project 维度一并删除；记忆只归属 Agent。
+ *
+ * ⚠️ 旧存储里若仍残留 `scope='project'` 的 fact，那是**无害孤儿**：`scope` /
+ * `projectId` 字段已被 schema 忽略（zod 解析时不报错、读时不取值），不会影响
+ * agent 维度的检索与排序。本轮不做删表（需清用户数据，危险）。
  *
  * **存续期（retention）** —— 一等落库字段，四档，决定记忆**本身**存多久：
  *   - temporary（临时，1~3 天）/ short（短期，3 个月）/ long（长期，半年以上）
@@ -27,21 +41,6 @@
 
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-
-/**
- * 记忆维度（**只有两个**，用户 2026-09-21 裁定「不做全局记忆，记忆维度只有 Agent
- * 和项目」）：
- *   - `agent`：跟着 Agent 走——同一 Agent 跨会话、跨项目共享自己的经验；
- *   - `project`：跟着项目走——每个项目有自己的记忆库，参与该项目的 Agent 都能读到。
- *
- * ⚠️ **曾有第三个值 `global`，已删除**（同一次裁定）。删除依据两条：
- *   ① 用户口径明确「只有 Agent 和项目」；
- *   ② 全仓零写入方、零存量数据（`u_corum_memory_facts` 表在三个 home 里都不存在）⇒
- *      删除无迁移成本。若将来要恢复，必须同时给出「谁写 global」的答案——留一个
- *      没有写入方的维度只会产出一个永远空的 Tab。
- */
-export const memoryScopeSchema = z.enum(['agent', 'project'])
-export type MemoryScope = z.infer<typeof memoryScopeSchema>
 
 /** 记忆存续期（retention）四档：决定记忆**本身**存多久。 */
 export const memoryRetentionSchema = z.enum(['temporary', 'short', 'long', 'permanent'])
@@ -63,15 +62,9 @@ export type MemoryRetention = z.infer<typeof memoryRetentionSchema>
  *   - expiresAt：记忆**本身**消亡时刻（epoch ms）；permanent 为 null（永不）。
  *   - readCount：被检索命中的累计次数，达阈值触发持久化升级（→ long）。
  *   - supersedes：本条事实显式取代的旧事实 id（recency-wins 合并的数据基础）。
- *   - scope：记忆**归属的库**（agent = 跟着 Agent 走 / project = 跟着项目走）。
- *     只有两个维度（2026-09-21 用户裁定：不做全局记忆）。
  *   - agentId：归属 Agent 的 profile id。用户口径「每个 Agent 有自己的记忆，可带到
- *     不同工作场景（项目）中」——同一 Agent 跨会话、跨项目共享自己的记忆。
- *   - projectId：归属项目的 id。用户口径「每个项目有自己的记忆库，不同的 Agent 可以
- *     访问」。
- *     ⚠️ 二者**正交**：`scope='agent'` 的事实带 agentId（不带 projectId = 跨项目通用）；
- *     `scope='project'` 的事实带 projectId（可同时带 agentId =「某 Agent 在这个项目里
- *     学到的」）。空串 = 未归属，检索时按「不按该维度过滤」处理。
+ *     不同工作场景（项目）中」——同一 Agent 跨会话、跨项目共享自己的经验。
+ *     空串 = 未归属，检索时按「不按归属过滤」处理。
  *   - evidence：证据链（会话 id / 文件路径 / 人工录入出处），支持「回到原文」。
  *   - author：写入者（'user' | 'system' | 'agent:<sessionId>'）；author='user'
  *     即「手动添加」→ 持久化判定规则 3（→ long）。
@@ -86,9 +79,7 @@ export const memoryFactSchema = z.object({
   validAt: z.number().int().nonnegative().nullable().default(null),
   invalidAt: z.number().int().nonnegative().nullable().default(null),
   source: z.string().default(''),
-  scope: memoryScopeSchema,
   agentId: z.string().default(''),
-  projectId: z.string().default(''),
   retention: memoryRetentionSchema.default('temporary'),
   expiresAt: z.number().int().nonnegative().nullable().default(null),
   readCount: z.number().int().nonnegative().default(0),
@@ -100,7 +91,7 @@ export const memoryFactSchema = z.object({
 })
 export type MemoryFact = z.infer<typeof memoryFactSchema>
 
-/** 事实表：key = factId（裸 id，无前缀——域已按 scope 检索，不需复合键）。 */
+/** 事实表：key = factId（裸 id，无前缀）。 */
 export function memoryTables() {
   return {
     facts: domainTable<string, MemoryFact>(memoryFactSchema),

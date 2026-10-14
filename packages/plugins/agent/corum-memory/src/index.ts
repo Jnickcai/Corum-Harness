@@ -27,7 +27,7 @@ export type {
   MemoryFacet,
 } from './memory-service.ts'
 export { memoryDomainSpec, memoryFactSchema } from './memory-entities.ts'
-export type { MemoryFact, MemoryFactView, MemoryRetention, MemoryScope } from './memory-entities.ts'
+export type { MemoryFact, MemoryFactView, MemoryRetention } from './memory-entities.ts'
 export {
   expiresAtFor,
   resolveRetentionOnWrite,

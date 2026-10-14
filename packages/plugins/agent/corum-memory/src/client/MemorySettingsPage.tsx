@@ -4,18 +4,16 @@
  * ## 页面职责
  *
  * 记忆底座的**全局策略**（与「哪条记忆」无关）：机制开关、沉淀与存续、注入策略、清理。
- * 导航结构（2026-09-21 用户裁定「将记忆单独列一个项，放在智能体下方，将全局设置、
- * 智能体记忆、项目记忆这些 section 放进去」）：
+ * 导航结构（2026-09-22 用户裁定「移除项目记忆」后，记忆维度收敛为 Agent 单一维度）：
  *
  * ```
  * 设置 › 记忆（独立分组，紧邻「智能体」下方）
- *   ├─ 全局设置（本页）—— 全局策略，对两个维度都生效
- *   ├─ 智能体记忆      —— scope='agent' 库（见 MemoryLibrary）
- *   └─ 项目记忆        —— scope='project' 库（见 MemoryLibrary）
+ *   ├─ 全局设置（本页）—— 全局策略
+ *   └─ 智能体记忆      —— Agent 记忆空间（见 MemorySpace）
  * ```
  *
- * ⚠️ **记忆维度只有 Agent 和项目**（同一次裁定：「不做全局记忆」）——底座 `scope`
- * 枚举已删掉 `global`，本页不再有「全局库」的说法。
+ * ⚠️ **记忆只归属 Agent**（2026-09-22 裁定）：`scope` / `projectId` 字段已从底座
+ * 删除，「项目记忆」section 已移除。
  *
  * ## 诚实性纪律（PRD §6.1）
  *
@@ -234,12 +232,12 @@ export function MemorySettingsPage({ settings, call }: { settings: MemorySetting
       <GroupCard title="记忆机制">
         <Row control={<Toggle checked={resolved.enabled} disabled={disabled} onChange={v => void write('enabled', v)} />}>
           <RowLabel>启用记忆{overridden('enabled') && <Badge tone="brand">已修改</Badge>}</RowLabel>
-          <RowDesc>总开关。关闭后不再自动沉淀、检索不召回，但已有记忆保留（可在「智能体记忆 / 项目记忆」页修剪或清空）。</RowDesc>
+          <RowDesc>总开关。关闭后不再自动沉淀、检索不召回，但已有记忆保留（可在「智能体记忆」页修剪或清空）。</RowDesc>
         </Row>
         <Divider />
         <Row control={<Hint>事实级存储 · corum_memory</Hint>}>
           <RowLabel>存储</RowLabel>
-          <RowDesc>单域单表（facts），复用官方存储层；每条记忆都有归属（Agent 或项目）与两个正交的时间（断言窗口 / 存续期）。</RowDesc>
+          <RowDesc>单域单表（facts），复用官方存储层；每条记忆都有归属（Agent）与两个正交的时间（断言窗口 / 存续期）。</RowDesc>
         </Row>
         <Divider />
         <Row control={

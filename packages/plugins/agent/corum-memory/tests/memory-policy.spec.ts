@@ -36,7 +36,6 @@ function base(overrides: Partial<MemoryFact> = {}): MemoryFact {
     validAt: NOW - 10 * 24 * 60 * 60 * 1000, // 10 天前成立
     invalidAt: null,
     source: 'test',
-    scope: 'project',
     retention: 'temporary',
     expiresAt: null,
     readCount: 0,
@@ -189,17 +188,17 @@ describe('scoreMatch 多策略匹配打分', () => {
 })
 
 describe('conflictsToInvalidate 合并失效候选', () => {
-  it('同 scope+entity+relation 且当前 applicable 的事实是冲突候选', () => {
+  it('同 entity+relation 且当前 applicable 的事实是冲突候选', () => {
     const existing = [base(), base({ id: 'f2', entity: 'other' }), base({ id: 'f3', invalidAt: NOW - 1 })]
-    const candidates = conflictsToInvalidate({ entity: 'corum-memory', relation: 'uses', scope: 'project' }, existing, NOW)
+    const candidates = conflictsToInvalidate({ entity: 'corum-memory', relation: 'uses' }, existing, NOW)
     expect(candidates.map(f => f.id)).toEqual(['f1'])
   })
   it('已到期（不 applicable）的旧事实不再参与冲突判定', () => {
     const existing = [base({ id: 'f3', invalidAt: NOW - 1 })]
-    expect(conflictsToInvalidate({ entity: 'corum-memory', relation: 'uses', scope: 'project' }, existing, NOW)).toEqual([])
+    expect(conflictsToInvalidate({ entity: 'corum-memory', relation: 'uses' }, existing, NOW)).toEqual([])
   })
   it('entity 和 relation 都为空时不判冲突（事实自成实体）', () => {
     const existing = [base({ entity: '', relation: '' })]
-    expect(conflictsToInvalidate({ entity: '', relation: '', scope: 'project' }, existing, NOW)).toEqual([])
+    expect(conflictsToInvalidate({ entity: '', relation: '' }, existing, NOW)).toEqual([])
   })
 })

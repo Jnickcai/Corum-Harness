@@ -1,26 +1,22 @@
 /**
- * 记忆库产品页（**按维度**的通用实现）—— 供「智能体记忆」与「项目记忆」两个 section 复用。
+ * 记忆库产品页（Agent 维度）—— 智能体记忆的平铺库视图。
  *
  * ## 页面职责
  *
- * 用户 2026-09-21 裁定：记忆维度**只有 Agent 和项目**（不做全局记忆），导航里
- * 「记忆」自成一组，含「全局设置 / 智能体记忆 / 项目记忆」三项。本组件就是后两项的
- * 实现——`scope` 由 section 注入，页内**不再是 Tab**（维度已经在导航里选了）。
+ * 2026-09-22 用户裁定「移除项目记忆」：经验归属 Agent（人），事务归属项目——
+ * 单一归宿。记忆维度收敛为 Agent 单一维度，`scope` / `projectId` 字段已从底座
+ * 删除。本组件不再按维度区分，`scope` prop 与 `projectNames` prop 已移除。
  *
  * ```
- * 记忆 › 智能体记忆（scope='agent'）
+ * 记忆 › 智能体记忆
  *   └─ 归属 chip 行     ← 该库「属于哪个 Agent」的分布 + 过滤
  *   └─ 列表（搜索 + 存续期/重要性过滤 + 单条操作）
  *   └─ 手动添加（带归属选择）
- *   └─ 危险操作（清空本维度）
- * 记忆 › 项目记忆（scope='project'）—— 同上，「归属」维度换成项目
+ *   └─ 危险操作（清空）
  * ```
  *
- * ## 为什么归属性要单独过滤
- *
- * `scope` 是「记忆跟着谁走」（存储归属），`agentId` / `projectId` 是「这条是谁的」
- * （内容归属）。同一个 `scope='agent'` 库里会有多个 Agent 的记忆、同一个
- * `scope='project'` 库里会有多个项目的记忆 ⇒ 必须能按归属收窄，否则记忆一多就没法看。
+ * ⚠️ 本组件在「移除项目记忆」后目前无挂载点（智能体记忆走 MemorySpace 三维空间），
+ * 保留作为平铺库视图的实现，便于后续复用。
  *
  * ## 诚实性纪律（PRD §6.1）
  *
@@ -39,8 +35,6 @@ import type { MemoryCall } from './MemorySettingsPage.tsx'
 
 /* ── host 同形投影类型 ─────────────────────────────────────────────── */
 
-/** 记忆维度（与底座 `memoryScopeSchema` 同形；**只有两个**）。 */
-export type MemoryScope = 'agent' | 'project'
 type MemoryRetention = 'temporary' | 'short' | 'long' | 'permanent'
 
 /** host `MemoryFactView` 的同形投影。 */
@@ -53,9 +47,7 @@ interface FactView {
   validAt: number | null
   invalidAt: number | null
   source: string
-  scope: MemoryScope
   agentId: string
-  projectId: string
   retention: MemoryRetention
   expiresAt: number | null
   readCount: number
@@ -110,53 +102,22 @@ const ADD_RETENTION = [
 /** 归属下拉的「自定义…」哨兵值（与任何真实 id 都不冲突，因为 id 不含该串）。 */
 const CUSTOM = '__custom__'
 
-/** 每个维度的文案（把「记忆跟谁走」讲清楚）。 */
-const SCOPE_COPY: Record<MemoryScope, {
-  /** 导航/标题里的维度名。 */
-  dimension: string
-  /** 一句话说明「这个库是什么」。 */
-  libraryDesc: string
-  /** 归属选择器的标签。 */
-  ownerLabel: string
-  /** 归属选择器的说明。 */
-  ownerDesc: string
-  /** 归属 id 的占位（自定义手输时）。 */
-  ownerPlaceholder: string
-}> = {
-  agent: {
-    dimension: 'Agent',
-    libraryDesc: '跟着 Agent 走：同一 Agent 跨会话、跨项目共享自己的经验。',
-    ownerLabel: '归属 Agent',
-    ownerDesc: '这条记忆跟着哪个 Agent 走（它跨会话、跨项目都能取到）。选「自定义…」可手输 id。',
-    ownerPlaceholder: 'Agent id',
-  },
-  project: {
-    dimension: '项目',
-    libraryDesc: '跟着项目走：每个项目有自己的记忆库，参与该项目的 Agent 都能读到。',
-    ownerLabel: '归属项目',
-    ownerDesc: '这条记忆属于哪个项目（参与该项目的 Agent 都能读到）。选「自定义…」可手输 id。',
-    ownerPlaceholder: '项目 id',
-  },
-}
+/** 一句话说明「这个库是什么」。 */
+const LIBRARY_DESC = '跟着 Agent 走：同一 Agent 跨会话、跨项目共享自己的经验。'
 
 /* ── 页面 ─────────────────────────────────────────────────────────── */
 
 /**
- * 某个维度的记忆库页。
+ * 智能体记忆库页（平铺列表视图）。
  *
- * @param props.scope - 维度（由 section 注入：'agent' = 智能体记忆；'project' = 项目记忆）。
  * @param props.call - host RPC（/api/memory/*）。
  * @param props.profileNames - agentId → 展示名（从 corumAgent/listProfiles 取；取不到回落 id）。
- * @param props.projectNames - projectId → 展示名（从 corumProject/listProjects 取）。
  * @returns 记忆库页节点。
  */
-export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
-  scope: MemoryScope
+export function MemoryLibrary({ call, profileNames }: {
   call: MemoryCall
   profileNames: Record<string, string>
-  projectNames: Record<string, string>
 }) {
-  const copy = SCOPE_COPY[scope]
   /** 归属过滤：'' = 全部（不按归属过滤）。 */
   const [owner, setOwner] = useState<string>('')
   const [query, setQuery] = useState('')
@@ -170,23 +131,18 @@ export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
 
   const nameOf = useCallback((id: string): string => {
     if (id === '') return '未归属'
-    return (scope === 'agent' ? profileNames[id] : projectNames[id]) ?? id
-  }, [scope, profileNames, projectNames])
+    return profileNames[id] ?? id
+  }, [profileNames])
 
   const reload = useCallback(async () => {
     setError(null)
     try {
-      const filter: Record<string, unknown> = { scope }
-      if (owner !== '') {
-        if (scope === 'agent') filter.agentId = owner
-        else filter.projectId = owner
-      }
+      const filter: Record<string, unknown> = {}
+      if (owner !== '') filter.agentId = owner
       const [list, facets] = await Promise.all([
         // SRC 信封：`listFactsRemote(input)` ⇒ wire 名 `input`。
         call<FactView[], { input: Record<string, unknown> }>('memory', 'listFacts', { input: filter }),
-        call<Facet[], { dimension: string; filter: Record<string, unknown> }>('memory', 'listFacets', {
-          dimension: scope, filter: { scope },
-        }),
+        call<Facet[], { filter: Record<string, unknown> }>('memory', 'listFacets', { filter }),
       ])
       setFacts(list)
       setFacets(facets)
@@ -195,10 +151,8 @@ export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
       setFacts([])
       setFacets([])
     }
-  }, [call, scope, owner])
+  }, [call, owner])
 
-  // 切维度（导航里换 section）时清掉归属过滤，避免把上一个维度的 id 带进新库。
-  useEffect(() => { setOwner('') }, [scope])
   useEffect(() => { void reload() }, [reload])
 
   const filtered = useMemo(() => {
@@ -233,15 +187,15 @@ export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
       {error !== null && <ErrorNote>{error}</ErrorNote>}
 
       {/* ── 维度说明 + 归属分布 ──────────────────────────────────── */}
-      <GroupCard title={scope === 'agent' ? '智能体记忆' : '项目记忆'}>
-        <div style={{ padding: '4px 0' }}><Hint>{copy.libraryDesc}</Hint></div>
+      <GroupCard title="智能体记忆">
+        <div style={{ padding: '4px 0' }}><Hint>{LIBRARY_DESC}</Hint></div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0 2px 0' }}>
           <Chip active={owner === ''} onClick={() => setOwner('')}>
-            全部 {copy.dimension} · {(facts ?? []).length}
+            全部 Agent · {(facts ?? []).length}
           </Chip>
           {facets.map(f => (
             <Chip key={f.id} active={owner === f.id} onClick={() => setOwner(f.id)}
-              title={f.id === '' ? '未归属任何 Agent / 项目' : f.id}>
+              title={f.id === '' ? '未归属任何 Agent' : f.id}>
               {nameOf(f.id)} · {f.count}
             </Chip>
           ))}
@@ -291,10 +245,8 @@ export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
       {/* ── 手动添加 ─────────────────────────────────────────────── */}
       <AddFactRow
         call={call}
-        scope={scope}
         defaultOwner={owner}
         profileNames={profileNames}
-        projectNames={projectNames}
         onAdded={afterMutate}
         onError={setError}
       />
@@ -303,10 +255,10 @@ export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
       <GroupCard title="危险操作">
         <Row control={
           <Button variant="danger" disabled={facts === null || filtered.length === 0} onClick={() => setConfirm(true)}>
-            清空本{scope === 'agent' ? '维度' : '维度'}
+            清空本维度
           </Button>
         }>
-          <RowLabel>清空「{copy.dimension}记忆」</RowLabel>
+          <RowLabel>清空「Agent 记忆」</RowLabel>
           <RowDesc>
             删除当前范围（{ownerName}{owner === '' ? ' 的全部记忆' : ''}）的全部记忆，不可恢复。
           </RowDesc>
@@ -316,17 +268,14 @@ export function MemoryLibrary({ scope, call, profileNames, projectNames }: {
       {confirm && (
         <ConfirmDialog
           danger
-          title={`清空「${copy.dimension}记忆」？`}
+          title={`清空「Agent 记忆」？`}
           desc={`将永久删除 ${filtered.length} 条记忆（${ownerName}）。删除后无法恢复。`}
           confirmLabel="确认清空"
           onCancel={() => setConfirm(false)}
           onConfirm={() => {
-            // 按维度清（传 scope + 当前归属，不靠前端捞 id——捞 id 会漏删加载后的新写入）。
-            const filter: Record<string, unknown> = { scope }
-            if (owner !== '') {
-              if (scope === 'agent') filter.agentId = owner
-              else filter.projectId = owner
-            }
+            // 按归属清（传当前归属，不靠前端捞 id——捞 id 会漏删加载后的新写入）。
+            const filter: Record<string, unknown> = {}
+            if (owner !== '') filter.agentId = owner
             setConfirm(false)
             void withBusy('__clear__', () => call('memory', 'clearFacts', { filter }))
           }}
@@ -406,7 +355,7 @@ function FactRow({ fact, busy, onInvalidate, onImportance, onDelete }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 2 }}>
           {fact.relation !== '' && <Hint>关系：{fact.relation}</Hint>}
           <Hint>
-            归属：{(fact.scope === 'agent' ? fact.agentId : fact.projectId) === '' ? '未归属' : (fact.scope === 'agent' ? fact.agentId : fact.projectId)}
+            归属：{fact.agentId === '' ? '未归属' : fact.agentId}
             {' · '}作者：{fact.author}
           </Hint>
           <Hint>id：{fact.id}</Hint>
@@ -438,20 +387,17 @@ function FactRow({ fact, busy, onInvalidate, onImportance, onDelete }: {
  * **至少长期**（写方未声明时）。存续期选择器默认「长期」，hint 说明「写永久需显式
  * 声明」，避免用户以为选了不生效（其实显式声明是生效的——写方显式优先）。
  *
- * **归属选择器**：`scope` 决定「这条记忆跟着谁走」，而 `agentId` / `projectId` 决定
- * 「这条是谁的」。用户口径要的正是后者，所以添加时必须能选归属——否则从 UI 添加的
- * 记忆永远是「未归属」，记忆库的归属 chip 就成了只读摆设。
+ * **归属选择器**：`agentId` 决定「这条是谁的」。用户口径要的正是后者，所以添加时
+ * 必须能选归属——否则从 UI 添加的记忆永远是「未归属」，记忆库的归属 chip 就成了
+ * 只读摆设。
  */
-function AddFactRow({ call, scope, defaultOwner, profileNames, projectNames, onAdded, onError }: {
+function AddFactRow({ call, defaultOwner, profileNames, onAdded, onError }: {
   call: MemoryCall
-  scope: MemoryScope
   defaultOwner: string
   profileNames: Record<string, string>
-  projectNames: Record<string, string>
   onAdded: () => Promise<void>
   onError: (message: string | null) => void
 }) {
-  const copy = SCOPE_COPY[scope]
   const [text, setText] = useState('')
   const [retention, setRetention] = useState<string>('long')
   const [owner, setOwner] = useState<string>(defaultOwner)
@@ -464,13 +410,12 @@ function AddFactRow({ call, scope, defaultOwner, profileNames, projectNames, onA
 
   /** 归属下拉项：已有归属（带展示名）+ 「未归属」+ 「自定义…」（手输）。 */
   const ownerOptions = useMemo(() => {
-    const names = scope === 'agent' ? profileNames : projectNames
     return [
       { value: '', label: '未归属' },
-      ...Object.keys(names).map(id => ({ value: id, label: names[id] ?? id })),
+      ...Object.keys(profileNames).map(id => ({ value: id, label: profileNames[id] ?? id })),
       { value: CUSTOM, label: '自定义…' },
     ]
-  }, [scope, profileNames, projectNames])
+  }, [profileNames])
 
   const submit = useCallback(async () => {
     const fact = text.trim()
@@ -482,11 +427,9 @@ function AddFactRow({ call, scope, defaultOwner, profileNames, projectNames, onA
       await call('memory', 'putFact', {
         input: {
           fact,
-          scope,
           retention,
           author: 'user',
-          ...(scope === 'agent' && ownerId !== '' ? { agentId: ownerId } : {}),
-          ...(scope === 'project' && ownerId !== '' ? { projectId: ownerId } : {}),
+          ...(ownerId !== '' ? { agentId: ownerId } : {}),
         },
       })
       setText('')
@@ -497,7 +440,7 @@ function AddFactRow({ call, scope, defaultOwner, profileNames, projectNames, onA
     } finally {
       setBusy(false)
     }
-  }, [call, text, scope, retention, owner, custom, onAdded, onError])
+  }, [call, text, retention, owner, custom, onAdded, onError])
 
   return (
     <GroupCard title="手动添加一条记忆">
@@ -510,17 +453,17 @@ function AddFactRow({ call, scope, defaultOwner, profileNames, projectNames, onA
           placeholder="写一条事实，例如「用户偏好暗色主题」…"
         />
         {owner === CUSTOM && (
-          <TextInput value={custom} onChange={setCustom} disabled={busy} placeholder={copy.ownerPlaceholder} />
+          <TextInput value={custom} onChange={setCustom} disabled={busy} placeholder="Agent id" />
         )}
         <Select width={110} value={retention} options={ADD_RETENTION} onChange={setRetention} disabled={busy} />
         <Button variant="primary" disabled={busy || text.trim() === ''} onClick={() => { void submit() }}>添加</Button>
       </div>
       <Row control={<Select width={180} value={owner} options={ownerOptions} onChange={setOwner} disabled={busy} />}>
-        <RowLabel>{copy.ownerLabel}</RowLabel>
-        <RowDesc>{copy.ownerDesc}</RowDesc>
+        <RowLabel>归属 Agent</RowLabel>
+        <RowDesc>这条记忆跟着哪个 Agent 走（它跨会话、跨项目都能取到）。选「自定义…」可手输 id。</RowDesc>
       </Row>
       <Hint>
-        落到「{copy.dimension}记忆」库。手动添加按底座规则落「长期」；写「永久」需显式声明
+        落到「Agent 记忆」库。手动添加按底座规则落「长期」；写「永久」需显式声明
         （用于纪律类事实）。写入门槛与自动沉淀共用同一套策略（见「记忆 › 全局设置」）。
       </Hint>
     </GroupCard>

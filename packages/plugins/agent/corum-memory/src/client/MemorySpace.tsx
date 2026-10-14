@@ -122,7 +122,7 @@ export function MemorySpace({ call, agentId, agentName, onBack }: {
     setError(null)
     try {
       const list = await call<SpaceFact[], { input: Record<string, unknown> }>(
-        'memory', 'listFacts', { input: { scope: 'agent', agentId } },
+        'memory', 'listFacts', { input: { agentId } },
       )
       setFacts(list)
     } catch (e) {
@@ -721,7 +721,7 @@ function AddToSpace({ call, agentId, busy, onAdded, onError }: {
     setSaving(true); onError(null)
     try {
       await call('memory', 'putFact', {
-        input: { fact, scope: 'agent', agentId, retention, author: 'user' },
+        input: { fact, agentId, retention, author: 'user' },
       })
       setText('')
       await onAdded()
