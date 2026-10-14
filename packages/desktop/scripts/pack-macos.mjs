@@ -918,13 +918,13 @@ async function copyDesktopArtifacts() {
   // Shipped Agent-preset module set: staged beside shipped-skills for the same
   // reason (`@corum/corum-preset-modules`'s resolveShippedModulesRoot() up-walks to
   // `<runtime>/shipped-modules/` in the app and `packages/desktop/shipped-modules/`
-  // in a source checkout). 随包 corum-dev 模块的 4 个技能实体只在这里，所以缺了它
-  // 不只是「模块库为空」，连随包技能集都会少 4 个。
+  // in a source checkout). 2026-10-14: corum-dev 已移到独立仓库，shipped-modules
+  // 可能为空——没有随包模块时跳过 staging。
   await rm(SHIPPED_MODULES_DIR, { recursive: true, force: true })
   if (existsSync(SHIPPED_MODULES)) {
     await cp(SHIPPED_MODULES, SHIPPED_MODULES_DIR, { recursive: true, dereference: true })
   } else {
-    throw new Error(`pack-macos: shipped-modules missing at ${SHIPPED_MODULES}`)
+    console.log('[pack-macos] shipped-modules 不存在，跳过（corum-dev 已移到独立仓库）')
   }
   // 前端 dist 独立 staging（electron-builder extraResources 用），不进 host。
   await rm(DIST_DIR, { recursive: true, force: true })
