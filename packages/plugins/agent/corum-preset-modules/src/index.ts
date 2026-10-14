@@ -41,6 +41,17 @@ export type { RequirementStatus, RequirementProbeInput } from './mcp-requirement
 // CORUM_HOME 解析（委托官方 resolveDshHome，优先级对齐 corum-agent）。
 export { resolveCorumHome } from './home.ts'
 
+// 逐行 diff（LCS）——导入向导第④步冲突处理「逐文件 diff split 视图」的 host 端基础。
+export { diffText, diffFile } from './diff.ts'
+export type {
+  DiffResult,
+  DiffHunk,
+  DiffHunkLine,
+  DiffFolded,
+  DiffLineKind,
+  FileDiffResult,
+} from './diff.ts'
+
 // 导出 / 安装。
 export { exportProfileModule } from './module-export.ts'
 export type { ExportModuleInput, ExportModuleResult } from './module-export.ts'

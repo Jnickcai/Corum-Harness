@@ -31,7 +31,7 @@ import type { ChangeEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeft, ArrowRight, BookOpen, Check, ExternalLink, FileBox, Info, Link,
-  Loader2, Minus, Server, Star, Terminal, TriangleAlert, X,
+  Loader2, Minus, Server, Star, Terminal, TriangleAlert, X, ChevronRight,
 } from 'lucide-react'
 import { GlassButton } from '../shared.tsx'
 import type { CorumRpcCall } from '@corum/corum-rpc-client/client'
@@ -40,6 +40,7 @@ import { personaPresetLabel } from './SettingsAgentPresetsSection.tsx'
 import type {
   ModuleInspection, InstallModuleInput, InstallModuleResult,
   ModuleRequirementStatus, ReachabilityResult,
+  FileDiffResult, DiffHunk, DiffHunkLine,
 } from '../types.ts'
 import css from '../SettingsSections.module.css'
 
@@ -75,11 +76,18 @@ const STEPS: { num: 1 | 2 | 3 | 4 | 5; label: string }[] = [
   { num: 5, label: '完成' },
 ]
 
-/** 第 ③ 步冲突默认值（行为规格 §4 = 设计稿选中的那个）。 */
+/**
+ * 第 ④ 步冲突默认值（行为规格 §4 = 设计稿选中的那个）。
+ *
+ * `skills`/`mcp` 是 **per-item**（key=名称）。空对象 `{}` = 全部走默认
+ * （skills→'skip'、mcp→'keep'，安装函数取不到时自带的默认值），与设计稿
+ * 「默认保留你现有的配置」一致。用户在第④步逐项选，选择写进对应 key。
+ * `profile` 仍全局一档（同名预设只有一个）。
+ */
 const DEFAULT_CONFLICT: InstallModuleInput['conflict'] = {
   profile: 'skip',
-  skills: 'skip',
-  mcp: 'keep',
+  skills: {},
+  mcp: {},
 }
 
 /* ── 导入向导主组件 ──────────────────────────────────────────────────── */
@@ -114,6 +122,23 @@ export function ImportModuleWizard({ rpc, onClose, onInstalled }: {
   // 路径输入（手输，不通过 directoryPicker 时也允许）。
   const [pathInput, setPathInput] = useState('')
 
+  /** patch 状态（局部更新工具）。 */
+  const patch = (p: Partial<WizardState>) => setState(s => ({ ...s, ...p }))
+
+  /**
+   * 统一关闭入口：安装成功后（已到第 ⑤ 步且有非 skipped 结果），任何关闭路径
+   * （Esc / 遮罩 / 取消 / 完成）都必须刷新预设列表——否则列表停在安装前的快照，
+   * 用户看到的是没装上（2026-10-14 实机：点「完成」→列表空→误判失败→重启才有）。
+   *
+   * 走 `onInstalled`（= setImportOpen(false) + reload()）而非 `onClose`（只关不刷新）；
+   * 未成功安装时退回 `onClose`，避免一次无谓的 RPC。
+   */
+  const handleClose = () => {
+    const installed = state.step === 5 && state.result !== null && !state.result.skipped
+    if (installed) onInstalled()
+    else onClose()
+  }
+
   /**
    * Esc 关闭（capture 阶段 + stopPropagation，照 EditPresetView 既有注释的做法：
    * 设置壳 dialog 的 bubble 阶段 Esc 处理器会关闭整个设置弹窗，capture 先拿到并拦住）。
@@ -123,14 +148,11 @@ export function ImportModuleWizard({ rpc, onClose, onInstalled }: {
       if (e.key !== 'Escape') return
       e.stopPropagation()
       e.preventDefault()
-      onClose()
+      handleClose()
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [onClose])
-
-  /** patch 状态（局部更新工具）。 */
-  const patch = (p: Partial<WizardState>) => setState(s => ({ ...s, ...p }))
+  }, [handleClose])
 
   /* ── 第 ① 步：加载内置模块库 ──────────────────────────────────────── */
 
@@ -283,7 +305,7 @@ export function ImportModuleWizard({ rpc, onClose, onInstalled }: {
   /* ── 渲染 ────────────────────────────────────────────────────────── */
 
   return createPortal(
-    <div className={css.modalOverlay} onClick={onClose}>
+    <div className={css.modalOverlay} onClick={handleClose}>
       <div
         className={`${css.modalDialog} ${css.wizardDialog}`}
         role="dialog"
@@ -293,7 +315,7 @@ export function ImportModuleWizard({ rpc, onClose, onInstalled }: {
         {/* 标题行 */}
         <div className={css.modalHeader}>
           <span className={css.modalTitle}>导入 Agent 预设</span>
-          <button type="button" className={css.modalClose} onClick={onClose}><X size={16} /></button>
+          <button type="button" className={css.modalClose} onClick={handleClose}><X size={16} /></button>
         </div>
 
         {/* 步骤指示器（设计稿跨图一致：当前=紫圆数+加粗，已完成=紫圆白对勾，未到=灰） */}
@@ -392,7 +414,7 @@ export function ImportModuleWizard({ rpc, onClose, onInstalled }: {
             )}
           </div>
           <div className={css.footerRight}>
-            <GlassButton onClick={onClose}>取消</GlassButton>
+            <GlassButton onClick={handleClose}>取消</GlassButton>
 
             {state.step === 1 && (
               <GlassButton
@@ -441,7 +463,7 @@ export function ImportModuleWizard({ rpc, onClose, onInstalled }: {
             {state.step === 5 && state.result !== null && (
               <>
                 <GlassButton onClick={() => { onInstalled() }}>查看预设</GlassButton>
-                <GlassButton variant="primary" onClick={onClose}>完成</GlassButton>
+                <GlassButton variant="primary" onClick={handleClose}>完成</GlassButton>
               </>
             )}
           </div>
@@ -813,7 +835,11 @@ function DepCard({ name, status, probe, onTest }: {
 /**
  * 冲突处理步（行为规格 §4：默认值 = 设计稿选中的那个）。
  *
- * 三组，只有真正存在同名的项才渲染该组（inspection 里的 exists 字段）。
+ * **per-item 冲突策略**（本轮改造）：每个 `exists===true` 的技能/MCP 独立成一项，
+ * 默认收起，每项有「查看详情 ▸ · N 行变更」入口（点击弹出 split-view diff 面板）
+ * + per-item 的保留/覆盖单选。同名预设仍全局一档（同名预设只有一个）。
+ *
+ * 只有真正存在同名的项才渲染（inspection 里的 exists 字段）。
  * 没有冲突 ⇒ 显示「没有冲突，可以直接安装」。
  */
 function StepConflict({ inspection, conflict, onChange }: {
@@ -834,6 +860,9 @@ function StepConflict({ inspection, conflict, onChange }: {
 
   const hasConflict = conflictMcp.length > 0 || conflictSkills.length > 0 || profileExists
 
+  // 当前打开的 diff 详情面板（null=没打开）。一个面板一次只显示一项的 diff。
+  const [diffOpen, setDiffOpen] = useState<{ kind: 'skill' | 'mcp'; name: string } | null>(null)
+
   return (
     <div className={css.wizardStepBody}>
       {hasConflict ? (
@@ -842,35 +871,47 @@ function StepConflict({ inspection, conflict, onChange }: {
         <p className={css.wizardHint}>没有冲突，可以直接安装。</p>
       )}
 
-      {/* 同名 MCP（设计稿 P5 第一组：保留现有 / 用模块的覆盖） */}
-      {conflictMcp.length > 0 && (
-        <ConflictGroup label="同名 MCP 服务" items={conflictMcp.map(m => m.name)}>
-          <SegmentedOptions
-            options={[
-              { id: 'keep', label: '保留现有', desc: '现有那份可能含本机真实路径，覆盖会把可用配置换成模板值' },
-              { id: 'overwrite', label: '用模块的覆盖' },
-            ]}
-            selected={conflict.mcp}
-            onSelect={(v) => onChange({ ...conflict, mcp: v as 'keep' | 'overwrite' })}
+      {/* 同名 MCP：每项独立成组（per-item：保留现有 / 用模块的覆盖） */}
+      {conflictMcp.map(m => {
+        // 把 host 的单个 `diff?: FileDiffResult` 归一成数组（无 diff ⇒ 空数组）。
+        const mcpDiff: readonly FileDiffResult[] = m.diff !== undefined ? [m.diff] : []
+        return (
+          <ConflictItemRow
+            key={`mcp-${m.name}`}
+            kind="mcp"
+            name={m.name}
+            diff={mcpDiff}
+            selected={conflict.mcp[m.name] ?? 'keep'}
+            onSelect={(v) => onChange({
+              ...conflict,
+              mcp: { ...conflict.mcp, [m.name]: v as 'keep' | 'overwrite' },
+            })}
+            onViewDetail={() => setDiffOpen({ kind: 'mcp', name: m.name })}
           />
-        </ConflictGroup>
-      )}
+        )
+      })}
 
-      {/* 同名技能（设计稿 P5 第二组：保留我改过的 / 用模块的覆盖） */}
-      {conflictSkills.length > 0 && (
-        <ConflictGroup label="同名技能 · 已存在" items={conflictSkills.map(s => s.name)}>
-          <SegmentedOptions
-            options={[
-              { id: 'skip', label: '保留我改过的', desc: '你本机那份与模块里的不同。默认保留你改过的版本（不覆盖）' },
-              { id: 'overwrite', label: '用模块的覆盖' },
-            ]}
-            selected={conflict.skills}
-            onSelect={(v) => onChange({ ...conflict, skills: v as 'skip' | 'overwrite' })}
+      {/* 同名技能：每项独立成组（per-item：保留我改过的 / 用模块的覆盖） */}
+      {conflictSkills.map(s => {
+        // 技能的 `diff` 已是 `readonly FileDiffResult[]`，无 diff 时 undefined ⇒ 空数组。
+        const skillDiff: readonly FileDiffResult[] = s.diff ?? []
+        return (
+          <ConflictItemRow
+            key={`skill-${s.name}`}
+            kind="skill"
+            name={s.name}
+            diff={skillDiff}
+            selected={conflict.skills[s.name] ?? 'skip'}
+            onSelect={(v) => onChange({
+              ...conflict,
+              skills: { ...conflict.skills, [s.name]: v as 'skip' | 'overwrite' },
+            })}
+            onViewDetail={() => setDiffOpen({ kind: 'skill', name: s.name })}
           />
-        </ConflictGroup>
-      )}
+        )
+      })}
 
-      {/* 同名预设（设计稿 P5 第三组：覆盖现有 / 另存为 / 跳过） */}
+      {/* 同名预设（设计稿 P5 第三组：仍全局一档——同名预设只有一个） */}
       {profileExists && (
         <ConflictGroup label="同名 Agent 预设 · 已存在" items={[inspection.manifest.id]} warn>
           <SegmentedOptions
@@ -890,11 +931,291 @@ function StepConflict({ inspection, conflict, onChange }: {
           />
         </ConflictGroup>
       )}
+
+      {/* diff 详情面板（模态，createPortal 到 document.body） */}
+      {diffOpen !== null && (() => {
+        // 把 host 的 diff 形态归一成数组：技能=diff（已是数组）；MCP=单个 diff 包进 [diff]。
+        // 按 kind 分支处理，避免 TS 把 `item.diff` 推成 `FileDiffResult | readonly FileDiffResult[]`
+        // 的并集（两种形态的 diff 字段类型不同——技能是数组、MCP 是单个）。
+        let files: readonly FileDiffResult[]
+        if (diffOpen.kind === 'skill') {
+          const item = skills.find(s => s.name === diffOpen.name)
+          files = item?.diff ?? []
+        } else {
+          const item = mcp.find(m => m.name === diffOpen.name)
+          files = item?.diff !== undefined ? [item.diff] : []
+        }
+        if (files.length === 0) {
+          // 理论上不会发生（diffOpen 只在有 diff 的项上可点）；防御性不渲染。
+          return null
+        }
+        const cur = diffOpen.kind === 'skill'
+          ? (conflict.skills[diffOpen.name] ?? 'skip')
+          : (conflict.mcp[diffOpen.name] ?? 'keep')
+        return (
+          <DiffDetailPanel
+            name={diffOpen.name}
+            kind={diffOpen.kind}
+            files={files}
+            selected={cur}
+            onSelect={(v) => onChange(
+              diffOpen.kind === 'skill'
+                ? { ...conflict, skills: { ...conflict.skills, [diffOpen.name]: v as 'skip' | 'overwrite' } }
+                : { ...conflict, mcp: { ...conflict.mcp, [diffOpen.name]: v as 'keep' | 'overwrite' } },
+            )}
+            onClose={() => setDiffOpen(null)}
+          />
+        )
+      })()}
     </div>
   )
 }
 
-/** 冲突组容器（设计稿 P5：标题 + 右上标注 + 选项）。 */
+/**
+ * per-item 冲突项行（设计稿 P5 收起态 `OkYeq` 节点：名称 + 已存在徽标 +
+ * 「查看详情 ▸ · N 行变更」按钮 + per-item 保留/覆盖单选）。
+ *
+ * `diff` 是**非空则非空数组**（调用方把 host 的 `diff?:` 归一成数组：MCP 单个
+ * diff 包进 `[diff]`，技能直接用 `diff`，无 diff 传 `[]`）。`diff.length === 0`
+ * 即「没有差异文件」⇒ 隐藏「查看详情」入口。这样避开了 exactOptionalPropertyTypes
+ * 下「向可选属性传 undefined」的类型陷阱。
+ */
+function ConflictItemRow({ kind, name, diff, selected, onSelect, onViewDetail }: {
+  kind: 'skill' | 'mcp'
+  name: string
+  diff: readonly FileDiffResult[]
+  selected: 'skip' | 'keep' | 'overwrite'
+  onSelect: (v: 'skip' | 'keep' | 'overwrite') => void
+  onViewDetail: () => void
+}) {
+  // 统计总变更行数（跨所有文件求和）。
+  const totalChanges = diff.reduce((sum, f) => sum + f.added + f.removed, 0)
+  const totalAdded = diff.reduce((s, f) => s + f.added, 0)
+  const totalRemoved = diff.reduce((s, f) => s + f.removed, 0)
+  // 技能=保留我改过的(skip)/覆盖；MCP=保留现有(keep)/覆盖。
+  const keepLabel = kind === 'skill' ? '保留我改过的' : '保留现有'
+  const keepId = kind === 'skill' ? 'skip' : 'keep'
+  const hasDiff = diff.length > 0
+  return (
+    <div className={css.wizardConflictGroup}>
+      {/* 头行：名称 + 已存在徽标 */}
+      <div className={css.wizardConflictHead}>
+        <span className={css.wizardConflictItemName}>{name}</span>
+        <span className={css.wizardConflictChip}>已存在</span>
+      </div>
+
+      {/* 查看详情入口（有 diff 才显示） */}
+      {hasDiff && (
+        <button
+          type="button"
+          className={css.diffToggleBtn}
+          onClick={onViewDetail}
+        >
+          <ChevronRight size={12} className={css.diffToggleArrow} />
+          <span className={css.diffToggleLabel}>查看详情</span>
+          <span className={css.diffToggleHint}>
+            · {totalChanges} 行变更（{totalRemoved} 删 {totalAdded} 增）
+          </span>
+        </button>
+      )}
+
+      {/* per-item 保留/覆盖单选 */}
+      <SegmentedOptions
+        options={[
+          { id: keepId, label: keepLabel },
+          { id: 'overwrite', label: '用模块的覆盖' },
+        ]}
+        selected={selected}
+        onSelect={(id) => onSelect(id as 'skip' | 'keep' | 'overwrite')}
+      />
+    </div>
+  )
+}
+
+/**
+ * split-view diff 详情面板（设计稿 `ysfAN` 节点：全屏模态）。
+ *
+ * 左右两列对照现有侧（左）与模块侧（右）。**对齐要点**：每条 `DiffHunkLine`
+ * 在左右各渲染一行——`del` 行左有内容、右为占位空行；`add` 行左为占位、
+ * 右有内容；`same` 行两侧都显示。占位空行用同高度（不渲染内容、只占位），
+ * 保证左右两列行等高对齐。`folded` 段渲染成「··· N 行相同 ···」折叠条（跨两列）。
+ *
+ * Esc 关闭用 capture + stopPropagation（照 ImportModuleWizard 既有 Esc 做法，
+ * 别让设置壳的 Esc 把整个设置弹窗关了）。
+ */
+function DiffDetailPanel({ name, kind, files, selected, onSelect, onClose }: {
+  name: string
+  kind: 'skill' | 'mcp'
+  files: readonly FileDiffResult[]
+  selected: 'skip' | 'keep' | 'overwrite'
+  onSelect: (v: 'skip' | 'keep' | 'overwrite') => void
+  onClose: () => void
+}) {
+  // 当前选中的文件 tab（技能有多文件，MCP 单个）。
+  const [activeFile, setActiveFile] = useState(0)
+  const file = files[Math.min(activeFile, files.length - 1)]
+
+  // Esc 关闭（capture 阶段 + stopPropagation，照 ImportModuleWizard 既有做法）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      e.preventDefault()
+      onClose()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [onClose])
+
+  // 底部选择：技能=skip/overwrite，MCP=keep/overwrite。
+  // 两类都在面板底部显示「保留现有」（面板里不再区分「保留我改过的」措辞）。
+  const keepId = kind === 'skill' ? 'skip' : 'keep'
+  const keepLabel = '保留现有'
+
+  // 统计。
+  const totalFiles = files.length
+  const totalAdded = files.reduce((s, f) => s + f.added, 0)
+  const totalRemoved = files.reduce((s, f) => s + f.removed, 0)
+
+  return createPortal(
+    <div className={css.diffPanelOverlay} onClick={onClose}>
+      <div
+        className={css.diffPanel}
+        role="dialog"
+        aria-label={`${name} 内容差异`}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* 标题栏：项名称 + 现有版本标签(绿) vs 模块版本标签(品牌色) + ✕ 关闭 */}
+        <div className={css.diffPanelHeader}>
+          <span className={css.diffPanelTitle}>{name} · 内容差异</span>
+          <span className={css.diffPanelChips}>
+            <span className={css.diffChipExisting}>现有（你本机）</span>
+            <span className={css.diffChipVs}>vs</span>
+            <span className={css.diffChipModule}>模块携带</span>
+          </span>
+          <button type="button" className={css.diffPanelClose} onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* 工具栏：文件 tab + 统计 */}
+        <div className={css.diffToolbar}>
+          <div className={css.diffTabs}>
+            {files.map((f, i) => (
+              <button
+                key={f.path}
+                type="button"
+                className={`${css.diffTab}${i === activeFile ? ' ' + css.diffTabActive : ''}`}
+                onClick={() => setActiveFile(i)}
+              >
+                {f.path}
+                <span className={css.diffTabCount}>{f.added + f.removed}</span>
+              </button>
+            ))}
+          </div>
+          <span className={css.diffStat}>
+            共 {totalFiles} 个文件 · {totalAdded} 增 {totalRemoved} 删
+          </span>
+        </div>
+
+        {/* 列头：左红底「现有（你本机）」/ 右绿底「模块携带」 */}
+        <div className={css.diffColHeader}>
+          <span className={css.diffColExistingHeader}>现有（你本机）</span>
+          <span className={css.diffColDivider} />
+          <span className={css.diffColModuleHeader}>模块携带</span>
+        </div>
+
+        {/* 主体：左右 split。逐 hunk 渲染，folded 段跨两列。 */}
+        <div className={css.diffBody}>
+          {file.hunks.length === 0 && (
+            <p className={css.diffEmpty}>两份内容完全相同，无差异。</p>
+          )}
+          {file.hunks.map((hunk, hi) => (
+            <DiffHunkView key={hi} hunk={hunk} />
+          ))}
+        </div>
+
+        {/* 底部：看完选「保留现有」/「用模块覆盖」+ 关闭 */}
+        <div className={css.diffPanelFooter}>
+          <span className={css.diffPanelFooterNote}>看完差异后选择：</span>
+          <div className={css.diffPanelFooterBtns}>
+            <button
+              type="button"
+              className={`${css.diffFooterBtn}${selected === keepId ? ' ' + css.diffFooterBtnActive : ''}`}
+              onClick={() => { onSelect(keepId); onClose() }}
+            >{keepLabel}</button>
+            <button
+              type="button"
+              className={`${css.diffFooterBtn}${selected === 'overwrite' ? ' ' + css.diffFooterBtnActiveBrand : ''}`}
+              onClick={() => { onSelect('overwrite'); onClose() }}
+            >用模块覆盖</button>
+            <GlassButton onClick={onClose}>关闭</GlassButton>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+/**
+ * 一个 hunk 的 split 渲染。
+ *
+ * 对齐实现：对每条 `DiffHunkLine` 产出**一对**左右行（永远成对产出）：
+ * - `same`：左=内容、右=内容（两侧都显示）。
+ * - `del`：左=内容（红底）、右=占位空行（同高、灰底、无内容）。
+ * - `add`：左=占位空行、右=内容（绿底）。
+ * 用 CSS grid 的两列布局，每行一个 grid row，左右行天然等高（同行的两个 cell
+ * 高度取较大者，空行与内容行等高）。`folded` 段渲染成一个跨两列的折叠条。
+ */
+function DiffHunkView({ hunk }: { hunk: DiffHunk }) {
+  return (
+    <div className={css.diffHunk}>
+      {hunk.folded !== undefined && (
+        <div className={css.diffFolded}>
+          ··· {hunk.folded.count} 行相同（{hunk.folded.startLeft}–{hunk.folded.startLeft + hunk.folded.count - 1}） ···
+        </div>
+      )}
+      {hunk.lines.map((line, i) => (
+        <DiffLineView key={i} line={line} />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * 一条 diff 行的左右对照（grid 一行两 cell，等高对齐）。
+ *
+ * `leftNum`/`rightNum` 为 null 时该侧不显示内容（占位空行，保持高度对齐）。
+ */
+function DiffLineView({ line }: { line: DiffHunkLine }) {
+  const leftHas = line.kind === 'same' || line.kind === 'del'
+  const rightHas = line.kind === 'same' || line.kind === 'add'
+  const leftBg = line.kind === 'del' ? css.diffDelBg : line.kind === 'same' ? css.diffSameBg : css.diffEmptyBg
+  const rightBg = line.kind === 'add' ? css.diffAddBg : line.kind === 'same' ? css.diffSameBg : css.diffEmptyBg
+  const leftSign = line.kind === 'del' ? '−' : ' '
+  const rightSign = line.kind === 'add' ? '+' : ' '
+  return (
+    <div className={css.diffSplitRow}>
+      {/* 左 cell（现有侧） */}
+      <div className={`${css.diffColExisting} ${leftBg}`}>
+        <span className={css.diffGutter}>{leftHas ? (line.leftNum ?? '') : ''}</span>
+        <code className={`${css.diffCode} ${css.diffMono}`}>
+          {leftHas ? `${leftSign} ${line.content}` : ''}
+        </code>
+      </div>
+      {/* 右 cell（模块侧） */}
+      <div className={`${css.diffColModule} ${rightBg}`}>
+        <span className={css.diffGutter}>{rightHas ? (line.rightNum ?? '') : ''}</span>
+        <code className={`${css.diffCode} ${css.diffMono}`}>
+          {rightHas ? `${rightSign} ${line.content}` : ''}
+        </code>
+      </div>
+    </div>
+  )
+}
+
+/** 冲突组容器（设计稿 P5：标题 + 右上标注 + 选项）——同名预设组仍用它。 */
 function ConflictGroup({ label, items, warn, children }: {
   label: string
   items: string[]
