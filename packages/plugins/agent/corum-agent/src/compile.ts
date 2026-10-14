@@ -441,7 +441,8 @@ const PERSONA_PRESET_PROMPTS: Record<Exclude<PersonaPreset, 'custom'>, string> =
 function resolvePersonaText(profile: AgentProfile): string | null {
   const parts: string[] = []
   if (profile.personaPreset !== undefined && profile.personaPreset !== 'custom') {
-    parts.push(PERSONA_PRESET_PROMPTS[profile.personaPreset])
+    // 预设文本也可能自带尾句号，统一去掉——拼接时由调用方加唯一的 `.`。
+    parts.push(PERSONA_PRESET_PROMPTS[profile.personaPreset].replace(/[。.．]+$/u, ''))
   }
   if (typeof profile.persona === 'string' && profile.persona.trim() !== '') {
     const persona = profile.persona.trim().replace(/[。.．]+$/u, '')
@@ -722,7 +723,7 @@ export function compilePreset(profile: AgentProfile): CompiledPreset {
 
   return {
     cordisYml: renderRows(rows),
-    presetYml: `name: ${profile.id}\ndescription: ${profile.prompt.split('\n')[0] ?? ''}\n`,
+    presetYml: `name: ${profile.id}\ndescription: ${JSON.stringify(profile.prompt.split('\n')[0] ?? '')}\n`,
   }
 }
 
