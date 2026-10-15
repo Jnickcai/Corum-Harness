@@ -33,13 +33,25 @@ export function validateThemeHtml(html: string): void {
   }
 }
 
+export type StartupThemeStage = 'env' | 'spawn' | 'plugins' | 'mounting' | 'ready'
+
+export interface StartupThemeSegment {
+  /** 该片段对应的启动阶段 */
+  stage: StartupThemeStage
+  /** 视频文件路径（相对主题根，如 segments/env.mp4） */
+  file: string
+}
+
 export interface StartupThemeManifest {
   formatVersion: 1
   id: string
   name: string
   version: string
   type: 'html' | 'video'
-  entry: string
+  /** 向后兼容：无 segments 时用单个 entry。有 segments 时可省略或作为 fallback。 */
+  entry?: string
+  /** 可选：分段视频，按启动阶段切换播放。仅 type='video' 有效。 */
+  segments?: StartupThemeSegment[]
   author?: string
   preview?: string
   background?: string
@@ -55,23 +67,61 @@ function validateId(id: string): void {
   validateThemePath(id)
 }
 
+const VIDEO_EXTS = ['.mp4', '.webm']
+const ALL_STAGES: readonly StartupThemeStage[] = ['env', 'spawn', 'plugins', 'mounting', 'ready']
+
 export function validateStartupThemeManifest(value: unknown): StartupThemeManifest {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('主题 manifest 格式无效')
   const m = value as Record<string, unknown>
   if (m.formatVersion !== 1) throw new Error('不支持的主题规范版本')
-  for (const key of ['id', 'name', 'version', 'entry']) if (typeof m[key] !== 'string' || !(m[key] as string).trim()) throw new Error(`主题缺少有效的 ${key}`)
+  for (const key of ['id', 'name', 'version']) if (typeof m[key] !== 'string' || !(m[key] as string).trim()) throw new Error(`主题缺少有效的 ${key}`)
   validateId(m.id as string)
-  validateThemePath(m.entry as string)
   if (m.type !== 'html' && m.type !== 'video') throw new Error('主题类型必须为 html 或 video')
-  if (!(m.type === 'html' ? ['.html'] : ['.mp4', '.webm']).includes(extname(m.entry as string).toLowerCase())) throw new Error('主题入口文件类型无效')
+  const segments = validateSegments(m.segments, m.type)
+  // entry：有 segments 时可省略（作为 fallback）；无 segments 时必填。
+  const hasEntry = typeof m.entry === 'string' && (m.entry as string).trim()
+  if (!hasEntry && !segments) throw new Error('主题缺少有效的 entry')
+  if (hasEntry) {
+    const entry = m.entry as string
+    validateThemePath(entry)
+    if (!(m.type === 'html' ? ['.html'] : VIDEO_EXTS).includes(extname(entry).toLowerCase())) throw new Error('主题入口文件类型无效')
+  }
   for (const key of ['author', 'preview', 'background']) if (m[key] !== undefined && typeof m[key] !== 'string') throw new Error(`主题 ${key} 格式无效`)
   if (m.preview !== undefined) {
     validateThemePath(m.preview as string)
     if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extname(m.preview as string).toLowerCase())) throw new Error('主题预览图格式无效')
   }
   if (m.background !== undefined && !/^#[0-9a-f]{6}$/i.test(m.background as string)) throw new Error('主题背景色格式无效')
-  return { formatVersion: 1, id: m.id as string, name: m.name as string, version: m.version as string, type: m.type, entry: m.entry as string,
+  return { formatVersion: 1, id: m.id as string, name: m.name as string, version: m.version as string, type: m.type,
+    ...(hasEntry ? { entry: m.entry as string } : {}),
+    ...(segments ? { segments } : {}),
     ...(m.author === undefined ? {} : { author: m.author as string }), ...(m.preview === undefined ? {} : { preview: m.preview as string }), ...(m.background === undefined ? {} : { background: m.background as string }) }
+}
+
+/** 校验 segments：仅 type='video' 有效；每段须有合法 stage + .mp4/.webm file；stages 不重复；必须含 ready。 */
+function validateSegments(value: unknown, type: 'html' | 'video'): StartupThemeSegment[] | undefined {
+  if (value === undefined) {
+    // html 主题带了 segments 也不报错（忽略），保持宽松。
+    return undefined
+  }
+  if (type !== 'video') throw new Error('segments 仅对 video 主题有效')
+  if (!Array.isArray(value) || value.length === 0) throw new Error('segments 必须是非空数组')
+  const seen = new Set<StartupThemeStage>()
+  const segments: StartupThemeSegment[] = []
+  for (const raw of value) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('segment 格式无效')
+    const seg = raw as Record<string, unknown>
+    if (typeof seg.stage !== 'string' || !ALL_STAGES.includes(seg.stage as StartupThemeStage)) throw new Error('segment stage 无效')
+    const stage = seg.stage as StartupThemeStage
+    if (seen.has(stage)) throw new Error(`segment stage 重复：${stage}`)
+    seen.add(stage)
+    if (typeof seg.file !== 'string' || !seg.file.trim()) throw new Error('segment 缺少有效的 file')
+    validateThemePath(seg.file as string)
+    if (!VIDEO_EXTS.includes(extname(seg.file as string).toLowerCase())) throw new Error('segment 视频文件类型无效（仅支持 .mp4/.webm）')
+    segments.push({ stage, file: seg.file as string })
+  }
+  if (!seen.has('ready')) throw new Error('segments 必须包含 ready 段（最后一段）')
+  return segments
 }
 
 /** 同时检查词法和 realpath 边界，防止安装后被替换成链接。 */
@@ -90,7 +140,8 @@ async function readInstalled(id: string, home: string): Promise<ResolvedStartupT
   if ((await lstat(root)).isSymbolicLink()) throw new Error('主题目录不能是链接')
   const info = validateStartupThemeManifest(JSON.parse(await readFile(await resolveThemeFile(root, 'manifest.json'), 'utf8')))
   if (info.id !== id || id === BUILTIN.id) throw new Error('主题 ID 与安装目录不一致')
-  await resolveThemeFile(root, info.entry)
+  if (info.entry) await resolveThemeFile(root, info.entry)
+  if (info.segments) for (const seg of info.segments) await resolveThemeFile(root, seg.file)
   if (info.preview) await resolveThemeFile(root, info.preview)
   return { root, info: { ...info, builtin: false, ...(info.preview ? { previewUrl: `corumapp://startup-preview/${id}/${info.preview.split('/').map(encodeURIComponent).join('/')}` } : {}) } }
 }
@@ -119,11 +170,12 @@ export async function importStartupTheme(zipPath: string, home = settingsHome())
   if (!raw) throw new Error('ZIP 根目录缺少 manifest.json')
   const manifest = validateStartupThemeManifest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)))
   if (manifest.id === BUILTIN.id) throw new Error('不能替换内置主题')
-  if (!files.has(manifest.entry)) throw new Error('主题入口文件不存在')
+  if (manifest.entry && !files.has(manifest.entry)) throw new Error('主题入口文件不存在')
+  if (manifest.segments) for (const seg of manifest.segments) if (!files.has(seg.file)) throw new Error(`分段视频不存在：${seg.file}`)
   if (manifest.preview && !files.has(manifest.preview)) throw new Error('主题预览图不存在')
   // 静态扫描 HTML 主题入口（解压后、写入前）；视频主题不扫描文本。
   if (manifest.type === 'html') {
-    const entryBytes = files.get(manifest.entry)
+    const entryBytes = manifest.entry ? files.get(manifest.entry) : undefined
     if (entryBytes) validateThemeHtml(new TextDecoder('utf-8', { fatal: true }).decode(entryBytes))
   }
   const parent = join(home, 'startup-themes')

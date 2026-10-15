@@ -30,6 +30,46 @@ test('主题 manifest 接受 HTML/视频，拒绝不支持版本、类型和包�
   }
 })
 
+test('segments 分段视频校验：合法放行、重复 stage 拒绝、缺 ready 拒绝、非 video 拒绝', () => {
+  const base = { formatVersion: 1, id: 'seg', name: '分段', version: '1.0.0', type: 'video' }
+  const goodSegs = [
+    { stage: 'env', file: 'segments/env.mp4' },
+    { stage: 'spawn', file: 'segments/spawn.mp4' },
+    { stage: 'plugins', file: 'segments/plugins.mp4' },
+    { stage: 'mounting', file: 'segments/mounting.mp4' },
+    { stage: 'ready', file: 'segments/ready.mp4' },
+  ]
+  // 合法：有 segments 时 entry 可省略
+  const ok = validateStartupThemeManifest({ ...base, segments: goodSegs })
+  assert.deepEqual(ok.segments, goodSegs)
+  assert.equal(ok.entry, undefined)
+  // 合法：有 segments 且同时保留 entry（fallback）
+  const withEntry = validateStartupThemeManifest({ ...base, entry: 'fallback.mp4', segments: goodSegs })
+  assert.equal(withEntry.entry, 'fallback.mp4')
+  // 合法：只有两段（env + ready）也行
+  assert.ok(validateStartupThemeManifest({ ...base, segments: [{ stage: 'env', file: 'e.mp4' }, { stage: 'ready', file: 'r.mp4' }] }).segments)
+  // 缺 entry 且缺 segments → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base }), /entry/)
+  // 重复 stage → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: [...goodSegs, { stage: 'env', file: 'dup.mp4' }] }), /重复/)
+  // 缺 ready 段 → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: goodSegs.slice(0, 4) }), /ready/)
+  // 非法 stage 名 → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: [...goodSegs.slice(0, 4), { stage: 'done', file: 'r.mp4' }] }), /stage/)
+  // 非 video 类型带 segments → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, type: 'html', entry: 'index.html', segments: goodSegs }), /video/)
+  // segment 缺 file → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: [...goodSegs.slice(0, 4), { stage: 'ready' }] }))
+  // segment file 非 mp4/webm → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: [...goodSegs.slice(0, 4), { stage: 'ready', file: 'r.avi' }] }), /视频文件类型/)
+  // segment file 越界 → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: [...goodSegs.slice(0, 4), { stage: 'ready', file: '../escape.mp4' }] }), /越界/)
+  // segments 非数组 → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: 'bad' }))
+  // segments 空数组 → 拒绝
+  assert.throws(() => validateStartupThemeManifest({ ...base, segments: [] }))
+})
+
 test('导入安装内容但不改变选择，切换持久化且保留其他偏好', () => fixture(async home => {
   await writeFile(join(home, 'desktop-settings.json'), JSON.stringify({ startupAnimationEnabled: false, other: 'kept' }))
   const installed = await importStartupTheme(await pack(home), home)
@@ -52,6 +92,38 @@ test('视频可以安装，删除当前主题回退内置，内置主题不能�
   assert.equal(readStartupThemeId(home), 'corum-terminal')
   assert.equal((await listStartupThemes(assets, home)).themes.length, 1)
   await assert.rejects(deleteStartupTheme('corum-terminal', home), /内置/)
+}))
+
+test('分段视频主题可导入安装，segment 文件解析到子目录', () => fixture(async home => {
+  const segManifest = { formatVersion: 1, id: 'segvid', name: '分段视频', version: '1.0.0', type: 'video',
+    segments: [
+      { stage: 'env', file: 'segments/env.mp4' },
+      { stage: 'spawn', file: 'segments/spawn.mp4' },
+      { stage: 'ready', file: 'segments/ready.mp4' },
+    ] }
+  const zip = zipSync({
+    'manifest.json': strToU8(JSON.stringify(segManifest)),
+    'segments/env.mp4': strToU8('env'),
+    'segments/spawn.mp4': strToU8('spawn'),
+    'segments/ready.mp4': strToU8('ready'),
+  })
+  const path = join(home, 'seg.zip')
+  await writeFile(path, zip)
+  const installed = await importStartupTheme(path, home)
+  assert.equal(installed.id, 'segvid')
+  assert.equal(installed.segments.length, 3)
+  assert.equal(installed.entry, undefined)
+  // 子目录文件存在
+  assert.equal(await readFile(join(home, 'startup-themes/segvid/segments/env.mp4'), 'utf8'), 'env')
+  await selectStartupTheme('segvid', assets, home)
+  const resolved = await resolveStartupTheme(assets, undefined, home)
+  assert.equal(resolved.info.id, 'segvid')
+  assert.ok(resolved.info.segments.length === 3)
+  // 缺 segment 文件 → 拒绝
+  const badZip = zipSync({ 'manifest.json': strToU8(JSON.stringify(segManifest)), 'segments/env.mp4': strToU8('x'), 'segments/spawn.mp4': strToU8('x') })
+  const badPath = join(home, 'bad-seg.zip')
+  await writeFile(badPath, badZip)
+  await assert.rejects(importStartupTheme(badPath, home), /分段视频不存在/)
 }))
 
 test('主题损坏或缺失时回退，目录内未完成安装不显示', () => fixture(async home => {

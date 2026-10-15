@@ -27,6 +27,8 @@ export function createStartupThemeSession(theme: ResolvedStartupTheme, options: 
 export function restrictStartupNavigation(contents: WebContents, theme: ResolvedStartupTheme): void {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   contents.on('will-navigate', event => event.preventDefault())
-  const entry = `corumapp://startup-theme/${theme.info.id}/${theme.info.entry.split('/').map(encodeURIComponent).join('/')}`
-  contents.on('will-frame-navigate', event => { if (event.isMainFrame || event.url !== entry) event.preventDefault() })
+  const entry = theme.info.entry
+    ? `corumapp://startup-theme/${theme.info.id}/${theme.info.entry.split('/').map(encodeURIComponent).join('/')}`
+    : null
+  contents.on('will-frame-navigate', event => { if (entry === null || event.isMainFrame || event.url !== entry) event.preventDefault() })
 }

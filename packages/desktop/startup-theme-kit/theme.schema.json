@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Corum Startup Theme v1",
   "type": "object",
-  "required": ["formatVersion", "id", "name", "version", "type", "entry"],
+  "required": ["formatVersion", "id", "name", "version", "type"],
   "properties": {
     "formatVersion": { "const": 1 },
     "id": { "type": "string", "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9_-])?$" },
@@ -10,6 +10,19 @@
     "version": { "type": "string", "pattern": "\\S" },
     "type": { "enum": ["html", "video"] },
     "entry": { "$ref": "#/$defs/path" },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["stage", "file"],
+        "properties": {
+          "stage": { "enum": ["env", "spawn", "plugins", "mounting", "ready"] },
+          "file": { "$ref": "#/$defs/path" }
+        },
+        "additionalProperties": false
+      }
+    },
     "author": { "type": "string" },
     "preview": { "allOf": [{ "$ref": "#/$defs/path" }, { "pattern": "\\.(?:[pP][nN][gG]|[jJ][pP][eE]?[gG]|[wW][eE][bB][pP])$" }] },
     "background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
@@ -23,6 +36,8 @@
   },
   "allOf": [
     { "if": { "properties": { "type": { "const": "html" } } }, "then": { "properties": { "entry": { "pattern": "\\.[hH][tT][mM][lL]$" } } } },
-    { "if": { "properties": { "type": { "const": "video" } } }, "then": { "properties": { "entry": { "pattern": "\\.(?:[mM][pP]4|[wW][eE][bB][mM])$" } } } }
+    { "if": { "properties": { "type": { "const": "video" } } }, "then": { "properties": { "entry": { "pattern": "\\.(?:[mM][pP]4|[wW][eE][bB][mM])$" } } } },
+    { "if": { "not": { "required": ["segments"] } }, "then": { "required": ["entry"] } },
+    { "if": { "required": ["segments"] }, "then": { "properties": { "segments": { "items": { "properties": { "file": { "pattern": "\\.(?:[mM][pP]4|[wW][eE][bB][mM])$" } } } } } } }
   ]
 }
