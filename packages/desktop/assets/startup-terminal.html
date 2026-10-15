@@ -23,20 +23,20 @@
     font-family: 'Inter', -apple-system, 'PingFang SC', 'SF Pro Text', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  /* 背景光晕 */
+  /* 背景光晕 — 紫/青/粉三色微光 */
   .glow {
     position: fixed;
     border-radius: 50%;
-    filter: blur(60px);
+    filter: blur(80px);
     pointer-events: none;
     z-index: 0;
   }
-  .glow-1 { background: var(--purple); opacity: 0.10; width: 450px; height: 350px; top: 8%; left: 12%; animation: drift1 12s ease-in-out infinite alternate; }
-  .glow-2 { background: var(--cyan); opacity: 0.06; width: 380px; height: 280px; top: 15%; right: 10%; animation: drift2 15s ease-in-out infinite alternate; }
-  .glow-3 { background: var(--pink); opacity: 0.04; width: 400px; height: 250px; bottom: 10%; left: 30%; animation: drift3 18s ease-in-out infinite alternate; }
-  @keyframes drift1 { from { transform: translate(0, 0); } to { transform: translate(40px, 30px); } }
-  @keyframes drift2 { from { transform: translate(0, 0); } to { transform: translate(-30px, 40px); } }
-  @keyframes drift3 { from { transform: translate(0, 0); } to { transform: translate(20px, -30px); } }
+  .glow-1 { background: var(--purple); opacity: 0.12; width: 500px; height: 400px; top: 8%; left: 10%; animation: drift1 14s ease-in-out infinite alternate; }
+  .glow-2 { background: var(--cyan); opacity: 0.07; width: 420px; height: 300px; top: 12%; right: 8%; animation: drift2 17s ease-in-out infinite alternate; }
+  .glow-3 { background: var(--pink); opacity: 0.05; width: 440px; height: 280px; bottom: 8%; left: 28%; animation: drift3 20s ease-in-out infinite alternate; }
+  @keyframes drift1 { from { transform: translate(0, 0); } to { transform: translate(50px, 35px); } }
+  @keyframes drift2 { from { transform: translate(0, 0); } to { transform: translate(-35px, 45px); } }
+  @keyframes drift3 { from { transform: translate(0, 0); } to { transform: translate(25px, -35px); } }
 
   #canvas {
     position: fixed;
@@ -52,49 +52,43 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0;
     pointer-events: none;
   }
-  .code-hint {
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-bottom: 18px;
-    opacity: 0;
-    transition: opacity 0.6s ease;
-  }
-  .code-hint.show { opacity: 1; }
   .brand {
-    font-size: 52px;
+    font-size: 54px;
     font-weight: 700;
     color: var(--text);
     letter-spacing: 2px;
     opacity: 0;
     transition: opacity 0.8s ease;
-    text-shadow: 0 0 30px rgba(91, 33, 245, 0.3);
+    text-shadow: 0 0 40px rgba(91, 33, 245, 0.35);
   }
   .brand.show { opacity: 1; }
   .slogan {
     font-size: 16px;
     color: var(--cyan);
     letter-spacing: 3px;
-    margin-top: 12px;
+    margin-top: 14px;
     opacity: 0;
-    transition: opacity 0.8s ease 0.3s;
+    transition: opacity 0.8s ease 0.4s;
   }
   .slogan.show { opacity: 1; }
   .prog-section {
-    margin-top: 40px;
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     opacity: 0;
     transition: opacity 0.6s ease;
+    z-index: 3;
   }
   .prog-section.show { opacity: 1; }
   .prog-track {
-    width: 300px;
+    width: 320px;
     height: 3px;
     background: rgba(55, 32, 80, 0.6);
     border-radius: 2px;
@@ -103,17 +97,31 @@
   .prog-fill {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, var(--purple), var(--purple-light));
+    background: linear-gradient(90deg, var(--purple), var(--purple-light), var(--cyan));
     border-radius: 2px;
     transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(185, 140, 255, 0.5);
   }
   .phase-text {
     font-size: 12px;
     color: var(--text-mid);
     letter-spacing: 1px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
   }
+  .skip-hint {
+    position: fixed;
+    bottom: 20px;
+    right: 24px;
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    z-index: 3;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  }
+  .skip-hint.show { opacity: 0.5; }
   @media (prefers-reduced-motion: reduce) {
-    .glow { animation: none !important; }
+    .glow { animation: none !important; filter: blur(60px); }
     * { transition: none !important; }
   }
 </style>
@@ -124,115 +132,157 @@
   <div class="glow glow-3"></div>
   <canvas id="canvas"></canvas>
   <div class="overlay">
-    <div class="code-hint" id="codeHint">// 代码片段汇聚中…</div>
     <div class="brand" id="brand">Corum Harness</div>
     <div class="slogan" id="slogan">立矩成道  Agent 成团开发</div>
-    <div class="prog-section" id="progSection">
-      <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
-      <div class="phase-text" id="phaseText">检查环境</div>
-    </div>
   </div>
+  <div class="prog-section" id="progSection">
+    <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    <div class="phase-text" id="phaseText">检查环境</div>
+  </div>
+  <div class="skip-hint" id="skipHint">Esc / 点击跳过</div>
 
 <script>
 (() => {
   "use strict";
+
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
-  const $ = s => document.getElementById(s);
-  // 通知主进程动画完成（经 preload 的 IPC bridge，非 postMessage）
+  const $ = (s) => document.getElementById(s);
+
+  // ── preload IPC bridge 通信 ──────────────────────────────────
   const bridge = typeof window !== "undefined" ? window.corumDesktop : undefined;
+  let finished = false;
   function finishStartup() {
+    if (finished) return;
+    finished = true;
     if (bridge && typeof bridge.finishStartup === "function") bridge.finishStartup();
     else parent.postMessage("corum:startup-complete", "*");
   }
-  let W = 0, H = 0;
+
+  // ── 画布尺寸 ─────────────────────────────────────────────────
+  let W = 0, H = 0, CX = 0, CY = 0;
   function resize() {
     W = canvas.width = window.innerWidth;
     H = canvas.height = window.innerHeight;
+    CX = W / 2;
+    CY = H / 2;
   }
   resize();
   window.addEventListener("resize", resize);
 
-  // 代码片段词库
+  // ── prefers-reduced-motion ────────────────────────────────────
+  const REDUCED = window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ── 代码片段词库 ─────────────────────────────────────────────
   const FRAGMENTS = [
     "const", "async", "await", "return", "import", "export", "class", "function",
     "=>", "if", "else", "for", "while", "try", "catch", "throw", "new", "typeof",
     "interface", "type", "enum", "extends", "implements", "static", "readonly",
     "public", "private", "void", "null", "undefined", "true", "false", "this",
     "super", "yield", "break", "continue", "switch", "case", "default", "let",
-    "var", "do", "in", "of", "instanceof", "delete", "void", "with", "debugger",
+    "var", "do", "in", "of", "instanceof", "delete",
     "{}", "[]", "()", "==", "===", "!=", "!==", "&&", "||", "!", "?", ":",
-    "...", "=>", "?.", "??", "${}", "/* */", "//", "`", "Cordis", "corum",
+    "...", "?.", "??", "Cordis", "corum",
     "Agent", "preset", "inject", "provide", "Remote", "slot", "bundle", "plugin",
     "compile", "boot", "spawn", "fork", "verify", "CDP", "RPC", "MCP",
     "ctx", "config", "manifest", "deploy", "closure", "scope", "session",
     "workspace", "trait", "persona", "skill", "model", "llm", "tool", "guard",
     "perm", "sandbox", "readonly", "override", "vite", "tsc", "tsdown", "vitest",
-    "pnpm", "electron", "react", "typescript", "ESM", "CJS", "lib", "src",
-    "0x", "true", "init", "main", "index", "ref", "apply", "mount", "render",
-    "state", "effect", "memo", "lazy", "portal", "hook", "useState", "useEffect",
-    "useRef", "useMemo", "useCallback", "createContext", "useContext", "forwardRef"
+    "pnpm", "electron", "react", "typescript", "ESM", "CJS"
   ];
 
-  // 粒子（代码片段）
-  const PARTICLE_COUNT = 220;
+  // ── 粒子配色（Corum 紫/青/粉，低透明度） ────────────────────
+  const COLORS = ["#5B21F5", "#B98CFF", "#01CDFE", "#FF71CE", "#7B6896"];
+
+  // ── 3D 透视投影参数 ──────────────────────────────────────────
+  // 每个粒子在 3D 空间有 (x3, y3, z3) 坐标。
+  // z3 从远(大)→近(小)变化，投影到 2D：
+  //   screenX = CX + (x3 / z3) * FOCAL
+  //   screenY = CY + (y3 / z3) * FOCAL
+  //   scale   = FOCAL / z3   → 近大远小
+  // z3 减小时 scale 增大 → 粒子变大变快，营造穿越速度感
+  const FOCAL = 320;          // 焦距：控制 FOV 宽窄
+  const Z_FAR = 1200;         // 最远 z（粒子重生点）
+  const Z_NEAR = 1;           // 最近 z（掠过镜头后重生）
+  const SPEED = REDUCED ? 4 : 9; // 每帧 z 减少量（飞行速度）
+
+  // ── 粒子初始化 ───────────────────────────────────────────────
+  const PARTICLE_COUNT = REDUCED ? 120 : 260;
   let particles = [];
+
+  function randFragment() {
+    return FRAGMENTS[(Math.random() * FRAGMENTS.length) | 0];
+  }
+  function randColor() {
+    return COLORS[(Math.random() * COLORS.length) | 0];
+  }
+
+  function spawnParticle(p, atFar) {
+    p.fragment = randFragment();
+    p.color = randColor();
+    p.baseAlpha = 0.12 + Math.random() * 0.30;
+    // 3D 坐标：x3/y3 在屏幕宽高范围内散布，z3 远处
+    p.x3 = (Math.random() - 0.5) * W * 1.6;
+    p.y3 = (Math.random() - 0.5) * H * 1.6;
+    p.z3 = atFar ? Z_FAR * (0.6 + Math.random() * 0.4) : (Math.random() * Z_FAR + Z_NEAR);
+    p.baseSize = 9 + Math.random() * 4;  // 基础字号（最近时）
+    // 2D 投影后的屏幕坐标（飞行阶段每帧重算，汇聚阶段冻结后缓动）
+    p.sx = 0; p.sy = 0; p.scale = 0;
+    // 汇聚目标（屏幕坐标）
+    p.tx = 0; p.ty = 0; p.hasTarget = false;
+    p.finalAlpha = 0;       // 汇聚后目标透明度
+    p.convergeProgress = 0; // 0→1 汇聚进度
+  }
 
   function initParticles() {
     particles = [];
     for (let i = 0; i < PARTICLE_COUNT; i++) {
-      const fragment = FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
-      const colors = ["#5B21F5", "#B98CFF", "#01CDFE", "#FF71CE", "#7B6896"];
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      particles.push({
-        fragment,
-        color,
-        alpha: 0.15 + Math.random() * 0.35,
-        x: Math.random() * W,
-        y: Math.random() * H,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        // 目标位置（汇聚点）
-        tx: 0, ty: 0,
-        hasTarget: false,
-        // 汇聚后的颜色和透明度
-        finalAlpha: 0,
-        fontSize: 9 + Math.random() * 4
-      });
+      const p = {};
+      spawnParticle(p, false);
+      particles.push(p);
     }
   }
 
-  // 取 "Corum Harness" 文字像素点
+  // 3D→2D 透视投影（返回投影后的屏幕坐标 + 缩放）
+  function project(p) {
+    const z = Math.max(Z_NEAR, p.z3);
+    const inv = FOCAL / z;
+    return {
+      sx: CX + p.x3 * inv,
+      sy: CY + p.y3 * inv,
+      scale: inv,
+    };
+  }
+
+  // ── "Corum Harness" 文字像素采样 ──────────────────────────────
   function getTextPixels() {
     const off = document.createElement("canvas");
     off.width = W;
     off.height = H;
     const octx = off.getContext("2d");
-    const fontSize = Math.min(52, W * 0.06);
+    const fontSize = Math.min(56, W * 0.065);
     octx.font = `700 ${fontSize}px Inter, -apple-system, sans-serif`;
     octx.textAlign = "center";
     octx.textBaseline = "middle";
     octx.fillStyle = "#FFFFFF";
-    octx.fillText("Corum Harness", W / 2, H / 2);
+    octx.fillText("Corum Harness", W / 2, H / 2 - 20);
     const data = octx.getImageData(0, 0, W, H).data;
     const pixels = [];
-    // 采样：每隔 N 个像素取一个点
-    const step = Math.max(4, Math.floor(W / 200));
+    const step = Math.max(4, Math.floor(W / 220));
     for (let y = 0; y < H; y += step) {
       for (let x = 0; x < W; x += step) {
-        const idx = (y * W + x) * 4 + 3; // alpha
-        if (data[idx] > 128) {
-          pixels.push({ x, y });
-        }
+        const idx = (y * W + x) * 4 + 3;
+        if (data[idx] > 128) pixels.push({ x, y });
       }
     }
     return pixels;
   }
 
+  // 汇聚阶段：给每个粒子分配一个文字像素目标
   function assignTargets() {
     const pixels = getTextPixels();
     if (pixels.length === 0) return;
-    // 打乱粒子顺序，随机分配目标
     const shuffled = [...particles].sort(() => Math.random() - 0.5);
     for (let i = 0; i < shuffled.length; i++) {
       const p = shuffled[i];
@@ -240,14 +290,72 @@
       p.tx = target.x + (Math.random() - 0.5) * 3;
       p.ty = target.y + (Math.random() - 0.5) * 3;
       p.hasTarget = true;
-      p.finalAlpha = 0.6 + Math.random() * 0.4;
+      p.finalAlpha = 0.55 + Math.random() * 0.4;
+      // 冻结当前投影位置作为缓动起点
+      const proj = project(p);
+      p.sx = proj.sx;
+      p.sy = proj.sy;
     }
   }
 
-  // 动画状态
-  let phase = "scatter"; // scatter → converge → done
-  let phaseStartTime = 0;
-  // 阶段文字映射（由主进程 corum:startup-status 回调驱动，不按固定时间）
+  // ── Web Audio API 升调 chord（汇聚完成音效） ────────────────
+  // C4(261.63) E4(329.63) G4(392.00) C5(523.25) 上行琶音
+  // 每音 0.2s，间隔 0.15s 起始，用 sine + gain envelope
+  function playChord() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const audioCtx = new AC();
+      // AudioContext 可能因 autoplay policy 处于 suspended
+      if (audioCtx.state === "suspended") {
+        try { audioCtx.resume(); } catch (e) { /* 静默 */ }
+      }
+      const notes = [261.63, 329.63, 392.00, 523.25];
+      const t0 = audioCtx.currentTime;
+      const dur = 0.2;
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = t0 + i * 0.15;
+        // envelope: 快速起音 → 指数衰减
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.28, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + dur + 0.05);
+      });
+      // 轻微混响感：叠一层低八度
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = freq / 2;
+        const start = t0 + i * 0.15;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.10, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur * 1.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + dur * 1.5 + 0.05);
+      });
+      setTimeout(() => { try { audioCtx.close(); } catch (e) {} }, 2000);
+    } catch (e) {
+      // sandbox 或 autoplay policy 限制 → 静默跳过，不阻断流程
+    }
+  }
+
+  // ── 动画状态机 ───────────────────────────────────────────────
+  // mode: 'flight' → 'converge' → 'ready'
+  let mode = "flight";
+  let startTime = 0;
+  let readyTime = 0;
+
+  // 阶段文字映射（由主进程 startup-status 回调驱动）
   const STAGE_TEXT = {
     env: "检查环境",
     spawn: "唤醒 Agent",
@@ -255,109 +363,148 @@
     mounting: "基本就绪",
   };
   let currentStage = null;
-  let currentProgress = 0;
-  let hostReady = false;
 
-  // 监听主进程的启动状态回调（经 preload IPC bridge）
+  // ── 阶段回调监听（经 preload bridge） ────────────────────────
+  function enterConverge() {
+    if (mode !== "flight") return;
+    mode = "converge";
+    assignTargets();
+    setTimeout(() => $("brand").classList.add("show"), 600);
+    setTimeout(() => $("progSection").classList.add("show"), 200);
+    setTimeout(() => $("skipHint").classList.add("show"), 1000);
+  }
+
+  function enterReady() {
+    if (mode === "ready") return;
+    mode = "ready";
+    readyTime = performance.now();
+    playChord();
+    $("brand").classList.add("show");
+    $("slogan").classList.add("show");
+    $("phaseText").textContent = "就绪";
+    $("progFill").style.width = "100%";
+    // 短暂停留后进入主页面
+    setTimeout(() => finishStartup(), REDUCED ? 800 : 1500);
+  }
+
   if (bridge && typeof bridge.onStartupStatus === "function") {
     bridge.onStartupStatus((status) => {
       if (status.phase === "ready") {
-        hostReady = true;
-        currentProgress = 100;
-        $("phaseText").textContent = "就绪";
-        $("progFill").style.width = "100%";
-        // host ready 后通知动画完成（让 gate 进入主界面）
-        finishStartup();
+        enterReady();
       } else if (status.phase === "error") {
         $("phaseText").textContent = "启动失败";
       } else if (status.phase === "loading") {
+        // 收到第一个 stage 回调 → 从星际穿梭转入汇聚
+        if (mode === "flight") enterConverge();
         if (status.stage && status.stage !== currentStage) {
           currentStage = status.stage;
           $("phaseText").textContent = STAGE_TEXT[status.stage] || status.stage;
         }
         if (typeof status.progress === "number") {
-          currentProgress = status.progress;
-          $("progFill").style.width = currentProgress + "%";
-        }
-        // 收到第一个 stage 回调后开始汇聚（不按固定时间）
-        if (phase === "scatter") {
-          phase = "converge";
-          assignTargets();
-          setTimeout(() => $("brand").classList.add("show"), 800);
-          setTimeout(() => $("slogan").classList.add("show"), 1600);
-          setTimeout(() => $("progSection").classList.add("show"), 200);
-          setTimeout(() => $("codeHint").classList.add("show"), 100);
+          $("progFill").style.width = status.progress + "%";
         }
       }
     });
   }
 
+  // ── 主渲染循环 ───────────────────────────────────────────────
   function animate(now) {
-    if (!phaseStartTime) phaseStartTime = now;
+    if (!startTime) startTime = now;
 
-    // 如果没有 bridge 回调（非桌面环境/预览模式），用固定时间兜底
+    // 无 bridge 兜底（预览模式 / 非桌面环境）：固定时间驱动
     if (!bridge || typeof bridge.onStartupStatus !== "function") {
-      const elapsed = now - phaseStartTime;
-      if (phase === "scatter" && elapsed > 1500) {
-        phase = "converge";
-        assignTargets();
-        setTimeout(() => $("brand").classList.add("show"), 800);
-        setTimeout(() => $("slogan").classList.add("show"), 1600);
-        setTimeout(() => $("progSection").classList.add("show"), 200);
-        setTimeout(() => $("codeHint").classList.add("show"), 100);
-      }
-      // 固定时间进度（兜底）
-      const elapsedFallback = now - phaseStartTime;
-      const prog = Math.min(85, (elapsedFallback / 7000) * 85);
+      const elapsed = now - startTime;
+      if (mode === "flight" && elapsed > 1800) enterConverge();
+      if (mode === "converge" && elapsed > 5000) enterReady();
+      // 固定时间进度条
+      const prog = Math.min(90, (elapsed / 5000) * 90);
       $("progFill").style.width = prog + "%";
       if (!currentStage) { currentStage = "env"; $("phaseText").textContent = STAGE_TEXT.env; }
-      if (elapsedFallback > 1800 && currentStage === "env") { currentStage = "spawn"; $("phaseText").textContent = STAGE_TEXT.spawn; }
-      if (elapsedFallback > 3600 && currentStage === "spawn") { currentStage = "plugins"; $("phaseText").textContent = STAGE_TEXT.plugins; }
-      if (elapsedFallback > 5400 && currentStage === "plugins") { currentStage = "mounting"; $("phaseText").textContent = STAGE_TEXT.mounting; }
+      if (elapsed > 1800 && currentStage === "env") { currentStage = "spawn"; $("phaseText").textContent = STAGE_TEXT.spawn; }
+      if (elapsed > 3000 && currentStage === "spawn") { currentStage = "plugins"; $("phaseText").textContent = STAGE_TEXT.plugins; }
+      if (elapsed > 4200 && currentStage === "plugins") { currentStage = "mounting"; $("phaseText").textContent = STAGE_TEXT.mounting; }
     }
 
-    // 更新粒子
-    ctx.clearRect(0, 0, W, H);
-    for (const p of particles) {
-      if (phase === "converge" && p.hasTarget) {
-        const dx = p.tx - p.x;
-        const dy = p.ty - p.y;
-        p.x += dx * 0.04;
-        p.y += dy * 0.04;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 5) {
-          p.alpha += (p.finalAlpha - p.alpha) * 0.1;
-          p.color = "#FFFFFF";
-        }
-      } else {
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.x < 0) p.x = W;
-        if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H;
-        if (p.y > H) p.y = 0;
-      }
+    // 清屏（带轻微残影拖尾增强速度感）
+    ctx.fillStyle = "rgba(10, 6, 18, 0.35)";
+    ctx.fillRect(0, 0, W, H);
 
-      ctx.font = `${p.fontSize}px 'JetBrains Mono', 'SF Mono', monospace`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.globalAlpha = p.alpha;
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.fragment, p.x, p.y);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (const p of particles) {
+      if (mode === "flight") {
+        // ── 阶段 1：星际穿梭 ──
+        // z3 递减 → 粒子从远到近飞掠镜头
+        p.z3 -= SPEED;
+        if (p.z3 < Z_NEAR) {
+          // 掠过镜头，重生到远处
+          spawnParticle(p, true);
+        }
+        const proj = project(p);
+        p.sx = proj.sx;
+        p.sy = proj.sy;
+        p.scale = proj.scale;
+
+        // 近处可见、远处淡出
+        const visZ = p.z3 / Z_FAR; // 1=远 0=近
+        const alpha = p.baseAlpha * (1 - visZ * 0.6);
+
+        // 跳过投影到屏幕外或太远的粒子
+        if (p.sx < -50 || p.sx > W + 50 || p.sy < -50 || p.sy > H + 50) continue;
+        if (p.z3 > Z_FAR * 0.95) continue;
+
+        const fontSize = p.baseSize * p.scale;
+        if (fontSize < 2) continue;
+        ctx.font = `${fontSize.toFixed(1)}px 'JetBrains Mono', 'SF Mono', monospace`;
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.fragment, p.sx, p.sy);
+
+      } else if (mode === "converge" && p.hasTarget) {
+        // ── 阶段 2：汇聚 ──
+        // 粒子从星际散布缓动飞向文字像素位置
+        p.convergeProgress = Math.min(1, p.convergeProgress + (REDUCED ? 0.04 : 0.025));
+        const ease = 1 - Math.pow(1 - p.convergeProgress, 3); // easeOutCubic
+        p.sx += (p.tx - p.sx) * (REDUCED ? 0.12 : 0.06);
+        p.sy += (p.ty - p.sy) * (REDUCED ? 0.12 : 0.06);
+
+        const dist = Math.hypot(p.tx - p.sx, p.ty - p.sy);
+        // 汇聚过程中亮度提升、颜色统一到白色
+        const unify = ease;
+        const alpha = p.baseAlpha + (p.finalAlpha - p.baseAlpha) * unify;
+        // 颜色 lerp 向白
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.fillStyle = dist < 8 ? "#FFFFFF" : p.color;
+        const fontSize = p.baseSize * (1 + ease * 0.15);
+        ctx.font = `${fontSize.toFixed(1)}px 'JetBrains Mono', 'SF Mono', monospace`;
+        ctx.fillText(p.fragment, p.sx, p.sy);
+
+      } else if (mode === "ready" && p.hasTarget) {
+        // ── 阶段 3：就绪 ──
+        // 粒子锁定在文字位置，白色，轻微呼吸
+        p.sx += (p.tx - p.sx) * 0.2;
+        p.sy += (p.ty - p.sy) * 0.2;
+        const breathe = 1 + Math.sin(now * 0.003 + p.tx * 0.01) * 0.05;
+        ctx.globalAlpha = p.finalAlpha * 0.9;
+        ctx.fillStyle = "#FFFFFF";
+        const fontSize = p.baseSize * breathe;
+        ctx.font = `${fontSize.toFixed(1)}px 'JetBrains Mono', 'SF Mono', monospace`;
+        ctx.fillText(p.fragment, p.sx, p.sy);
+      }
     }
     ctx.globalAlpha = 1;
 
     requestAnimationFrame(animate);
   }
 
-  // Esc 跳过 / 点击跳过
+  // ── Esc / 点击跳过 ──────────────────────────────────────────
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") finishStartup();
   });
-  document.addEventListener("click", () => {
-    finishStartup();
-  });
+  document.addEventListener("click", () => finishStartup());
 
+  // ── 启动 ────────────────────────────────────────────────────
   initParticles();
   requestAnimationFrame(animate);
 })();

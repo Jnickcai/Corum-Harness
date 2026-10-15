@@ -1,0 +1,31 @@
+{
+  "name": "corum-startup-theme-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion project for the Corum desktop startup animation: 3D first-person star-code tunnel → code fragments converge → 'Corum Harness' title.",
+  "type": "module",
+  "scripts": {
+    "dev": "remotion studio",
+    "preview": "remotion studio",
+    "render": "node render.mjs",
+    "audio": "node generate-audio.mjs",
+    "render:full": "node generate-audio.mjs && node render.mjs"
+  },
+  "dependencies": {
+    "@react-three/fiber": "8.17.10",
+    "@remotion/cli": "4.0.312",
+    "@remotion/three": "4.0.312",
+    "@remotion/bundler": "4.0.312",
+    "@remotion/renderer": "4.0.312",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "remotion": "4.0.312",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.0",
+    "@types/three": "0.180.0",
+    "typescript": "5.6.3"
+  }
+}
