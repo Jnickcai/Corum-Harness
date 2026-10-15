@@ -23,6 +23,7 @@ import type { CorumDock } from './dock.ts'
 import { readStartupAnimationEnabled, writeStartupAnimationEnabled } from './startup-settings.ts'
 import type { createStartupScreen } from './startup-screen.ts'
 import { listStartupThemes, importStartupTheme, selectStartupTheme, deleteStartupTheme, resolveStartupTheme } from './startup-themes.ts'
+import { performInstallUpdate } from './update-install.ts'
 import { openStartupPreview } from './startup-preview.ts'
 
 /**
@@ -542,6 +543,15 @@ export function registerIpc(
     }
   })()
   ipcMain.handle('corum:dsh-baseline-version', () => dshBaselineVersion)
+
+  // ── 应用更新 · 重启安装 ────────────────────────────────────────────────
+  //
+  // 渲染层在「下载完成待重启」态点击「重启安装」时调用。@corum/corum-update-checker
+  // 已把资产下载到 CORUM_UPDATES_DIR，渲染层经 RPC getUpdateState 拿到路径后，
+  // 经此 IPC 让主进程执行平台相关的「spawn 安装脚本 → quit → 替换 → 重启」。
+  // host 子进程无法直接退出 Electron 壳（它的父进程），故安装动作走主进程。
+  ipcMain.handle('corum:update-install', (_event, request: { downloadedPath: string }) =>
+    performInstallUpdate(request))
 
   // ── 壳层 combo 管理（纯壳页面使用；进程级切换，废弃旧的进程内 comboLoad）──
 

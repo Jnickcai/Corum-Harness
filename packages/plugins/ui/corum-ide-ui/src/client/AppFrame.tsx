@@ -25,7 +25,7 @@ interface SessionListState {
 }
 import type { createLayoutStore } from './stores.ts'
 import type { ChromeState, GridActions, SidebarMode } from './service.ts'
-import { Blocks, FolderKanban, Lock, MessageSquare, RefreshCw, Search, Settings, Star, User, X } from 'lucide-react'
+import { ArrowDownToLine, Blocks, FolderKanban, Lock, MessageSquare, RefreshCw, Search, Settings, Star, User, X } from 'lucide-react'
 import { GridView } from '@corum/corum-ui-base/client'
 import {
   loadGrid, saveGrid, dropLeaf, resizeBranch, findLeafBySlot,
@@ -36,6 +36,10 @@ import {
 import { IDE_GRID_SLOTS, IDE_GRID_STORAGE_KEY, IDE_TRANSPARENT_SLOTS, ideDefaultGrid } from './ide-layout.ts'
 // fork（corum）：开发者模式开关（同 bundle 设置域，localStorage + 同 bundle 事件）。
 import { useDeveloperMode } from './settings/developer-mode.ts'
+// 应用更新（2026-10-15）：更新结果面板 + 活动栏更新提醒按钮 + 用户菜单检查更新。
+import type { UpdateApi, UpdateState } from './update/update-api.ts'
+import { UpdatePanel } from './update/UpdatePanel.tsx'
+import { hasReadyUpdate, hasPendingUpdate, updateVersionLabel } from './update/update-api.ts'
 // 集成中心（PR4）：全屏独占工作面的面板本体（壳内渲染，不走网格/槽座位）。
 import { IntegrationsFrame, type IntegrationsSection, type IntegrationsSectionSlot } from './IntegrationsFrame.tsx'
 import css from './AppFrame.module.css'
@@ -185,7 +189,7 @@ const DEFAULT_AVATAR_SRC = 'corumapp://app/assets/avatars/general-assistant.png'
  * 刻意**不**走网格内新槽（进入网格就会被算进 leafMinSize / collapsedWidth /
  * drop 目标，而它是壳级工作面切换、不是用户可拖拽/可隐藏的区域）。
  */
-function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, onSearch, onPlugins, settingsSlot, openSettingsSection }: {
+function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, onSearch, onPlugins, settingsSlot, openSettingsSection, updateApi, updateHeroImageSrc }: {
   /**
    * 当前工作面的**导出值**（= 集成中心打开 ? 'integrations' : sidebarMode）。
    *
@@ -206,6 +210,13 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
   onPlugins: () => void
   /** 设置座位：`sidebar.settings` 槽的渲染结果（SettingsShell 触发器 + 面板）。 */
   settingsSlot: ReactNode
+  /**
+   * 应用更新能力面（2026-10-15）：活动栏更新按钮 + 用户菜单「检查更新」 +
+   * 更新结果面板的数据源。null = 服务未装配。
+   */
+  updateApi: UpdateApi | null
+  /** 更新结果面板的品牌头图 URL。 */
+  updateHeroImageSrc: string
   /**
    * 打开设置中心某 section（用户菜单「账户与用量」= 'account'、「设置」=
    * 'general'）。直通 ctx.layout.openSettingsSection → 广播
@@ -254,11 +265,32 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
     }
   }, [userMenuOpen])
 
-  // TODO(update: 更新机制未存在)：红点角标与「v… 可用」小字恒为静态占位，待接入
-  // auto-updater 后由真实状态驱动。显式标 boolean 而不是字面量 false，保住上面
-  // 两条渲染分支的类型检查（不被常量折叠掉）。
-  const updateAvailable: boolean = false
-  const updateVersionLabel = 'v0.2.0'
+  /* ── 应用更新（2026-10-15）────────────────────────────────────────── */
+  // 更新状态：轮询 host 侧 updateChecker.getState()。
+  // - 活动栏更新按钮：仅 downloaded-ready 时显示（无更新/下载中隐藏）。
+  // - 用户菜单「检查更新」项：红点 + 版本号（有更新未下载）或「重启安装 vX.X.X」
+  //   （已下载待重启）；点击弹 UpdatePanel。
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null)
+  const [updatePanelOpen, setUpdatePanelOpen] = useState(false)
+  const updatePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 轮询：有更新未下载 / 下载中时高频，否则低频。面板打开时也高频。
+  useEffect(() => {
+    if (updateApi === null) return undefined
+    const tick = (): void => { void updateApi.getState().then(setUpdateState) }
+    void tick()
+    const downloading = updateState?.phase === 'downloading'
+    const interval = downloading || updatePanelOpen ? 1000 : 5000
+    updatePollRef.current = setInterval(tick, interval)
+    return () => {
+      if (updatePollRef.current !== null) clearInterval(updatePollRef.current)
+    }
+  }, [updateApi, updateState?.phase, updatePanelOpen])
+
+  const showUpdateButton = hasReadyUpdate(updateState)
+  const showUpdateDot = hasPendingUpdate(updateState)
+  const showReadyBadge = hasReadyUpdate(updateState)
+  const updateVerLabel = updateVersionLabel(updateState)
 
   /** 菜单项「账户与用量」：打开设置中心的账户页并关菜单。 */
   const openAccount = (): void => {
@@ -275,11 +307,25 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
     setUserMenuOpen(false)
     console.debug('[activitybar] 升级 PRO（占位：购买链路未接入）')
   }
-  /** 点「检查更新」：只记日志（更新机制未接入），不假装已检查。 */
+  /**
+   * 点「检查更新」：关菜单 + 弹 UpdatePanel。若 updateApi 未装配则记日志降级。
+   * 若已下载待重启，面板直接展示卡③重启安装态。
+   */
   const requestUpdate = (): void => {
     setUserMenuOpen(false)
-    console.debug('[activitybar] 检查更新（占位：更新机制未接入）')
+    if (updateApi === null) {
+      console.debug('[activitybar] 检查更新（更新服务未装配）')
+      return
+    }
+    setUpdatePanelOpen(true)
   }
+  /**
+   * 活动栏更新按钮点击（下载完成时）：弹 UpdatePanel（展示卡③重启安装）。
+   */
+  const openUpdatePanelFromRail = (): void => {
+    setUpdatePanelOpen(true)
+  }
+
 
   /** 工作面 tooltip：激活项额外提示「点此收起/展开侧栏」（状态③ 的可发现性）。 */
   const faceTitle = (label: string, active: boolean): string =>
@@ -354,8 +400,25 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
         >
           <Blocks size={20} strokeWidth={2} />
         </button>
-        {/* design bg1Ll btn-settings：设置（sidebar.settings 槽触发器座位，行为不变）。 */}
-        <span className={css.railSettingsSeat}>{settingsSlot}</span>
+        {/* 设置中心挂载位（2026-10-15：原可见齿轮图标移除，改由用户菜单「设置」项
+            驱动；但 `sidebar.settings` 槽承载 SettingsShell 本体，必须保留挂载点，
+            故以不可见容器承载——触发器齿轮不再显示，面板仍经 openSettingsSection 弹出）。 */}
+        <span className={css.railSettingsSeatHidden}>{settingsSlot}</span>
+        {/* 应用更新提醒按钮（2026-10-15）：原 settings 图标位。
+            仅当「有更新且已下载完成」时显示（无更新/下载中隐藏，不占位）。
+            品牌色底 + ↓ 图标，点击弹 UpdatePanel（卡③重启安装）。 */}
+        {showUpdateButton && (
+          <button
+            type="button"
+            className={css.railItem}
+            data-update-btn="true"
+            title={`更新就绪 v${updateVerLabel ?? ''} · 点击重启安装`}
+            aria-label="更新就绪，点击重启安装"
+            onClick={openUpdatePanelFromRail}
+          >
+            <ArrowDownToLine size={20} strokeWidth={2.5} style={{ color: 'var(--dsw-alias-brand-primary, #6c8cff)' }} />
+          </button>
+        )}
         {/* 用户入口（design.pen item「用户」：btn 40×40 r10 + 28 圆形头像 + user
             图标）——原侧栏 footer 用户区删后搬到这里，点击 toggle 向上弹出的
             用户菜单（菜单项照 mmJTb zmFw6 版，见 .railUserMenu 注释）。 */}
@@ -425,9 +488,11 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
               <span className={css.railUserMenuLabel}>升级 PRO</span>
             </button>
           )}
-          {/* TODO(update: 更新机制未存在)：updateAvailable 恒为静态占位 false——
-              红点角标与「v… 可用」的渲染分支保留，待接入 auto-updater 后由真实
-              状态驱动（对齐原侧栏 footer 的 TODO 现状）。 */}
+          {/* 检查更新项（2026-10-15 接入真实状态机）：
+              - 无更新：纯文字「检查更新」；
+              - 有更新未下载：红点 + 「vX.X.X 可用」；
+              - 已下载待重启：品牌色角标 + 文案「重启安装 vX.X.X」。
+              点击弹 UpdatePanel。 */}
           <button
             type="button"
             role="menuitem"
@@ -436,11 +501,25 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
           >
             <span className={css.railUserMenuIconWrap}>
               <RefreshCw className={css.railUserMenuIcon} size={14} strokeWidth={2} aria-hidden="true" />
-              {updateAvailable && <span className={css.railUserMenuDot} aria-hidden="true" />}
+              {showUpdateDot && <span className={css.railUserMenuDot} aria-hidden="true" />}
+              {showReadyBadge && (
+                <span
+                  className={css.railUserMenuDot}
+                  aria-hidden="true"
+                  style={{ background: 'var(--dsw-alias-brand-primary, #6c8cff)', width: 7, height: 7 }}
+                />
+              )}
             </span>
-            <span className={css.railUserMenuLabel}>检查更新</span>
-            {updateAvailable && (
-              <span className={css.railUserMenuVersion}>{updateVersionLabel} 可用</span>
+            <span className={css.railUserMenuLabel}>
+              {showReadyBadge ? '重启安装' : '检查更新'}
+            </span>
+            {showUpdateDot && updateVerLabel !== null && (
+              <span className={css.railUserMenuVersion}>v{updateVerLabel} 可用</span>
+            )}
+            {showReadyBadge && updateVerLabel !== null && (
+              <span className={css.railUserMenuVersion} style={{ color: 'var(--dsw-alias-brand-primary, #6c8cff)', fontWeight: 600 }}>
+                v{updateVerLabel} 已就绪
+              </span>
             )}
           </button>
           <button
@@ -453,6 +532,15 @@ function ActivityBar({ face, projectAvailable, sidebarCollapsed, onSelectFace, o
             <span className={css.railUserMenuLabel}>设置</span>
           </button>
         </div>
+      )}
+      {/* 应用更新结果面板（2026-10-15）：从活动栏用户菜单「检查更新」或更新按钮
+          触发，绝对定位在活动栏左下角。updateApi 未装配时不渲染。 */}
+      {updatePanelOpen && updateApi !== null && (
+        <UpdatePanel
+          api={updateApi}
+          heroImageSrc={updateHeroImageSrc}
+          onClose={() => { setUpdatePanelOpen(false) }}
+        />
       )}
     </div>
   )
@@ -664,6 +752,15 @@ export type AppFrameProps =
      * 用户区迁入后的通路）。
      */
     openSettingsSection: (id: string) => void
+    /**
+     * 应用更新能力面（2026-10-15）：活动栏更新按钮 + 用户菜单「检查更新」 +
+     * 更新结果面板的数据源。host 侧 @corum/corum-update-checker 经 RPC 暴露，
+     * index.tsx 窄化成此本地能力接口（红线 3）下发。安装走 IPC
+     * （window.corumDesktop.installUpdate）。null = 服务未装配。
+     */
+    updateApi: UpdateApi | null
+    /** 更新结果面板的品牌头图 URL（corumapp://app/assets/...）。 */
+    updateHeroImageSrc: string
   }
 
 /** The IDE frame (see module doc). */
@@ -682,6 +779,8 @@ export function IdeAppFrame({
   toggleIntegrations,
   attachGridActions,
   openSettingsSection,
+  updateApi,
+  updateHeroImageSrc,
 }: AppFrameProps) {
   const panels = useStore(s => s)
   // 当前会话 id（非 blank）——details 抽屉的会话切换复位用。
@@ -1363,6 +1462,8 @@ export function IdeAppFrame({
           onPlugins={onPluginsFace}
           settingsSlot={renderSlot('sidebar.settings', { wide: false })}
           openSettingsSection={openSettingsSection}
+          updateApi={updateApi}
+          updateHeroImageSrc={updateHeroImageSrc}
         />
 
         {/* Main Row —— 自由二维网格（GridView），顶到窗口顶（占满 frame 全高）。

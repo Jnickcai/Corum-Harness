@@ -60,8 +60,10 @@ import { TestModule } from './TestModule.tsx'
 import { registerSlot, getSlotMeta, drainPendingSlots } from '@corum/corum-ui-base/client'
 import type { SlotMeta, SlotRegistryFace } from '@corum/corum-ui-base/client'
 import { makeCorumRpcCall } from '@corum/corum-rpc-client/client'
+import type { CorumRpcCall } from '@corum/corum-rpc-client/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { SettingsShell } from './SettingsShell.tsx'
+import type { UpdateApi, UpdateState } from './update/update-api.ts'
 import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
 } from './shell-contract.ts'
@@ -277,6 +279,21 @@ export const inject = ['slots', 'theme', 'locale', 'connection', 'remote', 'remo
  * actions to the service. A second effect seats the theme presenter.
  * @param ctx - client root context.
  */
+/**
+ * 构造 UpdateApi 能力面：把 CorumRpcCall 窄化成 AppFrame/UpdatePanel 只需的
+ * getState / check / download 三方法。失败静默返回 null（服务未装配时不报错）。
+ */
+function makeUpdateApi(rpc: CorumRpcCall): UpdateApi {
+  return {
+    getState: async () => {
+      try { return await rpc<UpdateState | null>('updateChecker', 'getUpdateState', {}) }
+      catch { return null }
+    },
+    check: async () => rpc<UpdateState>('updateChecker', 'check', {}),
+    download: async () => rpc<UpdateState>('updateChecker', 'download', {}),
+  }
+}
+
 export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
   ctx.effect(() => {
@@ -379,6 +396,12 @@ export function apply(ctx: ClientContext): void {
           // 设置中心触发（活动栏用户菜单）：直通 ctx.layout 的 openSettingsSection
           // 广播（OPEN_SETTINGS_SECTION_EVENT），SettingsShell 监听后打开指定页。
           openSettingsSection: (id: string) => { layout.openSettingsSection(id) },
+          // 应用更新能力面（2026-10-15）：窄化 host 侧 updateChecker RPC 成本地
+          // UpdateApi 接口（红线 3）。connection.rpc.call 通道，与 makeCorumRpcCall
+          // 同契约。安装动作走 IPC（window.corumDesktop.installUpdate）。
+          updateApi: makeUpdateApi(makeCorumRpcCall(ctx.get('connection') as ConnectionHandle)),
+          // 更新面板品牌头图：corumapp:// 协议读 desktop assets。
+          updateHeroImageSrc: 'corumapp://app/assets/brand-update-dark.png',
           hooks: {
             theme: {
               getSnapshot: () => ctx.theme.getTheme().preference,

@@ -289,6 +289,18 @@
     - id: corum-platform
       name: '@corum/corum-platform'
 
+    # update-checker（corum 核心插件，**不可卸载**）：检测当前应用版本（读
+    # packages/desktop/package.json）与 GitHub 已发布 release，判断当前运行
+    # 平台是否需要更新。① 调 GitHub Releases API 取 latest；② semver 比较
+    # 当前版本与 latest；③ 按平台 + 架构匹配资产（darwin→dmg / win32→exe /
+    # linux→AppImage）。**只检测 + 提示，不做自动下载安装**。
+    # 服务名 `updateChecker`，渲染层经 makeCorumRpcCall 调
+    # /api/updateChecker/check 与 /api/updateChecker/getLatest。
+    # apply 时注册启动后延迟 8s 自动检查一次（非阻塞）。
+    # ⚠️ 本插件不可卸载：插件管理器按包名 @corum/corum-update-checker 过滤启停/卸载入口。
+    - id: corum-update-checker
+      name: '@corum/corum-update-checker'
+
     # Fork #9 完整 seam 服务（取代上方禁用的官方 subagent 行）：
     # 服务名 'subagents' 不变（fork 的 SubagentRuntime super(ctx,'subagents')
     # 与官方一致），官方 provider 行（spawn/fork）与 tool-subagent-control

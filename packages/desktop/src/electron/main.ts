@@ -15,7 +15,7 @@
  * @module corum-desktop/electron/main
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,6 +32,7 @@ import { getPlatformModule } from './platform/index.ts'
 import { createStartupScreen } from './startup-screen.ts'
 import { readStartupAnimationEnabled } from './startup-settings.ts'
 import { resolveStartupTheme } from './startup-themes.ts'
+import { resolveDesktopHome } from '../host/home.ts'
 
 /**
  * Whether this launch runs from a packaged bundle: the bundled host runtime
@@ -404,6 +405,21 @@ function buildHostEnv(combo: Combo | null): Record<string, string> {
   // 改从这里读（与 main 进程断言读的是同一个事实源）。dev 态无烘入值不传。
   const baked = bakedTargetPlatform()
   if (baked !== undefined) env.CORUM_TARGET_PLATFORM = baked
+  // 应用版本号 + 更新缓存目录透传给 host 子进程：
+  // @corum/corum-update-checker 的 getUpdateState / checkForUpdates 读它做
+  // semver 比较与下载落盘。版本号读本包 package.json（与 ipc.ts 的
+  // corum:app-version 同一事实源）；更新目录 = desktop home 下的 updates/。
+  const appVersionForHost: string = (() => {
+    try {
+      return JSON.parse(
+        readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'),
+      ).version as string
+    } catch {
+      return 'unknown'
+    }
+  })()
+  if (appVersionForHost.length > 0) env.CORUM_APP_VERSION = appVersionForHost
+  env.CORUM_UPDATES_DIR = join(resolveDesktopHome(), 'updates')
   // 便携版 Git 注入 PATH：打包态自带 PortableGit（Windows），host 侧 spawn('git')
   // 从 PATH 找 git。干净系统没装 git 时不会 ENOENT。非 Windows 系统自带 git（跳过）。
   if (isPackaged() && process.platform === 'win32') {
