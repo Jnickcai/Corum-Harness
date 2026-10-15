@@ -31,6 +31,7 @@ import { SelectField } from '../SelectField.tsx'
 import { Badge } from '../Badge.tsx'
 import { ColorChips } from '../ColorChips.tsx'
 import { CorumSettingsContext } from '../shared.tsx'
+import { StartupAnimationSetting } from '../StartupAnimationSetting.tsx'
 import { ACCENT_OPTIONS, DEFAULT_ACCENT_ID, getAccentId, setAccentId, subscribeAccent } from '../../appearance-accent.ts'
 import { UI_FONT_BASE_DEFAULT_PX, UI_FONT_BASE_OPTIONS, getUiFontBase, setUiFontBase, subscribeUiFontBase } from '../../ui-font-scale.ts'
 import { UI_DENSITY_DEFAULT_ID, UI_DENSITY_OPTIONS, getUiDensityId, setUiDensity, subscribeUiDensity } from '../../ui-density.ts'
@@ -143,6 +144,7 @@ export function AppearanceSection(_props?: {
   return (
     <>
       {error !== null && <p style={{ color: 'var(--dsw-alias-state-error-primary)', fontSize: 12 }}>{error}</p>}
+      <StartupAnimationSetting />
       <SettingGroup title="主题">
         <SettingRow
           label="外观主题"

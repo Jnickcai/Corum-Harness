@@ -29,6 +29,9 @@ import { HostBridgeClient, type BridgeReady } from './bridge-client.ts'
 import { findCombo, loadAllCombos, sanitizeComboEnv, touchCombo, type Combo } from './combos.ts'
 import { resolveMasterKeyB64, MASTER_KEY_ENV, KEY_UNAVAILABLE_POLICY_ENV } from './credentials-key.ts'
 import { getPlatformModule } from './platform/index.ts'
+import { createStartupScreen } from './startup-screen.ts'
+import { readStartupAnimationEnabled } from './startup-settings.ts'
+import { resolveStartupTheme } from './startup-themes.ts'
 
 /**
  * Whether this launch runs from a packaged bundle: the bundled host runtime
@@ -187,6 +190,7 @@ let dock: CorumDock | null = null
 let bridge: HostBridgeClient | null = null
 /** 当前协议集（只服务 combo 壳页 + shell 静态资源；dsh 页走官方 webserver）。 */
 let protocols: ReturnType<typeof registerProtocols> | null = null
+let startupScreen: ReturnType<typeof createStartupScreen> | null = null
 
 function createWindow(): void {
   // 窗口最小尺寸（2026-08-27 用户定调 + col-nav 调整 + 主窗口边距改 0 后重算）：
@@ -205,6 +209,7 @@ function createWindow(): void {
     // 窗口标题（2026-08-28 改名）：中文「矩道」、英文「Corum」，按系统语言选。
     title: app.getLocale().startsWith('zh') ? '矩道' : 'Corum',
     show: !SMOKE,
+    backgroundColor: '#050403',
     // 窗口 Chrome 平台选路收进 electron/platform/（P1：window-chrome 能力）。
     // macOS：hiddenInset（隐藏原生标题栏但保留左上角红绿灯，灯位内联到内容区），
     // 红绿灯与标题栏图标中线对齐（实测定标 y=13、x=12）；Windows/Linux 系统标题栏，
@@ -441,18 +446,52 @@ async function spawnHost(combo: Combo | null): Promise<BridgeReady> {
 }
 
 /** 壳层 combo 启动：按 combo 注入并 spawn host，成功后窗口切到官方 dsh web 页。 */
-async function launchCombo(id: string): Promise<{ ok: boolean; error?: string }> {
+async function launchCombo(id: string, showStartup = false): Promise<{ ok: boolean; error?: string }> {
   const combo = findCombo(id)
   if (combo === null) return { ok: false, error: `unknown combo: ${id}` }
   touchCombo(id)
+  const win = mainWindow
+  if (win === null || win.isDestroyed()) return { ok: false, error: 'no window' }
+  if (showStartup) {
+    startupScreen?.dispose()
+    const theme = await resolveStartupTheme(shellAssetsPath())
+    startupScreen = createStartupScreen(win, readStartupAnimationEnabled(), () => { void launchCombo(id, true) }, theme)
+  }
+  const screen = showStartup ? startupScreen : null
   try {
     const ready = await spawnHost(combo)
     process.stderr.write(`[corum-desktop] combo "${combo.id}" host ready (${ready.authenticatedUrl})\n`)
-    const win = mainWindow
-    if (win === null || win.isDestroyed()) return { ok: false, error: 'no window' }
+    if (win.isDestroyed()) return { ok: false, error: 'no window' }
     await win.loadURL(ready.authenticatedUrl)
+    if (screen !== null) {
+      // 等应用挂载完成；frontend 的 boot 提示文字不代表主界面已就绪。
+      const selector = combo.env?.CORUM_DESKTOP_MODE === 'ide' ? '[data-session-band]' : '#root > *, #app > *'
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let waiting = true
+      try {
+        await Promise.race([
+          (async () => {
+            while (waiting) {
+              const mounted = await win.webContents.executeJavaScript(`
+                !document.querySelector('[data-dsh-boot]') && !!document.querySelector(${JSON.stringify(selector)})
+              `)
+              if (mounted) return
+              await new Promise(resolve => setTimeout(resolve, 100))
+            }
+          })(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('主界面加载超时，请重试启动')), 30_000)
+          }),
+        ])
+      } finally {
+        waiting = false
+        clearTimeout(timer)
+      }
+      screen.ready()
+    }
     return { ok: true }
   } catch (error) {
+    screen?.fail(error instanceof Error ? error.message : String(error))
     process.stderr.write(`[corum-desktop] combo "${combo.id}" launch failed: ${String(error)}\n`)
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
@@ -615,7 +654,7 @@ async function main(): Promise<void> {
   protocols = registerProtocols(monacoWorkersPath(), shellAssetsPath())
   // 壳层 IPC 一次性注册：bridge 通过 getter 解析（combo 切换换实例）；托盘同理
   // 走 getter（托盘在 createWindow 之后才建，但 IPC 可能更早被调用）。
-  registerIpc(() => bridge, () => mainWindow, { launchCombo, getTray: () => tray, getDock: () => dock })
+  registerIpc(() => bridge, () => mainWindow, { launchCombo, getTray: () => tray, getDock: () => dock, getStartupScreen: () => startupScreen, startupAssetsDir: shellAssetsPath() })
   createWindow()
   // macOS 的两个常驻入口（2026-09-10 用户定调「托盘常驻要做」+「下面的 dock 栏也做一下」）：
   //   - 菜单栏托盘（status item）：未读数字是**被遮挡时**仍可见的主载体；
@@ -708,7 +747,7 @@ async function main(): Promise<void> {
       process.stderr.write(`[corum-desktop] unknown combo: ${INITIAL_COMBO_ID}; falling back to the launcher\n`)
       await mainWindow?.loadURL('corumapp://combo/index.html')
     } else {
-      await launchCombo(combo.id)
+      await launchCombo(combo.id, true)
     }
   } else {
     // 0 个或多个 combo：显示 combo 管理页由用户选（壳自带静态页，零 dsh 依赖）。

@@ -84,6 +84,7 @@ export default defineConfig(() => [
   nodeEntry('electron/bridge-client'),
   nodeEntry('electron/cli', { banner: '#!/usr/bin/env node' }),
   nodeEntry('electron/preload', { format: ['cjs'] }),
+  nodeEntry('electron/startup-preview-preload', { format: ['cjs'] }),
   // Browser bundle: the corum-desktop client half.
   {
     name: `${CLIENT_ID}/client`,

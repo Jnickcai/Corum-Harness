@@ -6,12 +6,18 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { StartupThemeCatalog, StartupThemeInfo } from './startup-themes.ts'
 
 const floatingListeners = new Set<(slotKey: string, detached: boolean) => void>()
 const floatingDragListeners = new Set<(payload: { slotKey: string; dragging: boolean; x?: number; y?: number }) => void>()
 const nativeNotificationClickListeners = new Set<(payload: { notificationId: string | null }) => void>()
 const notificationCenterListeners = new Set<() => void>()
 const maximizeListeners = new Set<(maximized: boolean) => void>()
+type StartupStatus = { phase: 'loading' | 'ready' | 'error'; message?: string }
+const startupListeners = new Set<(status: StartupStatus) => void>()
+ipcRenderer.on('corum:startup-status', (_event, status: StartupStatus) => {
+  for (const listener of startupListeners) listener(status)
+})
 
 ipcRenderer.on('corum:maximize-change', (_event, maximized: boolean) => {
   for (const listener of [...maximizeListeners]) listener(maximized)
@@ -41,6 +47,17 @@ ipcRenderer.on('corum:open-notification-center', () => {
  * 几个方法（tray-bridge / session-archive 的既有形态），不 import 本文件。
  */
 export interface CorumDesktopBridge {
+  listStartupThemes: () => Promise<StartupThemeCatalog>
+  importStartupTheme: () => Promise<{ cancelled: boolean; theme?: StartupThemeInfo }>
+  selectStartupTheme: (id: string) => Promise<void>
+  deleteStartupTheme: (id: string) => Promise<{ cancelled: boolean }>
+  previewStartupTheme: (id: string) => Promise<void>
+  getStartupAnimationEnabled: () => Promise<boolean>
+  setStartupAnimationEnabled: (enabled: boolean) => Promise<boolean>
+  getStartupStatus: () => Promise<StartupStatus | undefined>
+  onStartupStatus: (callback: (status: StartupStatus) => void) => () => void
+  finishStartup: () => void
+  retryStartup: () => void
   /**
    * 实际运行平台（'darwin' | 'linux' | 'win32'）——渲染层的**平台行为事实源**
    * （docs/PLAN-2026-10-07 §3③：渲染层经 preload 同步查平台；合法 window 挂载，
@@ -126,11 +143,25 @@ const BAKED_TARGET_PLATFORM: 'darwin' | 'linux' | 'win32' | undefined =
     : __CORUM_TARGET_PLATFORM__ as 'darwin' | 'linux' | 'win32'
 
 contextBridge.exposeInMainWorld('corumDesktop', {
+  listStartupThemes: (): Promise<StartupThemeCatalog> => ipcRenderer.invoke('corum:startup-themes-list'),
+  importStartupTheme: (): Promise<{ cancelled: boolean; theme?: StartupThemeInfo }> => ipcRenderer.invoke('corum:startup-themes-import'),
+  selectStartupTheme: (id: string): Promise<void> => ipcRenderer.invoke('corum:startup-themes-select', id),
+  deleteStartupTheme: (id: string): Promise<{ cancelled: boolean }> => ipcRenderer.invoke('corum:startup-themes-delete', id),
+  previewStartupTheme: (id: string): Promise<void> => ipcRenderer.invoke('corum:startup-themes-preview', id),
   /**
    * 实际运行平台（process.platform，写一次只读的模块常量）。同步返回：
    * 平台是启动期常量，不值得为它走 IPC（异步会迫使消费面全变异步）。
    */
   getPlatform: (): 'darwin' | 'linux' | 'win32' => RUNTIME_PLATFORM,
+  getStartupAnimationEnabled: (): Promise<boolean> => ipcRenderer.invoke('corum:startup-animation-get'),
+  setStartupAnimationEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('corum:startup-animation-set', enabled),
+  getStartupStatus: (): Promise<StartupStatus | undefined> => ipcRenderer.invoke('corum:startup-status-get'),
+  onStartupStatus: (callback: (status: StartupStatus) => void): (() => void) => {
+    startupListeners.add(callback)
+    return () => { startupListeners.delete(callback) }
+  },
+  finishStartup: (): void => { ipcRenderer.send('corum:startup-finish') },
+  retryStartup: (): void => { ipcRenderer.send('corum:startup-retry') },
 
   /** 烘入的目标平台（诊断用；dev 态 undefined）。禁止用于选实现。 */
   getBakedTargetPlatform: (): 'darwin' | 'linux' | 'win32' | undefined => BAKED_TARGET_PLATFORM,

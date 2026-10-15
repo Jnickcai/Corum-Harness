@@ -14,6 +14,8 @@ import { readFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { protocol } from 'electron'
 import { renderComboPageHtml } from './combo-page.ts'
+import { resolveStartupTheme } from './startup-themes.ts'
+import { readStartupThemeResource } from './startup-theme-resource.ts'
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -39,7 +41,7 @@ const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(['.png', '.jpg', '.jpeg', 
  */
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: 'corumapp', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    { scheme: 'corumapp', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   ])
 }
 
@@ -57,6 +59,14 @@ export function registerProtocols(
 ): Record<string, never> {
   protocol.handle('corumapp', async (request) => {
     const url = new URL(request.url)
+    if (url.host === 'startup-preview' && assetsDir !== undefined) {
+      try {
+        const [, id, ...parts] = url.pathname.split('/')
+        const theme = await resolveStartupTheme(assetsDir, id)
+        if (theme.info.id !== id || !theme.info.preview || decodeURIComponent(parts.join('/')) !== theme.info.preview) return new Response(null, { status: 404 })
+        return readStartupThemeResource(theme, new Request(`corumapp://startup-theme${url.pathname}`))
+      } catch { return new Response(null, { status: 404 }) }
+    }
     // 壳的 combo 管理页：`corumapp://combo/index.html`，零 dsh 依赖的静态页。
     // 独立 origin，与 dsh client 页面（loopback HTTP）互不干扰。
     if (url.host === 'combo') {

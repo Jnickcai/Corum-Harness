@@ -13,13 +13,17 @@ import { readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, dialog, ipcMain, BrowserWindow, Notification } from 'electron'
+import { app, dialog, ipcMain, BrowserWindow, Notification, type IpcMainInvokeEvent } from 'electron'
 import type { HostBridgeClient } from './bridge-client.ts'
 import { findCombo, loadAllCombos, touchCombo } from './combos.ts'
 import { createInputHal, type InputHal } from './input-hal.ts'
 import { getPlatformModule } from './platform/index.ts'
 import { takeTrayResidentHint, type CorumTray } from './tray.ts'
 import type { CorumDock } from './dock.ts'
+import { readStartupAnimationEnabled, writeStartupAnimationEnabled } from './startup-settings.ts'
+import type { createStartupScreen } from './startup-screen.ts'
+import { listStartupThemes, importStartupTheme, selectStartupTheme, deleteStartupTheme, resolveStartupTheme } from './startup-themes.ts'
+import { openStartupPreview } from './startup-preview.ts'
 
 /**
  * Register the transport IPC handlers. Run once after app ready; the bridge
@@ -39,8 +43,62 @@ export function registerIpc(
     getTray?: () => CorumTray | null
     /** 当前 Dock 侧句柄（未建/非 macOS 为 null）；未读徽标走它。 */
     getDock?: () => CorumDock | null
+    getStartupScreen?: () => ReturnType<typeof createStartupScreen> | null
+    startupAssetsDir?: string
   },
 ): void {
+  const startupCaller = (event: IpcMainInvokeEvent): BrowserWindow => {
+    const win = getWindow()
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error('无效的启动主题请求')
+    return win
+  }
+  const startupAssets = (): string => {
+    if (!options?.startupAssetsDir) throw new Error('启动主题资源尚未就绪')
+    return options.startupAssetsDir
+  }
+  const startupId = (id: unknown): string => { if (typeof id !== 'string') throw new Error('主题 ID 无效'); return id }
+  ipcMain.handle('corum:startup-themes-list', event => { startupCaller(event); return listStartupThemes(startupAssets()) })
+  ipcMain.handle('corum:startup-themes-import', async event => {
+    const win = startupCaller(event)
+    const picked = await dialog.showOpenDialog(win, { title: '导入启动主题', properties: ['openFile'], filters: [{ name: 'Corum 启动主题', extensions: ['zip'] }] })
+    if (picked.canceled || !picked.filePaths[0]) return { cancelled: true }
+    return { cancelled: false, theme: await importStartupTheme(picked.filePaths[0]) }
+  })
+  ipcMain.handle('corum:startup-themes-select', (event, id: unknown) => { startupCaller(event); return selectStartupTheme(startupId(id), startupAssets()) })
+  ipcMain.handle('corum:startup-themes-delete', async (event, value: unknown) => {
+    const win = startupCaller(event), id = startupId(value)
+    const catalog = await listStartupThemes(startupAssets())
+    const theme = catalog.themes.find(item => item.id === id)
+    if (!theme || theme.builtin) throw new Error('该主题不存在或为内置主题')
+    const result = await dialog.showMessageBox(win, { type: 'question', title: '删除启动主题', message: `删除“${theme.name}”？`, detail: catalog.selectedId === id ? '下次启动将使用内置主题。' : '可以重新导入主题包恢复。', buttons: ['取消', '删除'], defaultId: 0, cancelId: 0, noLink: true })
+    if (result.response !== 1) return { cancelled: true }
+    await deleteStartupTheme(id)
+    return { cancelled: false }
+  })
+  ipcMain.handle('corum:startup-themes-preview', async (event, value: unknown) => {
+    const win = startupCaller(event), id = startupId(value)
+    const theme = await resolveStartupTheme(startupAssets(), id)
+    if (theme.info.id !== id) throw new Error('主题不存在或已损坏')
+    openStartupPreview(win, theme)
+  })
+  ipcMain.handle('corum:startup-animation-get', () => readStartupAnimationEnabled())
+  ipcMain.handle('corum:startup-animation-set', (event, enabled: unknown) => {
+    if (event.sender.id !== getWindow()?.webContents.id || typeof enabled !== 'boolean') throw new Error('无效的启动设置请求')
+    writeStartupAnimationEnabled(enabled)
+    return enabled
+  })
+  ipcMain.handle('corum:startup-status-get', event => {
+    const screen = options?.getStartupScreen?.()
+    return screen?.senderId === event.sender.id ? screen.getStatus() : undefined
+  })
+  ipcMain.on('corum:startup-finish', event => {
+    const screen = options?.getStartupScreen?.()
+    if (screen?.senderId === event.sender.id) screen.finish()
+  })
+  ipcMain.on('corum:startup-retry', event => {
+    const screen = options?.getStartupScreen?.()
+    if (screen?.senderId === event.sender.id) screen.retry()
+  })
   // Push a message to the MAIN window's webContents. A closed floating
   // window or a reloaded/crashed main frame leaves the render frame disposed
   // even when `isDestroyed()` hasn't flipped yet (an Electron race), so guard

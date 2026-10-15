@@ -64,23 +64,27 @@ export class HostBridgeClient {
   private readonly readyListeners = new Set<ReadyListener>()
   private readyState: BridgeReady | undefined
   private readyResolve: ((ready: BridgeReady) => void) | undefined
+  private readyReject: ((error: Error) => void) | undefined
   private readyPromise!: Promise<BridgeReady>
+  private readyTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(
     private readonly hostNode: string,
     private readonly bridgePath: string,
     private readonly injectedEnv?: Record<string, string>,
     private readonly cwd?: string,
+    private readonly readyTimeoutMs = 60_000,
   ) {
     this.spawn()
   }
 
   /** Spawn (or respawn) the host child and wire its stdout protocol. */
   private spawn(): void {
-    this.readyPromise = new Promise<BridgeReady>((resolve) => {
+    this.readyPromise = new Promise<BridgeReady>((resolve, reject) => {
       this.readyResolve = resolve
+      this.readyReject = reject
     })
-    this.child = spawn(this.hostNode, [this.bridgePath], {
+    const child = spawn(this.hostNode, [this.bridgePath], {
       stdio: ['pipe', 'pipe', 'inherit'],
       env: this.injectedEnv ?? process.env,
       // Windows 后台化：node.exe 是控制台子系统程序，父进程（Electron GUI，
@@ -89,12 +93,30 @@ export class HostBridgeClient {
       windowsHide: true,
       ...(this.cwd !== undefined && this.cwd !== '' ? { cwd: this.cwd } : {}),
     })
-    this.child.on('error', (error) => {
+    this.child = child
+    let failed = false
+    const failStartup = (error: Error) => {
+      if (child !== this.child || this.readyState !== undefined || failed) return
+      failed = true
+      clearTimeout(this.readyTimer)
+      this.readyReject?.(error)
+    }
+    this.readyTimer = setTimeout(() => {
+      failStartup(new Error('后台启动超时，请重试启动并查看启动日志。'))
+      child.kill()
+    }, this.readyTimeoutMs)
+    child.on('error', (error) => {
       process.stderr.write(`corum-desktop host bridge spawn error: ${String(error)}\n`)
+      failStartup(error)
+    })
+    child.on('exit', (code, signal) => {
+      if (child === this.child && this.readyState === undefined) {
+        failStartup(new Error(`后台启动失败：进程提前退出（code ${String(code)}${signal === null ? '' : `, signal ${signal}`}），请查看启动日志。`))
+      }
     })
     const readline = createInterface({ input: this.child.stdout! })
     readline.on('line', (line) => {
-      this.onLine(line)
+      if (child === this.child && !failed) this.onLine(line)
     })
   }
 
@@ -117,6 +139,7 @@ export class HostBridgeClient {
    * @returns the new generation's ready payload (a fresh authenticatedUrl).
    */
   async restart(): Promise<BridgeReady> {
+    clearTimeout(this.readyTimer)
     this.child.kill()
     this.readyState = undefined
     // 清掉旧一代的全部 pending session op：子进程已死，这些请求永远等不到
@@ -187,6 +210,7 @@ export class HostBridgeClient {
 
   /** Stop the child. */
   dispose(): void {
+    clearTimeout(this.readyTimer)
     // 先主动清掉全部 pending session op（同 restart 的 failAllPending）：子进程
     // 即将被 kill，这些请求永远等不到回复，不 resolve 会悬挂到超时（或 before-quit
     // 场景挂住退出）。failAllPending 只清 Map 并回调、不触碰子进程，与 kill 无
@@ -204,6 +228,7 @@ export class HostBridgeClient {
       return
     }
     if (message.type === 'ready') {
+      clearTimeout(this.readyTimer)
       this.readyState = message
       this.readyResolve?.(message)
       for (const listener of [...this.readyListeners]) listener(message)

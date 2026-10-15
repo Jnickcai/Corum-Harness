@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Corum Startup Theme v1",
+  "type": "object",
+  "required": ["formatVersion", "id", "name", "version", "type", "entry"],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9_-])?$" },
+    "name": { "type": "string", "pattern": "\\S" },
+    "version": { "type": "string", "pattern": "\\S" },
+    "type": { "enum": ["html", "video"] },
+    "entry": { "$ref": "#/$defs/path" },
+    "author": { "type": "string" },
+    "preview": { "allOf": [{ "$ref": "#/$defs/path" }, { "pattern": "\\.(?:[pP][nN][gG]|[jJ][pP][eE]?[gG]|[wW][eE][bB][pP])$" }] },
+    "background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[. ](?:/|$))(?!.*[\\\\:\\u0000-\\u001f<>\"|?*])(?!.*(?:^|/)(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|$)).*[^/]$"
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "html" } } }, "then": { "properties": { "entry": { "pattern": "\\.[hH][tT][mM][lL]$" } } } },
+    { "if": { "properties": { "type": { "const": "video" } } }, "then": { "properties": { "entry": { "pattern": "\\.(?:[mM][pP]4|[wW][eE][bB][mM])$" } } } }
+  ]
+}
