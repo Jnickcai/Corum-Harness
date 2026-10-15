@@ -1171,6 +1171,48 @@ async function main() {
   await materializeSymlinks(join(HOST_DIR, 'node_modules'))
   await smokeBridge()
   console.log('[pack-macos] host runtime staged at', HOST_DIR)
+  await buildApp()
+}
+
+/**
+ * 调 electron-builder 把 build/host/ 打进 .app。
+ *
+ * ## 为什么临时清空 `dependencies`（2026-10-15 根治 link override 兼容问题）
+ *
+ * electron-builder 25.x 的 `NodeModuleCopyHelper.collectNodeModules` **无条件**
+ * 扫描 `package.json` 的 `dependencies`，跟踪每个依赖的 node_modules 软链。
+ * corum 的 `dsh-tools` / `dsh-fs-local` 靠 `pnpm-workspace.yaml` 的 `link:`
+ * override 指向**工作区源码目录**（`packages/plugins/agent/corum-tools`），
+ * 该目录不在任何 `.pnpm` 条目下 ⇒ electron-builder 报
+ * `corum-tools must be under .pnpm/@deepseek-ai+dsh-base@…/`。
+ *
+ * app 本体（`lib/main.js` 等）只 import Electron API，**不 import dependencies
+ * 里的任何包**——host 运行时全在 `build/host/`（extraResources）。故 dependencies
+ * 可以在打包时安全清空：electron-builder 不再扫描 node_modules，.app 不含 node_modules，
+ * 运行时靠 extraResources 里的 host 闭包自解析。
+ *
+ * `electron` 在 `devDependencies`（不在 dependencies），`checkDependencies` 检查的是
+ * devDependencies，故清空 dependencies 不影响 electron 检测。
+ *
+ * 做法：备份 package.json → 写一份 dependencies={} 的临时 package.json →
+ * 调 electron-builder → 无论成功失败恢复原 package.json。
+ */
+async function buildApp() {
+  const pkgPath = join(DESKTOP_ROOT, 'package.json')
+  const original = await readFile(pkgPath, 'utf8')
+  const pkg = JSON.parse(original)
+  const savedDeps = pkg.dependencies
+  pkg.dependencies = {}
+  await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+  console.log('[pack-macos] electron-builder: dependencies temporarily emptied (host runtime is in extraResources)')
+  try {
+    await run('electron-builder', join(DESKTOP_ROOT, 'node_modules', '.bin', 'electron-builder'), [
+      '--mac', '--arm64',
+    ], { cwd: DESKTOP_ROOT })
+  } finally {
+    await writeFile(pkgPath, original)
+    console.log('[pack-macos] package.json restored')
+  }
 }
 
 await main().catch((error) => {
