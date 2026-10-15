@@ -8,6 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
   background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(2px);
 }
@@ -15,7 +16,9 @@
 .panel {
   position: relative;
   width: 380px;
-  max-height: 86vh;
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
+  flex-shrink: 0;
   border-radius: 18px;
   border: 1px solid var(--corum-glass-border, var(--dsw-alias-border-subtle, rgba(255,255,255,0.08)));
   background: var(--corum-glass-1, var(--dsw-alias-bg-elevated-primary, #1c1c1e));
