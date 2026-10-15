@@ -1,0 +1,12 @@
+.list { list-style: none; margin: 0; padding: 0; }
+.theme { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--corum-glass-border); }
+.theme:last-child { border-bottom: 0; }
+.meta { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.detail { font-size: 12px; opacity: .65; }
+.preview { width: 92px; height: 56px; object-fit: contain; border-radius: 6px; background: var(--corum-glass-2); }
+.actions { display: flex; gap: 6px; }
+.button { padding: 6px 10px; border: 1px solid var(--corum-glass-border); border-radius: 6px; background: var(--corum-glass-2); color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.button:hover:not(:disabled) { background: var(--corum-glass-1); }
+.button:disabled { opacity: .55; cursor: default; }
+.button[aria-pressed='true'] { opacity: 1; }
+.button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

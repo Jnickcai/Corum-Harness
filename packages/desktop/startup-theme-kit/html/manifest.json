@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "id": "hello-corum",
+  "name": "你好，Corum",
+  "version": "1.0.0",
+  "type": "html",
+  "entry": "content/index.html",
+  "background": "#111827"
+}

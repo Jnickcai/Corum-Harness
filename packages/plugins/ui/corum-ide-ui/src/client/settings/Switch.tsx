@@ -20,6 +20,7 @@ interface SwitchProps {
   onChange: (checked: boolean) => void
   /** 是否禁用。 */
   disabled?: boolean
+  label?: string
 }
 
 /**
@@ -27,11 +28,12 @@ interface SwitchProps {
  * @param props - checked, onChange, disabled.
  * @returns the switch element.
  */
-export function Switch({ checked, onChange, disabled }: SwitchProps) {
+export function Switch({ checked, onChange, disabled, label }: SwitchProps) {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={checked}
       disabled={disabled}
       className={checked ? css.switchOn : css.switchOff}

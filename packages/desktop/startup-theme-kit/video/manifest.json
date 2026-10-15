@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "id": "my-startup-video",
+  "name": "我的启动视频",
+  "version": "1.0.0",
+  "type": "video",
+  "entry": "content/startup.webm",
+  "background": "#000000"
+}
