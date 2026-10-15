@@ -27,14 +27,25 @@ const config=${config};
 const bridge=window.corumDesktop;
 const stage=document.getElementById('stage'),status=document.getElementById('status'),hint=document.getElementById('hint'),skip=document.getElementById('skip'),retry=document.getElementById('retry');
 let frame=null,video=null,holding=false,finished=false,failed=false,watchdog;
-const source='corumapp://startup-theme/'+config.theme.id+'/'+config.theme.entry.split('/').map(encodeURIComponent).join('/');
+// 分段视频：segments 存在时按启动阶段切换播放；否则回退单个 entry。
+const segs=config.theme.segments;
+const segMap={};if(segs)for(const s of segs)segMap[s.stage]={stage:s.stage,file:s.file};
+const SEG_ORDER=['env','spawn','plugins','mounting','ready'];
+function segSrc(st){return 'corumapp://startup-theme/'+config.theme.id+'/'+segMap[st].file.split('/').map(encodeURIComponent).join('/');}
+let curStage=null;
+const singleSrc=config.theme.entry?('corumapp://startup-theme/'+config.theme.id+'/'+config.theme.entry.split('/').map(encodeURIComponent).join('/')):'';
 function releaseMedia(){clearTimeout(watchdog);frame?.remove();frame=null;if(video){video.pause();video.removeAttribute('src');video.load();video.remove();video=null;}}
 function stopAnimation(){if(finished||failed)return;finished=true;clearTimeout(watchdog);if(config.preview){hint.textContent='播放结束';return;}releaseMedia();skip.hidden=true;hint.textContent='';bridge.finishStartup();}
 function mediaError(){if(finished||failed)return;releaseMedia();if(config.preview){finished=true;status.textContent='主题无法播放，请检查入口文件或视频编码。';return;}status.textContent='主题无法播放，正在继续启动…';stopAnimation();}
 function skipMedia(){if(config.preview)bridge.closeStartupPreview();else stopAnimation();}
+// 分段播放器：复用 video 元素，只换 src。每段 ended 不 finish，等下个阶段回调；ready 段 ended 才 finish。
+function onSegMeta(){if(!video||!Number.isFinite(video.duration)||video.duration<=0){mediaError();return;}clearTimeout(watchdog);watchdog=setTimeout(mediaError,(video.duration+10)*1000);}
+function onSegEnded(){if(finished||failed)return;if(curStage==='ready'){stopAnimation();return;}if(config.preview){for(let i=SEG_ORDER.indexOf(curStage)+1;i<SEG_ORDER.length;i++){if(segMap[SEG_ORDER[i]]){playSegment(SEG_ORDER[i]);return;}}stopAnimation();}}
+function playSegment(st){if(!segs||finished||failed)return;const seg=segMap[st];if(!seg||curStage===st)return;curStage=st;if(!video){video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.addEventListener('loadedmetadata',onSegMeta);video.addEventListener('ended',onSegEnded);video.addEventListener('error',mediaError);stage.append(video);}clearTimeout(watchdog);video.src=segSrc(st);watchdog=setTimeout(mediaError,15000);video.play().catch(mediaError);}
 function showStatus(state){
  if(!state)return;
- if(state.phase==='error'){failed=true;releaseMedia();skip.hidden=true;hint.textContent='';status.textContent='启动失败：'+state.message;retry.hidden=false;}
+ if(state.phase==='error'){failed=true;releaseMedia();skip.hidden=true;hint.textContent='';status.textContent='启动失败：'+state.message;retry.hidden=false;return;}
+ if(segs){if(state.phase==='ready'){status.textContent='主界面已就绪，等待动画结束…';playSegment('ready');return;}if(state.stage){playSegment(state.stage);return;}}
  else if(state.phase==='ready')status.textContent='主界面已就绪，等待动画结束…';
 }
 document.getElementById('minimize')?.addEventListener('click',()=>bridge.minimizeWindow());
@@ -52,11 +63,17 @@ window.addEventListener('message',event=>{
 if(!config.preview){bridge.onStartupStatus(showStatus);bridge.getStartupStatus().then(showStatus);}
 if((config.animationEnabled&&!matchMedia('(prefers-reduced-motion: reduce)').matches)||config.preview){
  if(config.theme.type==='video'){
-  video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.src=source;
-  video.addEventListener('loadedmetadata',()=>{if(!video||!Number.isFinite(video.duration)||video.duration<=0){mediaError();return;}clearTimeout(watchdog);watchdog=setTimeout(mediaError,(video.duration+10)*1000);});
-  video.addEventListener('ended',stopAnimation);video.addEventListener('error',mediaError);stage.append(video);watchdog=setTimeout(mediaError,10000);video.play().catch(mediaError);
+  if(segs){
+   // 分段模式：预览时自动从头播到最后一段；正式启动时等阶段回调，60s 无回调则兜底。
+   if(config.preview)playSegment(SEG_ORDER.find(s=>segMap[s])||'ready');
+   else watchdog=setTimeout(mediaError,60000);
+  }else{
+   video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.src=singleSrc;
+   video.addEventListener('loadedmetadata',()=>{if(!video||!Number.isFinite(video.duration)||video.duration<=0){mediaError();return;}clearTimeout(watchdog);watchdog=setTimeout(mediaError,(video.duration+10)*1000);});
+   video.addEventListener('ended',stopAnimation);video.addEventListener('error',mediaError);stage.append(video);watchdog=setTimeout(mediaError,10000);video.play().catch(mediaError);
+  }
  }else{
-  frame=document.createElement('iframe');frame.title='启动主题动画';frame.setAttribute('sandbox','allow-scripts');frame.tabIndex=-1;frame.setAttribute('aria-hidden','true');frame.src=source;frame.addEventListener('error',mediaError);stage.append(frame);watchdog=setTimeout(mediaError,45000);
+  frame=document.createElement('iframe');frame.title='启动主题动画';frame.setAttribute('sandbox','allow-scripts');frame.tabIndex=-1;frame.setAttribute('aria-hidden','true');frame.src=singleSrc;frame.addEventListener('error',mediaError);stage.append(frame);watchdog=setTimeout(mediaError,45000);
  }
  skip.focus();
 }else{stopAnimation();}
