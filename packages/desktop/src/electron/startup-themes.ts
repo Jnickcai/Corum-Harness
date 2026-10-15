@@ -18,7 +18,7 @@ export interface StartupThemeInfo extends StartupThemeManifest { builtin: boolea
 export interface ResolvedStartupTheme { info: StartupThemeInfo; root: string }
 export interface StartupThemeCatalog { themes: StartupThemeInfo[]; selectedId: string }
 
-const BUILTIN: StartupThemeInfo = { formatVersion: 1, id: 'corum-terminal', name: '琥珀终端', version: '1.0.0', type: 'html', entry: 'startup-terminal.html', background: '#050403', builtin: true }
+const BUILTIN: StartupThemeInfo = { formatVersion: 1, id: 'corum-terminal', name: '代码汇聚', version: '1.1.0', type: 'html', entry: 'startup-terminal.html', background: '#0A0612', builtin: true }
 
 function validateId(id: string): void {
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) throw new Error('主题 ID 无效')
