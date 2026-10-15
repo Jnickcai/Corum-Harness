@@ -1,0 +1,207 @@
+/**
+ * 应用更新安装（Electron 主进程侧，三平台）。
+ *
+ * ## 职责
+ *
+ * 渲染层在「下载完成待重启」态点击「重启安装」后，经 IPC 调本模块：
+ *   1. 生成平台相关的安装脚本（等待 app 退出 → 替换 → 重启）；
+ *   2. 以 **detached** 子进程 spawn 该脚本（不随 app 退出而死）；
+ *   3. `app.quit()`，脚本接管：等进程消失 → 替换文件 → 重启新版本。
+ *
+ * ## 三平台实现（三平台纪律，红线 7）
+ *
+ * - **darwin**：下载的是 zip（含 Corum-*.app）。解压 → 替换当前 .app → 重启。
+ *   macOS 允许替换运行中的 .app bundle（运行态持有旧 inode，删除/替换不影响）。
+ * - **win32**：下载的是 NSIS exe。以 `/S`（静默安装）+ `--restart` 启动；
+ *   NSIS 的 runAfterFinish 会重启。我们退出，让安装器接管。
+ * - **linux**：下载的是 AppImage。替换原 AppImage 文件 + chmod +x → 重启。
+ *
+ * ## 不做的事
+ *
+ * - 不做 Squirrel.Mac / electron-updater 的差量更新（太重）；全量替换。
+ * - 不验证签名（release 资产来自 GitHub，信任链 = 仓库本身的 release 权限）。
+ *
+ * @module corum-desktop/electron/update-install
+ */
+
+import { spawn } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, renameSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { app } from 'electron'
+
+/** 安装请求（渲染层经 IPC 传入）。 */
+export interface InstallUpdateRequest {
+  /** 已下载的更新文件路径。 */
+  readonly downloadedPath: string
+}
+
+/** 安装结果。 */
+export interface InstallUpdateResult {
+  readonly ok: boolean
+  readonly error?: string
+}
+
+/**
+ * 执行「重启安装」。spawn 一个 detached 脚本，然后 quit app。
+ * 脚本会等 app 退出后替换文件、重启。
+ *
+ * @param request - 安装请求（含已下载文件路径）。
+ * @returns 安装结果（脚本 spawn 成功即 ok=true，后续由脚本接管）。
+ */
+export function performInstallUpdate(request: InstallUpdateRequest): InstallUpdateResult {
+  const { downloadedPath } = request
+  if (!downloadedPath || !existsSync(downloadedPath)) {
+    return { ok: false, error: `downloaded file not found: ${downloadedPath}` }
+  }
+  try {
+    switch (process.platform) {
+      case 'darwin':
+        return installDarwin(downloadedPath)
+      case 'win32':
+        return installWin32(downloadedPath)
+      case 'linux':
+        return installLinux(downloadedPath)
+      default:
+        return { ok: false, error: `unsupported platform: ${process.platform}` }
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+/** 当前 app 可执行入口路径（用于重启）。打包态 = .app/Contents/MacOS/<name>。 */
+function currentAppPath(): string {
+  // dev 态：process.execPath 指向 Electron 二进制，不应走自动安装。
+  // 打包态：指向 .app/Contents/MacOS/<name> 或 Corum.exe 或 AppImage。
+  return process.execPath
+}
+
+/**
+ * macOS 安装：zip 解压 → 替换 .app → 重启。
+ *
+ * 下载的 zip 解压后含 `Corum-<ver>.app`。当前 .app 的父目录 = `dirname(dirname(dirname(execPath)))`
+ * （execPath = .app/Contents/MacOS/name → 上三层到 .app）。
+ */
+function installDarwin(downloadedPath: string): InstallUpdateResult {
+  if (!downloadedPath.endsWith('.zip')) {
+    return { ok: false, error: `darwin auto-install requires a .zip asset, got: ${downloadedPath}` }
+  }
+  const workDir = mkdtempSync(join(tmpdir(), 'corum-update-'))
+  // 脚本：等 app 退出 → 解压 → 替换 → 重启 → 清理。
+  // 解压到临时目录取 .app，rm -rf 旧 .app，cp -R 新 .app 到旧位置。
+  const execPath = currentAppPath()
+  // .app 路径 = Contents/MacOS/name → 上两层 Contents → 再上一层 .app
+  const currentAppBundle = dirname(dirname(dirname(execPath)))
+  const parentDir = dirname(currentAppBundle)
+  const appName = currentAppBundle.split('/').pop() ?? 'Corum.app'
+  const script = `#!/bin/bash
+# corum auto-update install script (darwin)
+set -e
+# 等待 app 退出（最长 60s）
+for i in $(seq 1 120); do
+  if ! pgrep -f "${process.execPath}" > /dev/null 2>&1; then break; fi
+  sleep 0.5
+done
+sleep 1
+# 解压到临时目录
+UNZIP_DIR="${workDir}"
+unzip -o -q "${downloadedPath}" -d "$UNZIP_DIR"
+# 找到解压出的 .app
+NEW_APP=$(find "$UNZIP_DIR" -maxdepth 1 -name "*.app" -type d | head -1)
+if [ -z "$NEW_APP" ]; then
+  echo "no .app found in zip" >&2
+  rm -rf "$UNZIP_DIR"
+  exit 1
+fi
+# 替换：删旧 → 移新
+rm -rf "${currentAppBundle}"
+cp -R "$NEW_APP" "${currentAppBundle}"
+# 清理临时目录 + 下载文件
+rm -rf "$UNZIP_DIR"
+rm -f "${downloadedPath}"
+# 重启
+open "${parentDir}/${appName}"
+`
+  return runDetachedScript(script, workDir, '.sh')
+}
+
+/**
+ * Windows 安装：NSIS exe 静默安装 + 重启。
+ * electron-builder 的 NSIS 安装器支持 `/S`（静默）与 runAfterFinish。
+ */
+function installWin32(downloadedPath: string): InstallUpdateResult {
+  if (!downloadedPath.endsWith('.exe')) {
+    return { ok: false, error: `win32 auto-install requires a .exe asset, got: ${downloadedPath}` }
+  }
+  // 直接 spawn 安装器（detached），它会在 app 退出后接管。
+  // NSIS 安装器检测到旧版本在跑会等退出；/S 静默安装；--restart 重启。
+  try {
+    const child = spawn(downloadedPath, ['/S', '--restart'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.on('error', () => { /* 脚本接管，忽略 */ })
+    child.unref()
+    // 给安装器一秒初始化，然后退出 app。
+    setTimeout(() => { app.quit() }, 1000)
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: `failed to spawn installer: ${msg}` }
+  }
+}
+
+/**
+ * Linux 安装：AppImage 替换 + 重启。
+ */
+function installLinux(downloadedPath: string): InstallUpdateResult {
+  if (!downloadedPath.endsWith('.AppImage')) {
+    return { ok: false, error: `linux auto-install requires a .AppImage asset, got: ${downloadedPath}` }
+  }
+  const execPath = currentAppPath()
+  const workDir = mkdtempSync(join(tmpdir(), 'corum-update-'))
+  const script = `#!/bin/bash
+# corum auto-update install script (linux)
+set -e
+# 等待 app 退出
+for i in $(seq 1 120); do
+  if ! pgrep -f "${execPath}" > /dev/null 2>&1; then break; fi
+  sleep 0.5
+done
+sleep 1
+# 替换 AppImage（直接覆盖原路径）
+cp -f "${downloadedPath}" "${execPath}"
+chmod +x "${execPath}"
+# 清理下载文件
+rm -f "${downloadedPath}"
+# 重启
+nohup "${execPath}" > /dev/null 2>&1 &
+`
+  return runDetachedScript(script, workDir, '.sh')
+}
+
+/**
+ * 写脚本到临时文件 → chmod +x → detached spawn → unref → 延迟 quit。
+ */
+function runDetachedScript(script: string, workDir: string, ext: string): InstallUpdateResult {
+  const scriptPath = join(workDir, `corum-update-install${ext}`)
+  writeFileSync(scriptPath, script, { mode: 0o755 })
+  try {
+    const child = spawn('bash', [scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.on('error', () => { /* 脚本接管，忽略 */ })
+    child.unref()
+    // 给脚本一秒初始化，然后退出 app（脚本会等 app 退出再替换）。
+    setTimeout(() => { app.quit() }, 1000)
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    try { rmSync(workDir, { recursive: true, force: true }) } catch { /* noop */ }
+    return { ok: false, error: `failed to spawn install script: ${msg}` }
+  }
+}

@@ -73,6 +73,8 @@ export interface CorumDesktopBridge {
   getAppVersion: () => Promise<string>
   /** dsh 基座版本号（实际安装的官方锚点包）：只进「复制诊断信息」，不在界面单独展示。 */
   getDshBaselineVersion: () => Promise<string | undefined>
+  /** 重启安装已下载的更新（spawn 安装脚本 → quit → 替换 → 重启）。 */
+  installUpdate: (downloadedPath: string) => Promise<{ ok: boolean; error?: string }>
   /** Dev: hot-restart the host bridge child (host-side code changed). */
   restartHost: () => Promise<{ ok: boolean }>
   /** Open one slot's content in a detached floating window (?floating=<slotKey>). */
@@ -176,6 +178,10 @@ contextBridge.exposeInMainWorld('corumDesktop', {
 
   getDshBaselineVersion: (): Promise<string | undefined> =>
     ipcRenderer.invoke('corum:dsh-baseline-version'),
+
+  /** 重启安装已下载的更新。 */
+  installUpdate: (downloadedPath: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('corum:update-install', { downloadedPath }),
 
   /** Dev: hot-restart the host bridge child (host-side code changed). */
   restartHost: (): Promise<{ ok: boolean }> =>

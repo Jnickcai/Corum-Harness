@@ -1044,6 +1044,17 @@
 .railSettingsSeat:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
+/* 隐藏的设置中心挂载位（2026-10-15）：触发器齿轮不再显示，但 SettingsShell
+   面板本体仍挂在此槽；以 0 尺寸 + overflow hidden 承载，面板用 portal 弹出
+   不受影响。 */
+.railSettingsSeatHidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
 .railSettingsSeat [class*='_trigger'],
 .railSettingsSeat [class*='_trigger'][class*='_rail'] {
   width: 40px;

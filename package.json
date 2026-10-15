@@ -30,5 +30,8 @@
     "katex": "^0.16.47",
     "mdast-util-math": "^3.0.0",
     "micromark-extension-math": "^3.1.0"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.3.1"
   }
 }

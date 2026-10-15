@@ -1,0 +1,238 @@
+/* UpdatePanel —— 更新结果面板（四态，品牌头图 + 状态卡片）。 */
+
+/* 遮罩层（与 SettingsShell / dialog 一致：居中弹窗 + 半透明背景）。 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+}
+
+.panel {
+  position: relative;
+  width: 380px;
+  max-height: 86vh;
+  border-radius: 18px;
+  border: 1px solid var(--corum-glass-border, var(--dsw-alias-border-subtle, rgba(255,255,255,0.08)));
+  background: var(--corum-glass-1, var(--dsw-alias-bg-elevated-primary, #1c1c1e));
+  box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+  backdrop-filter: blur(16px);
+  overflow-y: auto;
+}
+
+.panelReady {
+  border-color: var(--dsw-alias-brand-primary, #6c8cff);
+  border-width: 1.5px;
+}
+
+.hero {
+  width: 100%;
+  height: 130px;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+}
+
+.chip {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--dsw-alias-font-family-body, "Inter", sans-serif);
+}
+
+.chipNew { background: var(--dsw-alias-brand-primary, #6c8cff); color: var(--dsw-alias-label-on-brand, #fff); }
+.chipDl { background: var(--corum-glass-3, rgba(255,255,255,0.12)); color: var(--dsw-alias-label-primary, #fff); }
+.chipDone { background: var(--dsw-alias-state-success-primary, #34c759); color: #fff; }
+.chipOk { background: var(--corum-glass-3, rgba(255,255,255,0.12)); color: var(--dsw-alias-label-primary, #fff); }
+.chipFail { background: var(--dsw-alias-state-warn-primary, #ff9f0a); color: #fff; }
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 18px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary, #fff);
+  margin: 0;
+}
+
+.verLine {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, rgba(255,255,255,0.5));
+  margin: 0;
+}
+
+.notesLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, rgba(255,255,255,0.7));
+  margin: 0;
+}
+
+.notes {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, rgba(255,255,255,0.5));
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* 进度条 */
+.track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--corum-glass-2, rgba(255,255,255,0.08));
+  overflow: hidden;
+}
+
+.fill {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-brand-primary, #6c8cff);
+  transition: width 0.3s ease;
+}
+
+.dlDetail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--dsw-alias-font-family-mono, "JetBrains Mono", monospace);
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, rgba(255,255,255,0.5));
+}
+
+.dlBox {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--corum-glass-2, rgba(255,255,255,0.08));
+}
+
+.hint {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-dimmed, rgba(255,255,255,0.35));
+  margin: 0;
+}
+
+.restartNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--corum-glass-2, rgba(255,255,255,0.08));
+}
+
+.restartNoteText {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary, rgba(255,255,255,0.7));
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.btn {
+  border: none;
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--dsw-alias-font-family-body, "Inter", sans-serif);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btnSecondary {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgba(255,255,255,0.7));
+}
+
+.btnPrimary {
+  background: var(--dsw-alias-brand-primary, #6c8cff);
+  color: var(--dsw-alias-label-on-brand, #fff);
+}
+
+.btnSecondary:hover { background: var(--corum-glass-2, rgba(255,255,255,0.08)); }
+
+.okRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.okIcon {
+  color: var(--dsw-alias-state-success-primary, #34c759);
+  flex: none;
+}
+
+.timeRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.timeText {
+  font-size: 10px;
+  color: var(--dsw-alias-label-dimmed, rgba(255,255,255,0.35));
+}
+
+.btnRecheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: var(--corum-glass-2, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, rgba(255,255,255,0.7));
+  cursor: pointer;
+  font-family: var(--dsw-alias-font-family-body, "Inter", sans-serif);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--corum-glass-2, rgba(0,0,0,0.3));
+  border: none;
+  color: var(--dsw-alias-label-secondary, rgba(255,255,255,0.7));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.spinner {
+  animation: corum-update-spin 1s linear infinite;
+}
+
+@keyframes corum-update-spin {
+  to { transform: rotate(360deg); }
+}
