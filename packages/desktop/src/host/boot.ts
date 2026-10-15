@@ -357,11 +357,7 @@ export async function bootDesktop(): Promise<Context> {
   t('combo+disabled')
 
   const rows = new Map<string, EntryOptions>()
-  // fork（corum）：过滤掉 disabled 行再传给 boot()——disabled 行只用于 composeEntries
-  // 的行索引计算（标记「这个插件被禁用」），不需要进 boot() 的 patch 层栈（boot 会
-  // 尝试解析每行 config，即使 disabled 也走文件 I/O + 解析）。过滤后减少 boot() 的工作量。
-  const allRows = composeEntries([bundlePatches, profile.patches, homePatches, overlays, modeOverlays, comboOverlays.rows, disabledPatches])
-  for (const row of allRows) {
+  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays, modeOverlays, comboOverlays.rows, disabledPatches])) {
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
@@ -370,10 +366,7 @@ export async function bootDesktop(): Promise<Context> {
   // 被上面的 composeEntries 用于计算行索引，从未被插入 composition，插件
   // apply() 完全不会执行。顺序与上面 composeEntries 一致：modeOverlays 之后、
   // disabledPatches 之前。
-  // fork（corum）：传给 boot() 时过滤掉 disabled 行（disabled 行的 config 不需要被
-  // cordis 解析，减少插件树挂载开销）。
   const composedOverlays = [...overlays, ...modeOverlays, ...comboOverlays.patches, ...comboOverlays.rows, ...disabledPatches]
-    .filter(patch => patch.disabled !== true)
   // Inject the agent-preset roots the CLI would have added during its own
   // compose step; the desktop shell skips that step, so the roster is empty
   // without this. Trust follows provenance: the official set is `system`,
