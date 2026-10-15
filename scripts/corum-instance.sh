@@ -898,8 +898,9 @@ case "$CMD" in
     log "1/3 构建 desktop 壳与 client 插件产物"
     ( cd "$DESKTOP" && ./node_modules/.bin/tsc -b >/dev/null && ./node_modules/.bin/tsdown --config tsdown.config.ts >/dev/null && node scripts/inline-monaco-css.mjs >/dev/null )
     log "2/3 重打 host 闭包 + .app（pack-macos.mjs 失败即整体失败）"
-    ( cd "$DESKTOP" && node scripts/pack-macos.mjs ) || { log "pack-macos.mjs 失败，未产出新包，保持旧实例运行"; exit 1; }
-    ( cd "$DESKTOP" && ./node_modules/.bin/electron-builder --mac --arm64 >/dev/null ) || { log "electron-builder 失败，保持旧实例运行"; exit 1; }
+    ( cd "$DESKTOP" && CORUM_TARGET_PLATFORM=darwin node scripts/pack-macos.mjs --platform=darwin --arch=arm64 ) || { log "pack-macos.mjs 失败，未产出新包，保持旧实例运行"; exit 1; }
+    # electron-builder 已由 pack-macos.mjs 的 buildApp() 调用（临时清空 dependencies 规避
+    # pnpm link: override 的 `must be under .pnpm` 兼容问题，2026-10-15 根治）。
     log "3/3 重启打包实例"
     MODE=packaged
     do_stop >/dev/null || true
