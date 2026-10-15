@@ -459,11 +459,15 @@ async function launchCombo(id: string, showStartup = false): Promise<{ ok: boole
   }
   const screen = showStartup ? startupScreen : null
   try {
+    screen?.publishStage('env', 10)
+    screen?.publishStage('spawn', 30)
     const ready = await spawnHost(combo)
     process.stderr.write(`[corum-desktop] combo "${combo.id}" host ready (${ready.authenticatedUrl})\n`)
     if (win.isDestroyed()) return { ok: false, error: 'no window' }
+    screen?.publishStage('plugins', 60)
     await win.loadURL(ready.authenticatedUrl)
     if (screen !== null) {
+      screen.publishStage('mounting', 85)
       // 等应用挂载完成；frontend 的 boot 提示文字不代表主界面已就绪。
       const selector = combo.env?.CORUM_DESKTOP_MODE === 'ide' ? '[data-session-band]' : '#root > *, #app > *'
       let timer: ReturnType<typeof setTimeout> | undefined

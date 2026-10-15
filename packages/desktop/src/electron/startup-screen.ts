@@ -5,7 +5,25 @@ import { StartupGate } from './startup-state.ts'
 import { createStartupThemeSession, restrictStartupNavigation } from './startup-theme-protocol.ts'
 import type { ResolvedStartupTheme } from './startup-themes.ts'
 
-export interface StartupStatus { phase: 'loading' | 'ready' | 'error'; message?: string }
+/**
+ * 启动状态。`phase` 是粗粒度门禁（loading/ready/error），`stage` 是细粒度进度
+ * （供动画切换阶段用），`progress` 是 0-100 的估值。
+ *
+ * 启动流程埋点（main.ts launchCombo）：
+ * - 'env'      → 检查环境（spawnHost 前）
+ * - 'spawn'    → 唤醒 Agent（host 子进程已 spawn，等 ready）
+ * - 'plugins'  → 装配插件（host ready，开始加载主界面页面）
+ * - 'mounting' → 基本就绪（页面已加载，等 React 挂载完成）
+ * - ready      → 主界面就绪（gate.ready，动画可以收尾进入）
+ */
+export interface StartupStatus {
+  phase: 'loading' | 'ready' | 'error'
+  /** 细粒度阶段（仅 phase='loading' 时有意义；动画据此切换文字/进度）。 */
+  stage?: 'env' | 'spawn' | 'plugins' | 'mounting'
+  /** 进度估值 0-100（动画据此推进进度条，但最终以 ready 为准）。 */
+  progress?: number
+  message?: string
+}
 
 /** 在主页面之上显示本地启动页；主页面加载期间不移除展示层。 */
 export function createStartupScreen(win: BrowserWindow, animationEnabled: boolean, retry: () => void, theme: ResolvedStartupTheme) {
@@ -63,9 +81,14 @@ export function createStartupScreen(win: BrowserWindow, animationEnabled: boolea
     senderId: view.webContents.id,
     getStatus: () => status,
     finish: () => { clearTimeout(watchdog); gate.finish() },
+    /** 发送细粒度阶段（供动画切换文字/进度）。不触发 gate，只是更新 UI。 */
+    publishStage: (stage: NonNullable<StartupStatus['stage']>, progress: number) => {
+      if (disposed || status.phase === 'error') return
+      publish({ phase: 'loading', stage, progress })
+    },
     ready: () => {
       if (disposed || status.phase === 'error') return
-      publish({ phase: 'ready' })
+      publish({ phase: 'ready', progress: 100 })
       view.webContents.focus()
       gate.ready()
     },

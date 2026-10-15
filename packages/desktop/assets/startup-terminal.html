@@ -139,6 +139,12 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
   const $ = s => document.getElementById(s);
+  // 通知主进程动画完成（经 preload 的 IPC bridge，非 postMessage）
+  const bridge = typeof window !== "undefined" ? window.corumDesktop : undefined;
+  function finishStartup() {
+    if (bridge && typeof bridge.finishStartup === "function") bridge.finishStartup();
+    else parent.postMessage("corum:startup-complete", "*");
+  }
   let W = 0, H = 0;
   function resize() {
     W = canvas.width = window.innerWidth;
@@ -241,63 +247,89 @@
   // 动画状态
   let phase = "scatter"; // scatter → converge → done
   let phaseStartTime = 0;
-  const phases = [
-    { text: "检查环境", at: 0 },
-    { text: "唤醒 Agent", at: 1800 },
-    { text: "装配插件", at: 3600 },
-    { text: "基本就绪", at: 5400 },
-  ];
-  let currentPhaseIdx = -1;
-  let startTime = performance.now();
+  // 阶段文字映射（由主进程 corum:startup-status 回调驱动，不按固定时间）
+  const STAGE_TEXT = {
+    env: "检查环境",
+    spawn: "唤醒 Agent",
+    plugins: "装配插件",
+    mounting: "基本就绪",
+  };
+  let currentStage = null;
+  let currentProgress = 0;
+  let hostReady = false;
 
-  function updatePhase(now) {
-    const elapsed = now - startTime;
-    let idx = -1;
-    for (let i = phases.length - 1; i >= 0; i--) {
-      if (elapsed >= phases[i].at) { idx = i; break; }
-    }
-    if (idx !== currentPhaseIdx && idx >= 0) {
-      currentPhaseIdx = idx;
-      $("phaseText").textContent = phases[idx].text;
-    }
-    // 进度条
-    const progress = Math.min(100, (elapsed / 7000) * 100);
-    $("progFill").style.width = progress + "%";
+  // 监听主进程的启动状态回调（经 preload IPC bridge）
+  if (bridge && typeof bridge.onStartupStatus === "function") {
+    bridge.onStartupStatus((status) => {
+      if (status.phase === "ready") {
+        hostReady = true;
+        currentProgress = 100;
+        $("phaseText").textContent = "就绪";
+        $("progFill").style.width = "100%";
+        // host ready 后通知动画完成（让 gate 进入主界面）
+        finishStartup();
+      } else if (status.phase === "error") {
+        $("phaseText").textContent = "启动失败";
+      } else if (status.phase === "loading") {
+        if (status.stage && status.stage !== currentStage) {
+          currentStage = status.stage;
+          $("phaseText").textContent = STAGE_TEXT[status.stage] || status.stage;
+        }
+        if (typeof status.progress === "number") {
+          currentProgress = status.progress;
+          $("progFill").style.width = currentProgress + "%";
+        }
+        // 收到第一个 stage 回调后开始汇聚（不按固定时间）
+        if (phase === "scatter") {
+          phase = "converge";
+          assignTargets();
+          setTimeout(() => $("brand").classList.add("show"), 800);
+          setTimeout(() => $("slogan").classList.add("show"), 1600);
+          setTimeout(() => $("progSection").classList.add("show"), 200);
+          setTimeout(() => $("codeHint").classList.add("show"), 100);
+        }
+      }
+    });
   }
 
   function animate(now) {
     if (!phaseStartTime) phaseStartTime = now;
-    const elapsed = now - startTime;
 
-    // 阶段切换
-    if (phase === "scatter" && elapsed > 1500) {
-      phase = "converge";
-      assignTargets();
-      // 显示品牌和标语
-      setTimeout(() => $("brand").classList.add("show"), 800);
-      setTimeout(() => $("slogan").classList.add("show"), 1600);
-      setTimeout(() => $("progSection").classList.add("show"), 400);
-      setTimeout(() => $("codeHint").classList.add("show"), 200);
+    // 如果没有 bridge 回调（非桌面环境/预览模式），用固定时间兜底
+    if (!bridge || typeof bridge.onStartupStatus !== "function") {
+      const elapsed = now - phaseStartTime;
+      if (phase === "scatter" && elapsed > 1500) {
+        phase = "converge";
+        assignTargets();
+        setTimeout(() => $("brand").classList.add("show"), 800);
+        setTimeout(() => $("slogan").classList.add("show"), 1600);
+        setTimeout(() => $("progSection").classList.add("show"), 200);
+        setTimeout(() => $("codeHint").classList.add("show"), 100);
+      }
+      // 固定时间进度（兜底）
+      const elapsedFallback = now - phaseStartTime;
+      const prog = Math.min(85, (elapsedFallback / 7000) * 85);
+      $("progFill").style.width = prog + "%";
+      if (!currentStage) { currentStage = "env"; $("phaseText").textContent = STAGE_TEXT.env; }
+      if (elapsedFallback > 1800 && currentStage === "env") { currentStage = "spawn"; $("phaseText").textContent = STAGE_TEXT.spawn; }
+      if (elapsedFallback > 3600 && currentStage === "spawn") { currentStage = "plugins"; $("phaseText").textContent = STAGE_TEXT.plugins; }
+      if (elapsedFallback > 5400 && currentStage === "plugins") { currentStage = "mounting"; $("phaseText").textContent = STAGE_TEXT.mounting; }
     }
 
     // 更新粒子
     ctx.clearRect(0, 0, W, H);
     for (const p of particles) {
       if (phase === "converge" && p.hasTarget) {
-        // 缓动飞向目标
         const dx = p.tx - p.x;
         const dy = p.ty - p.y;
         p.x += dx * 0.04;
         p.y += dy * 0.04;
-        // 透明度过渡
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < 5) {
           p.alpha += (p.finalAlpha - p.alpha) * 0.1;
-          // 汇聚后颜色渐变到白色
           p.color = "#FFFFFF";
         }
       } else {
-        // 散布阶段：随机漂浮
         p.x += p.vx;
         p.y += p.vy;
         if (p.x < 0) p.x = W;
@@ -306,7 +338,6 @@
         if (p.y > H) p.y = 0;
       }
 
-      // 绘制代码片段
       ctx.font = `${p.fontSize}px 'JetBrains Mono', 'SF Mono', monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -316,26 +347,15 @@
     }
     ctx.globalAlpha = 1;
 
-    updatePhase(now);
-
-    if (elapsed > 7000) {
-      phase = "done";
-      // 通知主进程启动完成
-      parent.postMessage("corum:startup-complete", "*");
-      // 继续渲染（保持画面）
-    }
-
     requestAnimationFrame(animate);
   }
 
-  // Esc 跳过
+  // Esc 跳过 / 点击跳过
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      parent.postMessage("corum:startup-complete", "*");
-    }
+    if (e.key === "Escape") finishStartup();
   });
   document.addEventListener("click", () => {
-    parent.postMessage("corum:startup-complete", "*");
+    finishStartup();
   });
 
   initParticles();
