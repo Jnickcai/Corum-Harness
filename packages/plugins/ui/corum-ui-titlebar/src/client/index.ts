@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // type-only：把 `ctx.uiSession`（会话域绑定的提供者）拉进本单元——同样只走类型，
 // 运行期按服务名取（不 import 实现包，红线 3）。
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // type-only：把壳的 SlotMap 行（corum.titlebar 的 owner 契约）拉进本编译单元。
 import type {} from '@corum/corum-ide-ui/client'
 import { TitleBar, type TitleBarInjected } from './TitleBar.tsx'
@@ -39,7 +40,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Required services: the slots registry + the layout face (chrome 状态与区域显隐写面). */
-export const inject = ['slots', 'layout', 'uiSession']
+export const inject = ['slots', 'layout', 'uiSession', 'sessions']
 
 /**
  * 占位注册：`ctx.slots.inject('corum.titlebar', …)` 保证「壳先声明、本包后注册」
@@ -67,6 +68,7 @@ export function apply(ctx: ClientContext): void {
           },
           toggleSidebarCollapsed: () => { ctx.layout.toggleSidebarCollapsed() },
           toggleRegion: (slot) => { ctx.layout.toggleRegion(slot) },
+          closeSession: () => { ctx.sessions.clear() },
         }),
       },
       TitleBar,

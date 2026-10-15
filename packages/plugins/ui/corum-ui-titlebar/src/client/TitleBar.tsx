@@ -20,7 +20,7 @@
  * 写法纪律：折叠/区域显隐都经 `ctx.layout`（跨 bundle 单例），本组件不持状态。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Columns2, Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Columns2, Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, Terminal, X } from 'lucide-react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChromeState } from '@corum/corum-ide-ui/client'
 import { resolveTrafficLightInset } from './traffic-light-inset.ts'
@@ -76,6 +76,8 @@ export interface TitleBarInjected {
   toggleSidebarCollapsed: () => void
   /** 区域显隐切换（直通 `ctx.layout.toggleRegion`；面板=corum.editor、终端=corum.panel）。 */
   toggleRegion: (slot: string) => void
+  /** 取消当前会话选择，返回首页；保留会话记录与任务运行状态。 */
+  closeSession: () => void
 }
 
 /** Composed props: 壳 renderSlot 下发的 owner 面 + 标准面 + 本插件注入面。 */
@@ -106,7 +108,7 @@ function IconButton({ icon, label, onClick }: {
 /** The unified titlebar band (see module doc). */
 export function TitleBar({
   variant, bandWidth, controlsWidth, useChrome, useSessionBand, renderSlot,
-  toggleSidebarCollapsed, toggleRegion,
+  toggleSidebarCollapsed, toggleRegion, closeSession,
 }: TitleBarProps) {
   const sidebarCollapsed = useChrome(c => c.sidebarCollapsed)
   const hasSession = useSessionBand(b => b.key !== undefined)
@@ -210,7 +212,16 @@ export function TitleBar({
         data-session-band={hasSession ? 'active' : 'empty'}
       >
         {/* session 严格域：无绑定时渲染会抛 SlotAssemblyError，故先判 key。 */}
-        {hasSession && renderSlot('corum.titlebar.session', {})}
+        {hasSession && !floating && (
+          <button type="button" className={css.iconBtn} aria-label="返回首页" title="返回首页（保留会话）" onClick={closeSession}>
+            <ArrowLeft size={18} strokeWidth={1.8} />
+          </button>
+        )}
+        {hasSession && (
+          <div className={css.sessionContent}>
+            {renderSlot('corum.titlebar.session', {})}
+          </div>
+        )}
       </div>
       {showWindowControls && (
         /* 窗口控制按钮组（右上角）：仅 win32/linux。显式 no-drag，与 .controls

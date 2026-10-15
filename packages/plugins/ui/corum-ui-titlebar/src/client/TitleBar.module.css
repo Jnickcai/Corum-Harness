@@ -79,6 +79,8 @@
    底部 1px 光边 = 与对话区内容的分界（原先由对话区 leaf 内的会话顶栏/空态分隔线
    承担，2026-09-30 随会话段一起并入本带子）。 */
 .session {
+  display: flex;
+  align-items: center;
   -webkit-app-region: drag;
   /* 本体不截获命中（与 .band 同款）：可点内容各自在 occupant 里恢复命中。 */
   pointer-events: none;
@@ -88,6 +90,12 @@
   box-sizing: border-box;
   min-width: 0;
   border-bottom: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+}
+
+.sessionContent {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }
 
 /* ── 控件层（窗口控制按钮）────────────────────────────────────────────── */

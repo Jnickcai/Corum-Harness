@@ -248,7 +248,13 @@ export function apply(ctx: ClientContext): void {
             await ctx.workspaces.rename(workspaceId, title)
           },
           deleteWorkspace: async (workspaceId) => {
+            // 删除成功时工作区快照可能已移除该项，先保留其会话归属。
+            const sessionIds = [...(wsList.getSnapshot().items
+              .find(ws => ws.workspaceId === workspaceId)?.sessionIds ?? [])]
             await ctx.workspaces.delete(workspaceId)
+            // 读取此刻的选择，避免删除等待期间切换到其他工作区后被误清空。
+            const current = ctx.sessions.list.getSnapshot().current
+            if (current !== undefined && sessionIds.includes(current)) ctx.sessions.clear()
           },
           // 保存会话日志到…（2026-09-16 用户定调：入口从会话头部右上角搬进会话行右键菜单）。
           //
