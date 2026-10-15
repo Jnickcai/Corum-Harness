@@ -3,6 +3,36 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node
 import { readStartupThemeArchive, validateThemePath } from './startup-theme-archive.ts'
 import { readStartupThemeId, settingsHome, writeStartupThemeId } from './startup-settings.ts'
 
+/**
+ * 静态扫描主题 HTML 文本，拒绝明显危险的模式。
+ *
+ * ⚠️ 局限性声明：这是正则级静态检查，**不保证运行期安全**——它只挡掉最显眼的
+ * 越界企图（嵌套框架 / 外部脚本 / 外部网络 / Node 模块加载），无法对抗混淆或
+ * 间接调用。真正的安全屏障是 sandbox iframe（allow-scripts only，无同源、无
+ * allow-same-origin）+ CSP（default-src 'none'）。本扫描的作用是「导入时提前
+ * 拒绝并给出明确错误」，而不是「通过即安全」。
+ *
+ * 已知会误杀：合法的动态 import 字符串拼接、合法的 fetch 字面量 URL 等
+ * 极少见用法——主题开发者应把外部资源打进 ZIP，用 corumapp://startup-theme 引用。
+ */
+const DANGEROUS_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
+  { pattern: /<iframe\s/i, reason: '禁止使用 <iframe>（主题运行在 sandbox iframe 内，不可嵌套）' },
+  { pattern: /<object\s/i, reason: '禁止使用 <object>（CSP object-src 为 none）' },
+  { pattern: /<embed\s/i, reason: '禁止使用 <embed>（CSP object-src 为 none）' },
+  { pattern: /\brequire\s*\(/, reason: '禁止 require() 加载 Node 模块（sandbox 已拦截）' },
+  { pattern: /\bimport\b[^;\n]*?\bhttps?:\/\//i, reason: '禁止 ESM import 外部 URL（只允许 import corumapp:// 资源）' },
+  { pattern: /\bfetch\s*\(\s*['"]https?:\/\//i, reason: '禁止 fetch 外部网络地址' },
+  { pattern: /\bXMLHttpRequest\b/, reason: '禁止使用 XMLHttpRequest（不允许外部网络请求）' },
+  { pattern: /<script[^>]*\bsrc\s*=\s*['"]https?:\/\//i, reason: '禁止加载外部 <script src="http(s)://…">' },
+  { pattern: /<link[^>]*\bhref\s*=\s*['"]https?:\/\//i, reason: '禁止加载外部 <link href="http(s)://…">（CSS）' },
+]
+
+export function validateThemeHtml(html: string): void {
+  for (const { pattern, reason } of DANGEROUS_PATTERNS) {
+    if (pattern.test(html)) throw new Error(`主题 HTML 校验失败：${reason}`)
+  }
+}
+
 export interface StartupThemeManifest {
   formatVersion: 1
   id: string
@@ -18,7 +48,7 @@ export interface StartupThemeInfo extends StartupThemeManifest { builtin: boolea
 export interface ResolvedStartupTheme { info: StartupThemeInfo; root: string }
 export interface StartupThemeCatalog { themes: StartupThemeInfo[]; selectedId: string }
 
-const BUILTIN: StartupThemeInfo = { formatVersion: 1, id: 'corum-terminal', name: '琥珀终端', version: '1.0.0', type: 'html', entry: 'startup-terminal.html', background: '#050403', builtin: true }
+const BUILTIN: StartupThemeInfo = { formatVersion: 1, id: 'corum-terminal', name: '代码汇聚', version: '1.1.0', type: 'html', entry: 'startup-terminal.html', background: '#0A0612', builtin: true }
 
 function validateId(id: string): void {
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) throw new Error('主题 ID 无效')
@@ -91,6 +121,11 @@ export async function importStartupTheme(zipPath: string, home = settingsHome())
   if (manifest.id === BUILTIN.id) throw new Error('不能替换内置主题')
   if (!files.has(manifest.entry)) throw new Error('主题入口文件不存在')
   if (manifest.preview && !files.has(manifest.preview)) throw new Error('主题预览图不存在')
+  // 静态扫描 HTML 主题入口（解压后、写入前）；视频主题不扫描文本。
+  if (manifest.type === 'html') {
+    const entryBytes = files.get(manifest.entry)
+    if (entryBytes) validateThemeHtml(new TextDecoder('utf-8', { fatal: true }).decode(entryBytes))
+  }
   const parent = join(home, 'startup-themes')
   await mkdir(parent, { recursive: true })
   const existing = await readdir(parent)

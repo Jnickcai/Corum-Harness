@@ -10,6 +10,7 @@
  * @module corum-desktop/electron/protocol
  */
 
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { protocol } from 'electron'
@@ -66,6 +67,20 @@ export function registerProtocols(
         if (theme.info.id !== id || !theme.info.preview || decodeURIComponent(parts.join('/')) !== theme.info.preview) return new Response(null, { status: 404 })
         return readStartupThemeResource(theme, new Request(`corumapp://startup-theme${url.pathname}`))
       } catch { return new Response(null, { status: 404 }) }
+    }
+    // SDK JS 由应用运行时提供（保证主题与应用版本匹配），主题 HTML 用
+    // <script src="corumapp://startup-sdk/corum-startup-sdk.js"> 引用。
+    if (url.host === 'startup-sdk' && assetsDir !== undefined) {
+      const sdkPath = join(assetsDir, 'corum-startup-sdk.js')
+      if (!existsSync(sdkPath)) return new Response('SDK not found', { status: 404 })
+      try {
+        const body = await readFile(sdkPath)
+        return new Response(body, {
+          headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' },
+        })
+      } catch {
+        return new Response('SDK not found', { status: 404 })
+      }
     }
     // 壳的 combo 管理页：`corumapp://combo/index.html`，零 dsh 依赖的静态页。
     // 独立 origin，与 dsh client 页面（loopback HTTP）互不干扰。

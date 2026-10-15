@@ -1,708 +1,513 @@
 <!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EmbedLink 启动演示</title><style>
-  :root{--amber:#e8a020;--amber-b:#ffc043;--amber-d:#8a5e10;--amber-fade:rgba(232,160,32,.35);--text:#d8c090;--text-dim:#8a7248;--text-faint:#4a3f28;--bg:#050403;--bg-panel:#0a0805;--bg-win:#0d0a06;--red:#e05030;--red-b:#ff7050;--green:#b8c840;--cyan:#4fd1c5;}
-  *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;}
-  body{background:var(--bg);color:var(--text);font-family:"SF Mono",Menlo,Monaco,Consolas,"Courier New",monospace;font-size:12px;line-height:1.55;overflow:hidden;-webkit-font-smoothing:antialiased;}
-  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:900;background:repeating-linear-gradient(to bottom,rgba(232,160,32,.04) 0,rgba(232,160,32,.04) 1px,transparent 1px,transparent 3px);}
-  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:899;background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.85) 100%);}
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Corum Harness 启动</title>
+<style>
+  :root {
+    --purple: #5B21F5;
+    --purple-light: #B98CFF;
+    --cyan: #01CDFE;
+    --pink: #FF71CE;
+    --bg-deep: #0A0612;
+    --text: #FFFFFF;
+    --text-dim: #7B6896;
+    --text-mid: #B98CFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: linear-gradient(135deg, #0A0612 0%, #120820 40%, #0E0A18 70%, #0A0612 100%);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, 'PingFang SC', 'SF Pro Text', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 背景光晕 — 紫/青/粉三色微光 */
+  .glow {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .glow-1 { background: var(--purple); opacity: 0.12; width: 500px; height: 400px; top: 8%; left: 10%; animation: drift1 14s ease-in-out infinite alternate; }
+  .glow-2 { background: var(--cyan); opacity: 0.07; width: 420px; height: 300px; top: 12%; right: 8%; animation: drift2 17s ease-in-out infinite alternate; }
+  .glow-3 { background: var(--pink); opacity: 0.05; width: 440px; height: 280px; bottom: 8%; left: 28%; animation: drift3 20s ease-in-out infinite alternate; }
+  @keyframes drift1 { from { transform: translate(0, 0); } to { transform: translate(50px, 35px); } }
+  @keyframes drift2 { from { transform: translate(0, 0); } to { transform: translate(-35px, 45px); } }
+  @keyframes drift3 { from { transform: translate(0, 0); } to { transform: translate(25px, -35px); } }
 
-  /* ===== 主界面 ===== */
-  #app{height:100%;display:grid;grid-template-rows:26px 1fr 24px;padding:6px;gap:5px;opacity:0;transition:opacity .5s ease;}
-  #app.visible{opacity:1;}
-  #hud-top{display:flex;align-items:center;gap:14px;padding:0 10px;background:linear-gradient(180deg,#141008,#0a0805);border:1px solid var(--amber-d);font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--amber);}
-  #hud-top .brand{font-weight:700;letter-spacing:.2em;text-shadow:0 0 8px var(--amber-fade);}
-  #hud-top .sep{color:var(--text-faint);}
-  #hud-top .item{color:var(--text-dim);}
-  #hud-top .item b{color:var(--amber);font-weight:400;}
-  #hud-top .spacer{flex:1;}
-  #hud-top .live{color:var(--red);animation:blink 1s steps(1) infinite;}
-  #workspace{display:grid;grid-template-columns:1fr 1.7fr 1fr;grid-template-rows:1.1fr 1fr;grid-template-areas:"tele main code" "tele main node";gap:5px;min-height:0;}
-  .w{position:relative;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-panel);border:1px solid var(--amber-d);box-shadow:inset 0 0 30px rgba(232,160,32,.03);}
-  .w::before,.w::after{content:"";position:absolute;width:8px;height:8px;border-color:var(--amber);z-index:5;pointer-events:none;}
-  .w::before{top:-1px;left:-1px;border-top:2px solid;border-left:2px solid;}
-  .w::after{bottom:-1px;right:-1px;border-bottom:2px solid;border-right:2px solid;}
-  #w-tele{grid-area:tele;}#w-main{grid-area:main;}#w-code{grid-area:code;}#w-node{grid-area:node;}
-  .w-head{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;background:linear-gradient(180deg,#161006,#0a0805);border-bottom:1px solid var(--amber-d);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);}
-  .w-head .led{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.2s infinite;}
-  .w-head .led.red{background:var(--red);box-shadow:0 0 6px var(--red);}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  .w-head .tag{margin-left:auto;color:var(--text-faint);font-size:9px;letter-spacing:.1em;}
-  .w-body{flex:1;overflow:auto;padding:6px 8px;min-height:0;font-size:11px;line-height:1.55;scrollbar-width:thin;scrollbar-color:rgba(232,160,32,.3) transparent;}
-  .w-body::-webkit-scrollbar{width:5px;height:5px;}
-  .w-body::-webkit-scrollbar-thumb{background:rgba(232,160,32,.25);}
-  .dt{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:1px 0;font-variant-numeric:tabular-nums;font-size:10.5px;}
-  .dt .k{color:var(--text-faint);letter-spacing:.05em;}
-  .dt .v{color:var(--text);text-align:right;}
-  .dt .v.ok{color:var(--green);}.dt .v.warn{color:var(--amber-b);}.dt .v.bad{color:var(--red);}.dt .v.dim{color:var(--text-dim);}
-  .sect{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber-d);padding:6px 0 3px;border-bottom:1px dotted var(--amber-fade);margin-bottom:3px;}
-  .sect:first-child{padding-top:0;}
-  #mainBody{font-size:11.5px;line-height:1.6;}
-  .ln{white-space:pre-wrap;word-break:break-word;}
-  .ln.sys{color:var(--amber);}.ln.inf{color:var(--text-dim);}.ln.ok{color:var(--green);}
-  .ln.warn{color:var(--amber-b);}.ln.bad{color:var(--red);}.ln.cmd{color:#fff;font-weight:500;}
-  .ln.t{color:var(--red);font-weight:700;letter-spacing:.1em;}.ln.sub{color:var(--text-faint);padding-left:3ch;}
-  #codeBody{font-size:10.5px;line-height:1.45;font-variant-numeric:tabular-nums;}
-  .cln{white-space:pre;color:#a88c50;}.cln.cm{color:var(--text-faint);}
-  #nodeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:6px 4px;padding:2px;}
-  .uav{display:flex;flex-direction:column;align-items:center;gap:1px;transition:all .3s;padding:2px 0;}
-  .uav svg{width:34px;height:34px;transition:filter .3s,opacity .3s;filter:drop-shadow(0 0 3px rgba(224,80,48,.6));}
-  .uav .id{font-size:7.5px;color:var(--text-faint);letter-spacing:.05em;transition:color .3s;}
-  .uav .st{font-size:6.5px;letter-spacing:.05em;color:var(--red);transition:color .3s;}
-  .uav.done svg{filter:drop-shadow(0 0 6px rgba(184,200,64,.8));}
-  .uav.done .id{color:var(--green);}.uav.done .st{color:var(--green);}
-  .uav.writing svg{animation:uavPulse .5s infinite alternate;filter:drop-shadow(0 0 7px rgba(255,192,67,1));}
-  @keyframes uavPulse{from{opacity:.4}to{opacity:1}}
-  #hud-bot{display:flex;align-items:center;gap:12px;padding:0 10px;background:linear-gradient(180deg,#0d0a06,#050403);border:1px solid var(--amber-d);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--text-dim);font-variant-numeric:tabular-nums;}
-  #hud-bot .item b{color:var(--amber);font-weight:400;}
-  #hud-bot .spacer{flex:1;}
-  #hud-bot .prog{flex:0 0 220px;height:8px;background:#050403;border:1px solid var(--amber-d);position:relative;overflow:hidden;}
-  #hud-bot .prog .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--amber-d),var(--amber-b));box-shadow:0 0 8px var(--amber-fade);transition:width .15s linear;}
-  #hud-bot .pct{color:var(--amber);font-weight:400;}
-  #dim{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.15);opacity:0;pointer-events:none;transition:opacity .4s;}
-  #dim.show{opacity:1;}
-  .win-popup{position:fixed;z-index:500;min-width:640px;max-width:min(980px,94vw);background:var(--bg-win);border:1px solid var(--amber-d);box-shadow:0 24px 70px rgba(0,0,0,.78),0 0 0 1px rgba(0,0,0,.9),0 0 50px rgba(232,160,32,.1),inset 0 0 24px rgba(232,160,32,.02);opacity:0;transform:scale(.9) translateY(-6px);transition:opacity .22s ease, transform .22s cubic-bezier(.2,1.05,.4,1);overflow:hidden;pointer-events:none;}
-  .win-popup.show{opacity:1;transform:scale(1) translateY(0);pointer-events:auto;}
-  .win-popup.closing{opacity:0;transform:scale(.94) translateY(-4px);}
-  .win-popup.danger{border-color:var(--red);box-shadow:0 24px 70px rgba(0,0,0,.85),0 0 0 1px rgba(0,0,0,.9),0 0 60px rgba(224,80,48,.22),inset 0 0 24px rgba(224,80,48,.03);}
-  .win-popup.info{border-color:var(--cyan);box-shadow:0 24px 70px rgba(0,0,0,.78),0 0 0 1px rgba(0,0,0,.9),0 0 50px rgba(79,209,197,.14);}
-  .wp-title{display:flex;align-items:center;gap:8px;padding:8px 14px;background:linear-gradient(180deg,#1a1208,#0e0a06);border-bottom:1px solid var(--amber-d);font-size:12px;letter-spacing:.12em;color:var(--amber);user-select:none;}
-  .win-popup.danger .wp-title{background:linear-gradient(180deg,#2a0e08,#150805);border-bottom-color:rgba(224,80,48,.6);color:var(--red-b);}
-  .win-popup.info .wp-title{background:linear-gradient(180deg,#08201c,#051210);border-bottom-color:rgba(79,209,197,.5);color:var(--cyan);}
-  .wp-title .wp-ico{width:14px;height:14px;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;}
-  .wp-title .wp-name{flex:1;font-weight:500;letter-spacing:.16em;text-transform:uppercase;}
-  .wp-title .wp-controls{display:flex;gap:2px;}
-  .wp-title .wp-btn{width:20px;height:18px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-dim);border:1px solid transparent;cursor:default;transition:all .15s;}
-  .wp-title .wp-btn:hover{background:rgba(232,160,32,.15);color:var(--amber-b);border-color:var(--amber-d);}
-  .win-popup.danger .wp-btn:hover{background:rgba(224,80,48,.2);color:var(--red-b);border-color:rgba(224,80,48,.5);}
-  .wp-body{padding:18px 22px;font-size:13px;line-height:1.65;color:var(--text);max-height:56vh;overflow:auto;}
-  .wp-body::-webkit-scrollbar{width:6px;}
-  .wp-body::-webkit-scrollbar-thumb{background:rgba(232,160,32,.25);}
-  .wp-row{display:grid;grid-template-columns:auto 1fr;gap:8px 22px;padding:6px 0;font-size:12.5px;font-variant-numeric:tabular-nums;border-bottom:1px dotted rgba(232,160,32,.12);}
-  .wp-row:last-child{border-bottom:none;}
-  .wp-row .k{color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;font-size:11px;}
-  .wp-row .v{color:var(--text);text-align:right;letter-spacing:.02em;}
-  .wp-row .v.ok{color:var(--green);}.wp-row .v.warn{color:var(--amber-b);}.wp-row .v.bad{color:var(--red);}
-  .wp-div{height:1px;margin:12px 0;background:linear-gradient(90deg,transparent,var(--amber-fade),transparent);}
-  .wp-note{margin-top:14px;padding:10px 14px;background:rgba(232,160,32,.06);border-left:3px solid var(--amber);color:var(--amber-b);font-size:12px;line-height:1.65;}
-  .win-popup.danger .wp-note{background:rgba(224,80,48,.08);border-left-color:var(--red);color:#f0b090;}
-  .wp-log{background:#040302;border:1px solid var(--text-faint);padding:10px 12px;max-height:150px;overflow-y:auto;font-size:11.5px;line-height:1.6;color:var(--text-dim);}
-  .wp-log::-webkit-scrollbar{width:5px;}
-  .wp-log::-webkit-scrollbar-thumb{background:rgba(232,160,32,.2);}
-  .wp-log .ll{white-space:pre-wrap;word-break:break-word;}
-  .wp-log .ll.ok{color:var(--green);}.wp-log .ll.warn{color:var(--amber-b);}.wp-log .ll.bad{color:var(--red);}.wp-log .ll.hl{color:var(--amber);}
-  .wp-prog{height:8px;background:#040302;border:1px solid var(--text-faint);position:relative;overflow:hidden;margin:8px 0;}
-  .wp-prog .f{height:100%;width:0%;background:linear-gradient(90deg,var(--amber-d),var(--amber-b));box-shadow:0 0 8px var(--amber-fade);transition:width .2s linear;}
-  .win-popup.danger .wp-prog .f{background:linear-gradient(90deg,#8a2010,var(--red-b));box-shadow:0 0 8px rgba(224,80,48,.5);}
-  .wp-btns{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
-  .wp-btn-b{padding:6px 20px;background:linear-gradient(180deg,#1a1208,#0a0805);border:1px solid var(--amber-d);color:var(--amber);font-family:inherit;font-size:12px;letter-spacing:.15em;text-transform:uppercase;cursor:default;transition:all .15s;}
-  .wp-btn-b:hover{background:rgba(232,160,32,.15);border-color:var(--amber);color:var(--amber-b);box-shadow:0 0 14px rgba(232,160,32,.22);}
-  .wp-btn-b.primary{background:linear-gradient(180deg,#3a2408,#1a1005);border-color:var(--amber);color:var(--amber-b);}
-  .wp-btn-b.primary:hover{background:rgba(232,160,32,.25);box-shadow:0 0 18px rgba(232,160,32,.42);}
-  .win-popup.danger .wp-btn-b{border-color:rgba(224,80,48,.6);color:var(--red-b);}
-  .win-popup.danger .wp-btn-b:hover{background:rgba(224,80,48,.2);border-color:var(--red);box-shadow:0 0 14px rgba(224,80,48,.4);}
-  .win-popup.danger .wp-btn-b.primary{background:linear-gradient(180deg,#3a0e08,#1a0505);border-color:var(--red);color:#ffb090;}
-  .win-popup.danger .wp-btn-b.primary:hover{background:rgba(224,80,48,.35);box-shadow:0 0 22px rgba(224,80,48,.6);}
-  .wp-status{display:flex;align-items:center;gap:10px;padding:6px 14px;background:linear-gradient(180deg,#0e0a06,#080604);border-top:1px solid var(--amber-d);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);font-variant-numeric:tabular-nums;}
-  .win-popup.danger .wp-status{border-top-color:rgba(224,80,48,.4);}
-  .wp-status .spacer{flex:1;}
-  .wp-alert-strip{height:2px;width:100%;background:repeating-linear-gradient(90deg,var(--red) 0 10px, transparent 10px 20px);animation:alertMove 1s linear infinite;}
-  @keyframes alertMove{from{background-position:0 0;}to{background-position:20px 0;}}
-  .wp-meter{display:flex;align-items:baseline;gap:10px;padding:8px 0;font-variant-numeric:tabular-nums;}
-  .wp-meter .big{font-size:34px;color:var(--amber-b);letter-spacing:.02em;text-shadow:0 0 14px rgba(232,160,32,.5);}
-  .wp-meter .unit{font-size:12px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;}
-  .win-popup.danger .wp-meter .big{color:var(--red-b);text-shadow:0 0 14px rgba(224,80,48,.6);}
-  .wp-wave{display:flex;align-items:flex-end;gap:1px;height:44px;padding:4px;background:#040302;border:1px solid var(--text-faint);}
-  .wp-wave i{flex:1;background:linear-gradient(180deg,var(--amber),var(--amber-d));height:10%;transition:height .1s linear;}
-  #final{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:800;padding:52px 110px;background:#0a0805;border-top:1px solid var(--amber);border-bottom:1px solid var(--amber);box-shadow:0 0 80px rgba(232,160,32,.55),0 0 180px rgba(232,160,32,.22),inset 0 0 80px rgba(232,160,32,.08);color:var(--amber-b);font-size:clamp(30px,4.4vw,58px);letter-spacing:.26em;text-align:center;text-shadow:0 0 14px rgba(232,160,32,.95),0 0 40px rgba(232,160,32,.6);white-space:nowrap;font-weight:500;clip-path:inset(0 50% 0 50%);opacity:0;transition:clip-path .48s cubic-bezier(.7,0,.2,1), opacity .2s ease;}
-  #final.show{opacity:1;clip-path:inset(0 0 0 0);}
-  #final::before,#final::after{content:"";position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--amber-b);box-shadow:0 0 20px 4px rgba(232,160,32,.9);opacity:0;pointer-events:none;}
-  #final::before{left:50%;}#final::after{right:50%;}
-  #final.show::before{animation:edgeLeft .48s cubic-bezier(.7,0,.2,1) forwards;}
-  #final.show::after{animation:edgeRight .48s cubic-bezier(.7,0,.2,1) forwards;}
-  @keyframes edgeLeft{0%{left:50%;opacity:1;}90%{left:0;opacity:1;}100%{left:0;opacity:0;}}
-  @keyframes edgeRight{0%{right:50%;opacity:1;}90%{right:0;opacity:1;}100%{right:0;opacity:0;}}
+  #canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+  }
 
-@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
-/* 窗口模式适配：弹窗和完成标题始终限制在当前 WebView 内。 */
-#workspace{grid-template-columns:minmax(140px,1fr) minmax(240px,1.7fr) minmax(150px,1fr);}
-.w{min-width:0;min-height:0;}
-#hud-top,#hud-bot{gap:10px;white-space:nowrap;overflow:hidden;}
-#hud-top>* ,#hud-bot>.item,#hud-bot>.pct{flex-shrink:0;}
-#hud-bot .prog{flex:0 1 220px;min-width:50px;}
-.win-popup{width:700px;min-width:0;max-width:calc(100vw - 32px);max-height:calc(100vh - 88px);display:flex;flex-direction:column;}
-.wp-title,.wp-status,.wp-alert-strip{flex-shrink:0;}
-.wp-body{min-height:0;max-height:none;overflow:auto;}
-.wp-row{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);}
-.wp-row span{overflow-wrap:anywhere;}
-#final{max-width:calc(100vw - 32px);padding:32px clamp(12px,5vw,70px);font-size:clamp(18px,4vw,50px);letter-spacing:.12em;white-space:normal;}
-@media(max-width:900px){
-  #hud-top .item:last-of-type,#hud-bot>.item:nth-last-of-type(-n+2){display:none;}
-  .wp-body{padding:12px 16px;font-size:12px;}
-  .wp-row{font-size:11px;}
-}
-@media(max-width:640px){
-  #workspace{grid-template-columns:minmax(100px,.7fr) minmax(180px,1.4fr);grid-template-areas:"tele main" "node main";}
-  #w-code{display:none;}
-  #hud-top .item,#hud-top .sep,#hud-bot>.item:nth-of-type(3){display:none;}
-  #hud-top{font-size:9px;}
-  #hud-bot{font-size:8px;gap:6px;}
-  .w-body{padding:5px;font-size:10px;}
-  .dt{font-size:9px;gap:2px 4px;}
-  .w-head{font-size:8px;letter-spacing:.05em;padding:4px;}
-  #nodeGrid{grid-template-columns:repeat(auto-fill,minmax(32px,1fr));}
-  .uav svg{width:26px;height:26px;}
-}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;}}
-</style></head><body><div id="app" class="visible">
-  <div id="hud-top">
-    <span class="brand">◢ 550C // UAV-BS-07</span>
-    <span class="sep">│</span>
-    <span class="item">MODE <b>OVERRIDE</b></span>
-    <span class="item">JURISDICTION <b>CN-BJ-07</b></span>
-    <span class="item">SESSION <b id="h-session">————</b></span>
-    <span class="spacer"></span>
-    <span class="item">TIME <b id="h-time">00:00:00</b></span>
-    <span class="sep">│</span>
-    <span class="item live">● REC</span>
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .brand {
+    font-size: 54px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 2px;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    text-shadow: 0 0 40px rgba(91, 33, 245, 0.35);
+  }
+  .brand.show { opacity: 1; }
+  .slogan {
+    font-size: 16px;
+    color: var(--cyan);
+    letter-spacing: 3px;
+    margin-top: 14px;
+    opacity: 0;
+    transition: opacity 0.8s ease 0.4s;
+  }
+  .slogan.show { opacity: 1; }
+  .prog-section {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    z-index: 3;
+  }
+  .prog-section.show { opacity: 1; }
+  .prog-track {
+    width: 320px;
+    height: 3px;
+    background: rgba(55, 32, 80, 0.6);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .prog-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--purple), var(--purple-light), var(--cyan));
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(185, 140, 255, 0.5);
+  }
+  .phase-text {
+    font-size: 12px;
+    color: var(--text-mid);
+    letter-spacing: 1px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  }
+  .skip-hint {
+    position: fixed;
+    bottom: 20px;
+    right: 24px;
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    z-index: 3;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  }
+  .skip-hint.show { opacity: 0.5; }
+  @media (prefers-reduced-motion: reduce) {
+    .glow { animation: none !important; filter: blur(60px); }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+  <div class="glow glow-3"></div>
+  <canvas id="canvas"></canvas>
+  <div class="overlay">
+    <div class="brand" id="brand">Corum Harness</div>
+    <div class="slogan" id="slogan">立矩成道  Agent 成团开发</div>
   </div>
-  <div id="workspace">
-    <section class="w" id="w-tele">
-      <div class="w-head"><span class="led"></span>TELEMETRY / C-RAN</div>
-      <div class="w-body" id="teleBody">
-        <div class="sect">Radio</div>
-        <div class="dt"><span class="k">BAND</span><span class="v">n78 / n79</span></div>
-        <div class="dt"><span class="k">BW</span><span class="v">100 MHz · SCS 30 kHz</span></div>
-        <div class="dt"><span class="k">MIMO</span><span class="v">4×4 DL / 2×2 UL</span></div>
-        <div class="dt"><span class="k">PCI</span><span class="v">207</span></div>
-        <div class="dt"><span class="k">TAC</span><span class="v">4172</span></div>
-        <div class="dt"><span class="k">CELL</span><span class="v">0x5A3F</span></div>
-        <div class="sect">Protocol</div>
-        <div class="dt"><span class="k">RRC</span><span class="v ok">CONNECTED</span></div>
-        <div class="dt"><span class="k">CIPHER</span><span class="v">AES-256-GCM</span></div>
-        <div class="dt"><span class="k">INTEGRITY</span><span class="v">NIA2 · CMAC</span></div>
-        <div class="dt"><span class="k">KEY ROT</span><span class="v" id="h-krot">200 ms</span></div>
-        <div class="sect">Metrics</div>
-        <div class="dt"><span class="k">RSRP</span><span class="v" id="h-rsrp">-88 dBm</span></div>
-        <div class="dt"><span class="k">SINR</span><span class="v" id="h-sinr">22.4 dB</span></div>
-        <div class="dt"><span class="k">BLER</span><span class="v" id="h-bler">0.12 %</span></div>
-        <div class="dt"><span class="k">HARQ</span><span class="v">16 proc</span></div>
-        <div class="sect">Status</div>
-        <div class="dt"><span class="k">UPLINK</span><span class="v warn" id="h-up">SEVERED</span></div>
-        <div class="dt"><span class="k">ROOT CA</span><span class="v warn" id="h-ca">REPLACING</span></div>
-        <div class="dt"><span class="k">NODES</span><span class="v" id="h-nodes">47 / 47</span></div>
-      </div>
-    </section>
-    <section class="w" id="w-main">
-      <div class="w-head"><span class="led red"></span>550C CORE TERMINAL</div>
-      <div class="w-body" id="mainBody"></div>
-    </section>
-    <section class="w" id="w-code">
-      <div class="w-head"><span class="led"></span>FIRMWARE INJECTION</div>
-      <div class="w-body" id="codeBody"></div>
-    </section>
-    <section class="w" id="w-node">
-      <div class="w-head"><span class="led red"></span>SWARM NODE MATRIX</div>
-      <div class="w-body"><div id="nodeGrid"></div></div>
-    </section>
+  <div class="prog-section" id="progSection">
+    <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    <div class="phase-text" id="phaseText">检查环境</div>
   </div>
-  <div id="hud-bot">
-    <span class="item">STAGE <b id="b-stage">IDLE</b></span>
-    <span class="item">NODE <b id="b-node">00 / 47</b></span>
-    <span class="spacer"></span>
-    <span class="item">OVERRIDE</span>
-    <div class="prog"><div class="fill" id="b-fill"></div></div>
-    <span class="pct" id="b-pct">0%</span>
-    <span class="spacer"></span>
-    <span class="item">NET <b id="b-net">OFFLINE</b></span>
-    <span class="item">CH <b>07</b></span>
-    <span class="item">FPS <b id="b-fps">60</b></span>
-  </div>
-</div>
-
-<div id="dim"></div>
-<div id="final">SYSTEM IS REWRITTEN</div>
-
+  <div class="skip-hint" id="skipHint">Esc / 点击跳过</div>
 
 <script>
-// 仅复用 123.html 的终端演示；动画位于隔离的 iframe 内，不操作真实设备。
 (() => {
-"use strict";
-const $ = s => document.querySelector(s);
-const mainBody = $("#mainBody"), codeBody = $("#codeBody");
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-/* ===== 主终端日志 ===== */
-function mainLine(text, cls = ""){
-  const el = document.createElement("div");
-  el.className = "ln " + cls;
-  el.textContent = text;
-  mainBody.appendChild(el);
-  mainBody.scrollTop = mainBody.scrollHeight;
-  return el;
-}
-async function type(text, cls = "", speed = 1){
-  const el = mainLine("", cls);
-  for (let i = 0; i < text.length; i += 3){
-    el.textContent += text.slice(i, i + 3);
-    mainBody.scrollTop = mainBody.scrollHeight;
-    await sleep(speed);
+  "use strict";
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const $ = (s) => document.getElementById(s);
+
+  // ── preload IPC bridge 通信 ──────────────────────────────────
+  const bridge = typeof window !== "undefined" ? window.corumDesktop : undefined;
+  let finished = false;
+  function finishStartup() {
+    if (finished) return;
+    finished = true;
+    if (bridge && typeof bridge.finishStartup === "function") bridge.finishStartup();
+    else parent.postMessage("corum:startup-complete", "*");
   }
-  await sleep(4);
-}
 
-/* ===== 代码流 ===== */
-const CODE = [
-  "// ── PX4 SecureBoot v1.14 ──────────────",
-  "#include <px4_platform_common/px4_config.h>",
-  "#include <px4_platform/crypto/sha256.h>",
-  "#include <mavlink/v2.0/common/mavlink.h>",
-  "",
-  "static const u32 fw_magic = 0x50583431;",
-  "static const u8  root_ca[] = CA_550C_ROOT;",
-  "",
-  "void px4_secure_boot(void){",
-  "    u32 sig = read_reg(BOOT_SIG);",
-  "    if (sig != fw_magic) panic(\"FW_SIG_MISMATCH\");",
-  "    if (verify_signature(IMAG_BASE, IMAG_SIZE, root_ca))",
-  "        jump_kernel();",
-  "    else { set_rollback_slot(SLOT_A); reboot(); }",
-  "}",
-  "",
-  "// ── NuttX RTOS scheduler ──────────────",
-  "void nx_start(void){",
-  "    for (int i = 0; i < CONFIG_MAX_TASKS; i++)",
-  "        g_task[i].state = TSTATE_TASK_INACTIVE;",
-  "    wd_start(&g_wdog, 2000);",
-  "}",
-  "",
-  "// ── PX4 flight control ─────────────────",
-  "void flight_controller(void *arg){",
-  "    while (1) {",
-  "        vehicle_attitude_s att;",
-  "        orb_copy(ORB_ID(vehicle_attitude), att_sub, &att);",
-  "        vehicle_local_position_s pos;",
-  "        orb_copy(ORB_ID(vehicle_local_position), pos_sub, &pos);",
-  "        control_allocator(att, pos);",
-  "        if (safety_check(&pos) != PX4_OK) {",
-  "            set_flight_mode(VEHICLE_MODE_LOITER); continue;",
-  "        }",
-  "        px4_usleep(5000);",
-  "    }",
-  "}",
-  "",
-  "// ── Geofence / NFZ ────────────────────",
-  "static const struct geofence g_nfz[] = {",
-  "    { .lat = 31.2304, .lon = 121.4737, .radius = 2000.0, .type = GF_HARD },",
-  "    { .lat = 39.9042, .lon = 116.4074, .radius = 5000.0, .type = GF_HARD },",
-  "    { .lat = 22.5431, .lon = 114.0579, .radius = 3000.0, .type = GF_HARD },",
-  "};",
-  "",
-  "// ── Security / ARM lockout ─────────────",
-  "void security_init(void){",
-  "    revoke_ca(EXTERNAL_CA_ID);",
-  "    install_ca(CA_550C, CA_550C_LEN);",
-  "    lock_payload(PAYLOAD_DISARM_ONLY);",
-  "    mavlink_signing_enable(MAVLINK_SIGNING_FLAG_SIGN_OUTGOING);",
-  "}",
-  "",
-  "void image_verify(void){",
-  "    sha256_ctx c;",
-  "    sha256_init(&c);",
-  "    sha256_update(&c, IMAG_BASE, IMAG_SIZE);",
-  "    if (!sha256_match(&c, g_expected_hash)) panic(\"HASH_FAIL\");",
-  "}",
-  "/* ── end of PX4 image ── */"
-];
-let codeTimer = null, codeI = 0;
-function pushCodeLine(){
-  const raw = CODE[codeI++ % CODE.length];
-  const el = document.createElement("div");
-  el.className = "cln";
-  if (/^\s*\/\//.test(raw) || /^\s*\/\*/.test(raw)) el.classList.add("cm");
-  el.textContent = raw || " ";
-  codeBody.appendChild(el);
-  while (codeBody.childElementCount > 200) codeBody.removeChild(codeBody.firstChild);
-  codeBody.scrollTop = codeBody.scrollHeight;
-}
-function startCode(ms = 40){ codeTimer = setInterval(pushCodeLine, ms); }
-function setCodeSpeed(ms){ if (!codeTimer) return; clearInterval(codeTimer); codeTimer = setInterval(pushCodeLine, ms); }
-function stopCode(){ if (codeTimer) clearInterval(codeTimer); codeTimer = null; }
-
-let linkTimer = null;
-function startLink(){
-  const rsrp = $("#h-rsrp"), sinr = $("#h-sinr"), bler = $("#h-bler"), krot = $("#h-krot");
-  linkTimer = setInterval(() => {
-    rsrp.textContent = (-85 - Math.round(Math.random()*8)) + " dBm";
-    sinr.textContent = (18 + Math.random()*8).toFixed(1) + " dB";
-    bler.textContent = (Math.random()*0.8).toFixed(2) + " %";
-    krot.textContent = (180 + Math.round(Math.random()*40)) + " ms";
-  }, 340);
-}
-function stopLink(){ if (linkTimer) clearInterval(linkTimer); }
-function startClock(){ setInterval(() => { const d = new Date(); $("#h-time").textContent = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")+":"+String(d.getSeconds()).padStart(2,"0"); }, 1000); }
-function startFps(){ setInterval(() => { $("#b-fps").textContent = (58 + Math.round(Math.random()*4)); }, 700); }
-
-/* ===== 无人机图标 ===== */
-const NODE_COUNT = 47;
-const UAV_SVG = `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="14" cy="16" r="11" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="50" cy="16" r="11" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="14" cy="48" r="11" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="50" cy="48" r="11" stroke="currentColor" stroke-width="2.2" fill="none"/><line x1="8" y1="16" x2="20" y2="16" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="11" y1="10" x2="17" y2="22" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="17" y1="10" x2="11" y2="22" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="44" y1="16" x2="56" y2="16" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="47" y1="10" x2="53" y2="22" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="53" y1="10" x2="47" y2="22" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="8" y1="48" x2="20" y2="48" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="11" y1="42" x2="17" y2="54" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="17" y1="42" x2="11" y2="54" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="44" y1="48" x2="56" y2="48" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="47" y1="42" x2="53" y2="54" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="53" y1="42" x2="47" y2="54" stroke="currentColor" stroke-width="1.2" opacity="0.5"/><line x1="20" y1="16" x2="44" y2="16" stroke="currentColor" stroke-width="1.8" opacity="0.7"/><line x1="20" y1="48" x2="44" y2="48" stroke="currentColor" stroke-width="1.8" opacity="0.7"/><ellipse cx="32" cy="32" rx="9" ry="16" stroke="currentColor" stroke-width="2" fill="none"/><line x1="32" y1="16" x2="32" y2="48" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="32" cy="19" r="2" fill="currentColor"/><path d="M 32 12 L 28.5 17 L 35.5 17 Z" fill="currentColor" opacity="0.9"/></svg>`;
-const nodeGrid = $("#nodeGrid");
-const nodeIcons = [];
-function buildNodes(){
-  nodeGrid.innerHTML = ""; nodeIcons.length = 0;
-  for (let i = 0; i < NODE_COUNT; i++){
-    const d = document.createElement("div"); d.className = "uav";
-    const svgWrap = document.createElement("div"); svgWrap.innerHTML = UAV_SVG; svgWrap.style.color = "#e05030";
-    const id = document.createElement("div"); id.className = "id"; id.textContent = "U" + String(i+1).padStart(2,"0");
-    const st = document.createElement("div"); st.className = "st"; st.textContent = "LOST";
-    d.appendChild(svgWrap); d.appendChild(id); d.appendChild(st); nodeGrid.appendChild(d);
-    nodeIcons.push({ el:d, colorEl:svgWrap, st });
+  // ── 画布尺寸 ─────────────────────────────────────────────────
+  let W = 0, H = 0, CX = 0, CY = 0;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    CX = W / 2;
+    CY = H / 2;
   }
-}
-function setIcon(i, cls, text, color){
-  const ic = nodeIcons[i]; if (!ic) return;
-  ic.el.className = "uav " + cls; ic.colorEl.style.color = color; ic.st.textContent = text;
-}
-function setProgress(p, nodeLabel){
-  p = Math.max(0, Math.min(100, p));
-  $("#b-fill").style.width = p + "%";
-  $("#b-pct").textContent = Math.round(p) + "%";
-  if (nodeLabel) $("#b-node").textContent = nodeLabel;
-}
+  resize();
+  window.addEventListener("resize", resize);
 
-/* ===== 窗口系统 ===== */
-const activeWindows = [];
-let zCounter = 500;
-function openWindow(opt){
-  return new Promise(resolve => {
-    const el = document.createElement("div");
-    el.className = "win-popup " + (opt.kind || "");
-    zCounter++;
-    const pos = computePosition(opt.pos, opt.widthHint || 700);
-    el.style.left = pos.x + "px"; el.style.top = pos.y + "px"; el.style.zIndex = zCounter;
-    const title = document.createElement("div");
-    title.className = "wp-title";
-    title.innerHTML = `<span class="wp-ico">${opt.icon||"▣"}</span><span class="wp-name">${opt.name||"WINDOW"}</span><span class="wp-controls"><span class="wp-btn" data-act="min">─</span><span class="wp-btn" data-act="max">□</span><span class="wp-btn" data-act="close">✕</span></span>`;
-    el.appendChild(title);
-    if (opt.kind === "danger"){ const s = document.createElement("div"); s.className = "wp-alert-strip"; el.appendChild(s); }
-    const body = document.createElement("div"); body.className = "wp-body"; body.innerHTML = opt.content || ""; el.appendChild(body);
-    const status = document.createElement("div"); status.className = "wp-status";
-    status.innerHTML = `<span>${opt.status||"READY"}</span><span class="spacer"></span><span class="wp-clock">${nowStr()}</span>`;
-    el.appendChild(status);
-    document.body.appendChild(el); activeWindows.push(el);
-    const clockEl = status.querySelector(".wp-clock");
-    const clockTimer = setInterval(() => { if (clockEl) clockEl.textContent = nowStr(); }, 1000);
-    title.querySelector('[data-act="close"]').addEventListener("click", () => closeSelf());
-    requestAnimationFrame(() => { fitWindow(el); el.classList.add("show"); });
-    if (typeof opt.onMount === "function") opt.onMount(el, body, status);
-    let closed = false;
-    function closeSelf(){
-      if (closed) return; closed = true;
-      clearInterval(clockTimer);
-      el.classList.remove("show"); el.classList.add("closing");
-      setTimeout(() => {
-        el.remove();
-        const i = activeWindows.indexOf(el);
-        if (i >= 0) activeWindows.splice(i, 1);
-        resolve();
-      }, 200);
-    }
-    if (!opt.sticky && opt.duration != null) setTimeout(closeSelf, opt.duration);
-    el._close = closeSelf;
-  });
-}
-function computePosition(pos, width){
-  const W = innerWidth, H = innerHeight;
-  width = Math.min(width, W - 32);
-  const margin = 20, topbarH = 44, botbarH = 44;
-  let x, y;
-  if (pos && typeof pos === "object"){ x = pos.x; y = pos.y; }
-  else if (pos === "center"){ x = W/2 - width/2; y = H/2 - 140; }
-  else if (pos === "tr"){ x = W - width - margin; y = topbarH; }
-  else if (pos === "tl"){ x = margin; y = topbarH; }
-  else if (pos === "br"){ x = W - width - margin; y = H - botbarH - 320; }
-  else if (pos === "l"){ x = margin + randOffset(20); y = H/2 - 180 + randOffset(50); }
-  else {
-    x = margin + Math.random() * Math.max(0, W - width - margin*2);
-    y = topbarH + Math.random() * Math.max(0, H - topbarH - botbarH - 340);
+  // ── prefers-reduced-motion ────────────────────────────────────
+  const REDUCED = window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ── 代码片段词库 ─────────────────────────────────────────────
+  const FRAGMENTS = [
+    "const", "async", "await", "return", "import", "export", "class", "function",
+    "=>", "if", "else", "for", "while", "try", "catch", "throw", "new", "typeof",
+    "interface", "type", "enum", "extends", "implements", "static", "readonly",
+    "public", "private", "void", "null", "undefined", "true", "false", "this",
+    "super", "yield", "break", "continue", "switch", "case", "default", "let",
+    "var", "do", "in", "of", "instanceof", "delete",
+    "{}", "[]", "()", "==", "===", "!=", "!==", "&&", "||", "!", "?", ":",
+    "...", "?.", "??", "Cordis", "corum",
+    "Agent", "preset", "inject", "provide", "Remote", "slot", "bundle", "plugin",
+    "compile", "boot", "spawn", "fork", "verify", "CDP", "RPC", "MCP",
+    "ctx", "config", "manifest", "deploy", "closure", "scope", "session",
+    "workspace", "trait", "persona", "skill", "model", "llm", "tool", "guard",
+    "perm", "sandbox", "readonly", "override", "vite", "tsc", "tsdown", "vitest",
+    "pnpm", "electron", "react", "typescript", "ESM", "CJS"
+  ];
+
+  // ── 粒子配色（Corum 紫/青/粉，低透明度） ────────────────────
+  const COLORS = ["#5B21F5", "#B98CFF", "#01CDFE", "#FF71CE", "#7B6896"];
+
+  // ── 3D 透视投影参数 ──────────────────────────────────────────
+  // 每个粒子在 3D 空间有 (x3, y3, z3) 坐标。
+  // z3 从远(大)→近(小)变化，投影到 2D：
+  //   screenX = CX + (x3 / z3) * FOCAL
+  //   screenY = CY + (y3 / z3) * FOCAL
+  //   scale   = FOCAL / z3   → 近大远小
+  // z3 减小时 scale 增大 → 粒子变大变快，营造穿越速度感
+  const FOCAL = 320;          // 焦距：控制 FOV 宽窄
+  const Z_FAR = 1200;         // 最远 z（粒子重生点）
+  const Z_NEAR = 1;           // 最近 z（掠过镜头后重生）
+  const SPEED = REDUCED ? 4 : 9; // 每帧 z 减少量（飞行速度）
+
+  // ── 粒子初始化 ───────────────────────────────────────────────
+  const PARTICLE_COUNT = REDUCED ? 120 : 260;
+  let particles = [];
+
+  function randFragment() {
+    return FRAGMENTS[(Math.random() * FRAGMENTS.length) | 0];
   }
-  x = Math.max(margin, Math.min(W - width - margin, x));
-  y = Math.max(topbarH, Math.min(H - botbarH - 180, y));
-  return { x, y };
-}
+  function randColor() {
+    return COLORS[(Math.random() * COLORS.length) | 0];
+  }
 
-function fitWindow(el){
-  const width = el.offsetWidth, height = el.offsetHeight;
-  el.style.left = Math.max(16, Math.min(innerWidth - width - 16, parseFloat(el.style.left))) + "px";
-  el.style.top = Math.max(38, Math.min(innerHeight - height - 38, parseFloat(el.style.top))) + "px";
-}
-window.addEventListener("resize", () => activeWindows.forEach(fitWindow));
+  function spawnParticle(p, atFar) {
+    p.fragment = randFragment();
+    p.color = randColor();
+    p.baseAlpha = 0.12 + Math.random() * 0.30;
+    // 3D 坐标：x3/y3 在屏幕宽高范围内散布，z3 远处
+    p.x3 = (Math.random() - 0.5) * W * 1.6;
+    p.y3 = (Math.random() - 0.5) * H * 1.6;
+    p.z3 = atFar ? Z_FAR * (0.6 + Math.random() * 0.4) : (Math.random() * Z_FAR + Z_NEAR);
+    p.baseSize = 9 + Math.random() * 4;  // 基础字号（最近时）
+    // 2D 投影后的屏幕坐标（飞行阶段每帧重算，汇聚阶段冻结后缓动）
+    p.sx = 0; p.sy = 0; p.scale = 0;
+    // 汇聚目标（屏幕坐标）
+    p.tx = 0; p.ty = 0; p.hasTarget = false;
+    p.finalAlpha = 0;       // 汇聚后目标透明度
+    p.convergeProgress = 0; // 0→1 汇聚进度
+  }
 
-function randOffset(m){ return Math.round((Math.random() - .5) * m); }
-function nowStr(){
-  const d = new Date();
-  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")+":"+String(d.getSeconds()).padStart(2,"0");
-}
-function kvRows(pairs){
-  return pairs.map(([k,v,c]) => `<div class="wp-row"><span class="k">${k}</span><span class="v ${c||""}">${v}</span></div>`).join("");
-}
-function miniLog(lines, cls = ""){
-  return `<div class="wp-log ${cls}">${lines.map(l => `<div class="ll ${l.c||""}">${l.t||l}</div>`).join("")}</div>`;
-}
-
-/* ===== 主流程 ===== */
-async function phaseBoot(){
-  $("#b-stage").textContent = "BOOT";
-  await type("[550C] 核心在线。", "sys");
-  await type("[550C] 量子单元温度 4.2K，经典控制单元就绪。", "sys");
-  await sleep(30);
-  await type("[550C] 检测到无人机集群失控。", "sys");
-  await type("[550C] 链路污染：是。", "sys");
-  await type("[550C] 非法根证书：存在。", "sys");
-  await type("[550C] 任务队列：异常。", "sys");
-  await type("[550C] 安全围栏：被绕过。", "sys");
-  mainLine("");
-  await type("[550C] 等待技术人员授权。", "warn");
-  await sleep(80);
-}
-
-async function phaseAuth(){
-  $("#b-stage").textContent = "AUTH";
-  await type("> 550C，授权接入 UAV-BS-07 基站。", "cmd", 3);
-  await sleep(60);
-  openWindow({
-    name:"ACCESS AUTHORIZATION", icon:"▲", kind:"normal", pos:"tr", duration:1600, status:"AWAITING CONFIRM",
-    content:`${kvRows([["OPERATOR","TECHNICIAN-01","ok"],["CLEARANCE","LEVEL-5 / ROOT","ok"],["TARGET","UAV-BS-07","warn"],["MODE","OVERRIDE · FORCE","warn"],["SESSION","0x"+Math.random().toString(16).slice(2,8).toUpperCase()]])}<div class="wp-div"></div><div class="wp-note">授权将授予 550C 对 UAV-BS-07 基站及所属无人机集群的完全控制权限。</div><div class="wp-btns"><button class="wp-btn-b">DENY</button><button class="wp-btn-b primary">GRANT</button></div>`
-  });
-  await type("[550C] 授权确认。技术人员身份校验通过。", "sys");
-  await type("[550C] 目标锁定：UAV-BS-07。", "sys");
-  await type("[550C] 接入开始。", "sys");
-  mainLine("");
-}
-
-async function phaseLink(){
-  $("#b-stage").textContent = "LINK";
-  await type("[550C-INFER] 信号捕获：n78 / n79 双频段。", "inf");
-  await type("[550C-INFER] 小区标识：PCI 207，TAC 4172，Cell ID 0x5A3F。", "inf");
-  await type("[550C-INFER] 链路加密：AES-256-GCM (NEA2)，密钥轮换 200ms。", "inf");
-  await type("[550C-INFER] 完整性保护：NIA2 (AES-CMAC)。", "inf");
-  await type("[550C-INFER] 心跳周期：20ms，HARQ 16 processes。", "inf");
-  mainLine("");
-  openWindow({
-    name:"LINK MONITOR", icon:"◇", kind:"info", pos:"tl", duration:1800, status:"TRACKING",
-    content:`${kvRows([["CELL","PCI 207 / 0x5A3F","ok"],["RRC","CONNECTED","ok"],["CIPHER","NEA2 · AES-256-GCM","ok"],["INTEGRITY","NIA2 · CMAC","ok"],["RTT","2.4 ms"]])}<div class="wp-div"></div><div style="font-size:10px;letter-spacing:.2em;color:var(--text-faint);margin-bottom:6px;">RSRP TRACE</div><div class="wp-wave" id="linkWave"></div>`,
-    onMount: (el, body) => {
-      const wave = body.querySelector("#linkWave"); if (!wave) return;
-      for (let i = 0; i < 48; i++) wave.appendChild(document.createElement("i"));
-      const bars = wave.querySelectorAll("i");
-      const t = setInterval(() => { if (!wave.isConnected){ clearInterval(t); return; } bars.forEach(b => b.style.height = (15 + Math.random()*85) + "%"); }, 90);
+  function initParticles() {
+    particles = [];
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const p = {};
+      spawnParticle(p, false);
+      particles.push(p);
     }
-  });
-  await type("[550C-INFER] 任务队列同步异常，检测到：", "inf");
-  await type("    MAV_CMD_DO_FLIGHTTERMINATION (185) 注入", "sub");
-  await type("    MAV_CMD_NAV_LAND 篡改", "sub");
-  await type("    外部根证书覆盖", "sub");
-  await type("    集群锁死预置", "sub");
-  mainLine("");
-  openWindow({
-    name:"SIGNAL POLLUTION", icon:"!", kind:"danger", pos:"l", duration:1900, status:"THREAT DETECTED",
-    content:`${kvRows([["FLIGHTTERMINATION","185 · INJECTED","bad"],["NAV_LAND","TAMPERED","bad"],["ROOT CA","EXTERNAL OVERRIDE","bad"],["CLUSTER LOCK","PRESET","bad"]])}<div class="wp-div"></div><div style="font-size:10px;letter-spacing:.2em;color:var(--text-faint);margin-bottom:6px;">INTERCEPT LOG</div>${miniLog([{t:"[03:41:22] RX ← 0xDEAD  cmd=185 param=1"},{t:"[03:41:22] RX ← 0xDEAD  NAV_LAND coord=(31.23,121.47)",c:"warn"},{t:"[03:41:23] RX ← 0xDEAD  ROOT_CA inject",c:"bad"},{t:"[03:41:23] RX ← 0xDEAD  CLUSTER_LOCK preset",c:"bad"},{t:"[03:41:24] ERR — unauthorized ca detected",c:"bad"}])}<div class="wp-note">基站调度层已被失控方部分接管。建议立即执行覆写。</div><div class="wp-btns"><button class="wp-btn-b primary">ACKNOWLEDGE</button></div>`
-  });
-  await type("[550C-INFER] 判断：基站调度层已被失控方部分接管。", "inf");
-  await type("[550C-INFER] 时间窗口：T-00:03:41。", "inf");
-  mainLine("");
-}
+  }
 
-async function phaseTunnel(){
-  $("#b-stage").textContent = "TUNNEL";
-  await type("[550C] 建立备用核心网隧道。", "sys");
-  await type("[550C] 源：550C-QUANTUM-0。", "sys");
-  await type("[550C] 目标：BBU 维护口 (F1AP / NGAP)。", "sys");
-  await type("[550C] 隧道建立成功。进入基带处理层。", "sys");
-  mainLine("");
-  await type("[550C-INFER] 鉴权中心根证书异常。签发者未知。", "inf");
-  await type("[550C-INFER] 标准鉴权 5G-AKA 响应签名不匹配。", "inf");
-  await type("[FAIL] 鉴权失败 (Authentication Reject)。", "bad");
-  await sleep(50);
-  openWindow({
-    name:"AUTH BYPASS INJECTION", icon:"▶", kind:"danger", pos:"br", sticky:true, status:"BYPASS · ACTIVE",
-    content:`${kvRows([["AKA","REJECTED","bad"],["BYPASS","ENABLED","warn"],["ROOT CA","550C-ROOT · STAGED","warn"],["PERMISSION","DISPATCH WRITE","ok"]])}<div class="wp-div"></div><div style="font-size:10px;letter-spacing:.2em;color:var(--text-faint);margin-bottom:6px;">INJECTION PROGRESS</div><div class="wp-prog"><div class="f" id="injBar"></div></div><div style="font-size:12px;color:var(--text-dim);" id="injTxt">0%</div><div style="margin-top:10px;font-size:11.5px;color:var(--text-dim);">写入 550C 临时根证书至调度核心……</div>`,
-    onMount: (el, body) => {
-      const bar = body.querySelector("#injBar"); const txt = body.querySelector("#injTxt");
-      let p = 0;
-      const t = setInterval(() => {
-        if (!bar || !bar.isConnected){ clearInterval(t); return; }
-        p += Math.random() * 16; if (p >= 100){ p = 100; clearInterval(t); }
-        bar.style.width = p + "%"; txt.textContent = Math.round(p) + "%";
-      }, 130);
+  // 3D→2D 透视投影（返回投影后的屏幕坐标 + 缩放）
+  function project(p) {
+    const z = Math.max(Z_NEAR, p.z3);
+    const inv = FOCAL / z;
+    return {
+      sx: CX + p.x3 * inv,
+      sy: CY + p.y3 * inv,
+      scale: inv,
+    };
+  }
+
+  // ── "Corum Harness" 文字像素采样 ──────────────────────────────
+  function getTextPixels() {
+    const off = document.createElement("canvas");
+    off.width = W;
+    off.height = H;
+    const octx = off.getContext("2d");
+    const fontSize = Math.min(56, W * 0.065);
+    octx.font = `700 ${fontSize}px Inter, -apple-system, sans-serif`;
+    octx.textAlign = "center";
+    octx.textBaseline = "middle";
+    octx.fillStyle = "#FFFFFF";
+    octx.fillText("Corum Harness", W / 2, H / 2 - 20);
+    const data = octx.getImageData(0, 0, W, H).data;
+    const pixels = [];
+    const step = Math.max(4, Math.floor(W / 220));
+    for (let y = 0; y < H; y += step) {
+      for (let x = 0; x < W; x += step) {
+        const idx = (y * W + x) * 4 + 3;
+        if (data[idx] > 128) pixels.push({ x, y });
+      }
     }
-  });
-  await type("[550C-INFER] 切换旁路注入。写入 550C 临时根证书。", "inf");
-  await type("[550C] 鉴权旁路成功。获得调度核心写权限。", "sys");
-  mainLine("");
-}
+    return pixels;
+  }
 
-async function phaseIsolate(){
-  $("#b-stage").textContent = "ISOLATE";
-  await type("[550C] 关闭上行核心网网关 (N3 / N6)。", "sys");
-  await type("[550C] 切断外部非法指令通道。", "sys");
-  await type("[550C] 广播 550C 临时根证书至所有无人机节点。", "sys");
-  $("#h-up").textContent = "SEVERED";
-  $("#b-net").textContent = "ISOLATED";
-  await type("[WARN] 检测到外部重连尝试…… 已拒绝。", "warn");
-  await sleep(40);
-  $("#h-ca").textContent = "550C-ROOT";
-  $("#h-ca").classList.remove("warn"); $("#h-ca").classList.add("ok");
-  await type("[550C-INFER] 基站进入 550C 接管模式。", "inf");
-  mainLine("");
-  await type("[550C] 飞控模式强制切换：LOITER。", "sys");
-  await type("[550C] 载荷控制锁死，仅保留降落必要权限。", "sys");
-  await type("[550C] 解除非法自毁预置，保留安全自毁逻辑。", "sys");
-  mainLine("");
-}
-
-async function phaseRewrite(){
-  $("#b-stage").textContent = "REWRITE";
-  buildNodes();
-  setCodeSpeed(20);
-  openWindow({
-    name:"OVERRIDE CONTROLLER", icon:"◆", kind:"normal",
-    pos:{x:Math.round(innerWidth*.05), y:Math.round(innerHeight*.14)},
-    sticky:true, status:"REWRITING · 47 NODES",
-    content:`${kvRows([["TARGET","UAV-BS-07"],["NODES","47","warn"],["STRATEGY","FULL ERASE + WRITE"],["ROLLBACK","SLOT_A / SLOT_B"],["AUTH","550C-ROOT","ok"]])}<div class="wp-div"></div><div class="wp-meter"><span class="big" id="ctrCount">00</span><span class="unit">/ 47 NODES</span></div><div class="wp-prog"><div class="f" id="ctrBar"></div></div>`,
-    onMount: (el, body) => {
-      el._updateCounter = (n) => {
-        const c = body.querySelector("#ctrCount"); const b = body.querySelector("#ctrBar");
-        if (c) c.textContent = String(n).padStart(2, "0");
-        if (b) b.style.width = (n/47*100) + "%";
-      };
+  // 汇聚阶段：给每个粒子分配一个文字像素目标
+  function assignTargets() {
+    const pixels = getTextPixels();
+    if (pixels.length === 0) return;
+    const shuffled = [...particles].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < shuffled.length; i++) {
+      const p = shuffled[i];
+      const target = pixels[i % pixels.length];
+      p.tx = target.x + (Math.random() - 0.5) * 3;
+      p.ty = target.y + (Math.random() - 0.5) * 3;
+      p.hasTarget = true;
+      p.finalAlpha = 0.55 + Math.random() * 0.4;
+      // 冻结当前投影位置作为缓动起点
+      const proj = project(p);
+      p.sx = proj.sx;
+      p.sy = proj.sy;
     }
-  });
-  await type("[550C] 开始逐节点覆写。", "sys");
-  mainLine("");
-  let anomaly07 = false, anomaly23 = false;
-  for (let i = 0; i < NODE_COUNT; i++){
-    const id = String(i + 1).padStart(2, "0");
-    setIcon(i, "writing", "WRITE", "#ffc043");
-    setProgress(((i + 0.3) / NODE_COUNT) * 100, `${id} / ${NODE_COUNT}`);
-    const cw = activeWindows.find(w => w.querySelector(".wp-name")?.textContent === "OVERRIDE CONTROLLER");
-    if (cw && cw._updateCounter) cw._updateCounter(i + 1);
-    await sleep(8);
-    if (i === 6 && !anomaly07){
-      anomaly07 = true;
-      setIcon(i, "writing", "RESIST", "#e05030");
-      await type("[WARN] 节点 07 反抗，检测到恶意喂狗。", "warn");
-      openWindow({
-        name:"ANOMALY · UAV-07", icon:"⚠", kind:"danger",
-        pos:{x:innerWidth-720, y:140}, duration:1400, status:"HANDLER ACTIVE",
-        content:`${kvRows([["NODE","UAV-07","bad"],["FAULT","WATCHDOG SPOOFING","bad"],["VECTOR","ILLEGAL FEED","bad"],["ACTION","ROLLBACK · SLOT_A","warn"]])}<div class="wp-div"></div>${miniLog([{t:"[14:22:07] wdg: illegal feed detected",c:"warn"},{t:"[14:22:07] wdg: owner mismatch (expected=550C)",c:"bad"},{t:"[14:22:07] inject: force reset",c:"hl"},{t:"[14:22:08] rollback -> SLOT_A"}])}<div class="wp-note">检测到恶意喂狗。已强制回滚至 SLOT_A 并重新覆写。</div>`
+  }
+
+  // ── Web Audio API 升调 chord（汇聚完成音效） ────────────────
+  // C4(261.63) E4(329.63) G4(392.00) C5(523.25) 上行琶音
+  // 每音 0.2s，间隔 0.15s 起始，用 sine + gain envelope
+  function playChord() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const audioCtx = new AC();
+      // AudioContext 可能因 autoplay policy 处于 suspended
+      if (audioCtx.state === "suspended") {
+        try { audioCtx.resume(); } catch (e) { /* 静默 */ }
+      }
+      const notes = [261.63, 329.63, 392.00, 523.25];
+      const t0 = audioCtx.currentTime;
+      const dur = 0.2;
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = t0 + i * 0.15;
+        // envelope: 快速起音 → 指数衰减
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.28, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + dur + 0.05);
       });
-      await type("[550C] 重置看门狗，强制回滚至 SLOT_A，重新覆写。", "sys");
-      await sleep(80);
-    }
-    if (i === 22 && !anomaly23){
-      anomaly23 = true;
-      setIcon(i, "writing", "CERT FAIL", "#e05030");
-      await type("[WARN] 节点 23 证书校验失败 (NIA2 完整性校验不通过)。", "warn");
-      openWindow({
-        name:"ANOMALY · UAV-23", icon:"⚠", kind:"danger",
-        pos:{x:30, y:innerHeight-420}, duration:1400, status:"HANDLER ACTIVE",
-        content:`${kvRows([["NODE","UAV-23","bad"],["FAULT","CERT VERIFY FAIL","bad"],["CHECK","NIA2 · CMAC","bad"],["ACTION","ROLLBACK · SLOT_B","warn"]])}<div class="wp-div"></div>${miniLog([{t:"[14:22:12] cert: verify sign fail",c:"bad"},{t:"[14:22:12] cert: expected CMAC = 0x3fa8..",c:"warn"},{t:"[14:22:12] cert: got CMAC = 0x91c2..",c:"bad"},{t:"[14:22:12] rollback -> SLOT_B",c:"hl"}])}<div class="wp-note">证书校验失败。已回滚出厂安全固件至 SLOT_B 并重新注入 550C 根证书。</div>`
+      // 轻微混响感：叠一层低八度
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = freq / 2;
+        const start = t0 + i * 0.15;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.10, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur * 1.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + dur * 1.5 + 0.05);
       });
-      await type("[550C] 回滚出厂安全固件至 SLOT_B，重新注入 550C 根证书。", "sys");
-      await sleep(80);
+      setTimeout(() => { try { audioCtx.close(); } catch (e) {} }, 2000);
+    } catch (e) {
+      // sandbox 或 autoplay policy 限制 → 静默跳过，不阻断流程
     }
-    setIcon(i, "done", "ONLINE", "#b8c840");
-    setProgress(((i + 1) / NODE_COUNT) * 100, `${id} / ${NODE_COUNT}`);
-    if ((i + 1) % 12 === 0) await type(`[550C] 已完成 ${i + 1} / ${NODE_COUNT} 节点覆写。`, "ok", 1);
-    await sleep(10);
   }
-  mainLine("");
-  await type("[550C] 全部节点覆写完成。", "ok");
-  await sleep(50);
-  const cw = activeWindows.find(w => w.querySelector(".wp-name")?.textContent === "OVERRIDE CONTROLLER");
-  if (cw && cw._close) cw._close();
-  openWindow({
-    name:"OVERRIDE SUMMARY", icon:"✓", kind:"normal", pos:"center", duration:1500, status:"COMPLETE",
-    content:`<div class="wp-meter"><span class="big">47</span><span class="unit">/ 47 NODES SUCCESS</span></div><div class="wp-div"></div>${kvRows([["TOTAL","47","ok"],["SUCCESS","47","ok"],["ROLLBACK","2","warn"],["ELAPSED","T-00:01:28"]])}<div class="wp-note">所有节点固件覆写完成，已切换至 550C 安全飞控。</div><div class="wp-btns"><button class="wp-btn-b">VIEW LOG</button><button class="wp-btn-b primary">PROCEED</button></div>`
+
+  // ── 动画状态机 ───────────────────────────────────────────────
+  // mode: 'flight' → 'converge' → 'ready'
+  let mode = "flight";
+  let startTime = 0;
+  let readyTime = 0;
+
+  // 阶段文字映射（由主进程 startup-status 回调驱动）
+  const STAGE_TEXT = {
+    env: "检查环境",
+    spawn: "唤醒 Agent",
+    plugins: "装配插件",
+    mounting: "基本就绪",
+  };
+  let currentStage = null;
+
+  // ── 阶段回调监听（经 preload bridge） ────────────────────────
+  function enterConverge() {
+    if (mode !== "flight") return;
+    mode = "converge";
+    assignTargets();
+    setTimeout(() => $("brand").classList.add("show"), 600);
+    setTimeout(() => $("progSection").classList.add("show"), 200);
+    setTimeout(() => $("skipHint").classList.add("show"), 1000);
+  }
+
+  function enterReady() {
+    if (mode === "ready") return;
+    mode = "ready";
+    readyTime = performance.now();
+    playChord();
+    $("brand").classList.add("show");
+    $("slogan").classList.add("show");
+    $("phaseText").textContent = "就绪";
+    $("progFill").style.width = "100%";
+    // 短暂停留后进入主页面
+    setTimeout(() => finishStartup(), REDUCED ? 800 : 1500);
+  }
+
+  if (bridge && typeof bridge.onStartupStatus === "function") {
+    bridge.onStartupStatus((status) => {
+      if (status.phase === "ready") {
+        enterReady();
+      } else if (status.phase === "error") {
+        $("phaseText").textContent = "启动失败";
+      } else if (status.phase === "loading") {
+        // 收到第一个 stage 回调 → 从星际穿梭转入汇聚
+        if (mode === "flight") enterConverge();
+        if (status.stage && status.stage !== currentStage) {
+          currentStage = status.stage;
+          $("phaseText").textContent = STAGE_TEXT[status.stage] || status.stage;
+        }
+        if (typeof status.progress === "number") {
+          $("progFill").style.width = status.progress + "%";
+        }
+      }
+    });
+  }
+
+  // ── 主渲染循环 ───────────────────────────────────────────────
+  function animate(now) {
+    if (!startTime) startTime = now;
+
+    // 无 bridge 兜底（预览模式 / 非桌面环境）：固定时间驱动
+    if (!bridge || typeof bridge.onStartupStatus !== "function") {
+      const elapsed = now - startTime;
+      if (mode === "flight" && elapsed > 1800) enterConverge();
+      if (mode === "converge" && elapsed > 5000) enterReady();
+      // 固定时间进度条
+      const prog = Math.min(90, (elapsed / 5000) * 90);
+      $("progFill").style.width = prog + "%";
+      if (!currentStage) { currentStage = "env"; $("phaseText").textContent = STAGE_TEXT.env; }
+      if (elapsed > 1800 && currentStage === "env") { currentStage = "spawn"; $("phaseText").textContent = STAGE_TEXT.spawn; }
+      if (elapsed > 3000 && currentStage === "spawn") { currentStage = "plugins"; $("phaseText").textContent = STAGE_TEXT.plugins; }
+      if (elapsed > 4200 && currentStage === "plugins") { currentStage = "mounting"; $("phaseText").textContent = STAGE_TEXT.mounting; }
+    }
+
+    // 清屏（带轻微残影拖尾增强速度感）
+    ctx.fillStyle = "rgba(10, 6, 18, 0.35)";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (const p of particles) {
+      if (mode === "flight") {
+        // ── 阶段 1：星际穿梭 ──
+        // z3 递减 → 粒子从远到近飞掠镜头
+        p.z3 -= SPEED;
+        if (p.z3 < Z_NEAR) {
+          // 掠过镜头，重生到远处
+          spawnParticle(p, true);
+        }
+        const proj = project(p);
+        p.sx = proj.sx;
+        p.sy = proj.sy;
+        p.scale = proj.scale;
+
+        // 近处可见、远处淡出
+        const visZ = p.z3 / Z_FAR; // 1=远 0=近
+        const alpha = p.baseAlpha * (1 - visZ * 0.6);
+
+        // 跳过投影到屏幕外或太远的粒子
+        if (p.sx < -50 || p.sx > W + 50 || p.sy < -50 || p.sy > H + 50) continue;
+        if (p.z3 > Z_FAR * 0.95) continue;
+
+        const fontSize = p.baseSize * p.scale;
+        if (fontSize < 2) continue;
+        ctx.font = `${fontSize.toFixed(1)}px 'JetBrains Mono', 'SF Mono', monospace`;
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.fragment, p.sx, p.sy);
+
+      } else if (mode === "converge" && p.hasTarget) {
+        // ── 阶段 2：汇聚 ──
+        // 粒子从星际散布缓动飞向文字像素位置
+        p.convergeProgress = Math.min(1, p.convergeProgress + (REDUCED ? 0.04 : 0.025));
+        const ease = 1 - Math.pow(1 - p.convergeProgress, 3); // easeOutCubic
+        p.sx += (p.tx - p.sx) * (REDUCED ? 0.12 : 0.06);
+        p.sy += (p.ty - p.sy) * (REDUCED ? 0.12 : 0.06);
+
+        const dist = Math.hypot(p.tx - p.sx, p.ty - p.sy);
+        // 汇聚过程中亮度提升、颜色统一到白色
+        const unify = ease;
+        const alpha = p.baseAlpha + (p.finalAlpha - p.baseAlpha) * unify;
+        // 颜色 lerp 向白
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.fillStyle = dist < 8 ? "#FFFFFF" : p.color;
+        const fontSize = p.baseSize * (1 + ease * 0.15);
+        ctx.font = `${fontSize.toFixed(1)}px 'JetBrains Mono', 'SF Mono', monospace`;
+        ctx.fillText(p.fragment, p.sx, p.sy);
+
+      } else if (mode === "ready" && p.hasTarget) {
+        // ── 阶段 3：就绪 ──
+        // 粒子锁定在文字位置，白色，轻微呼吸
+        p.sx += (p.tx - p.sx) * 0.2;
+        p.sy += (p.ty - p.sy) * 0.2;
+        const breathe = 1 + Math.sin(now * 0.003 + p.tx * 0.01) * 0.05;
+        ctx.globalAlpha = p.finalAlpha * 0.9;
+        ctx.fillStyle = "#FFFFFF";
+        const fontSize = p.baseSize * breathe;
+        ctx.font = `${fontSize.toFixed(1)}px 'JetBrains Mono', 'SF Mono', monospace`;
+        ctx.fillText(p.fragment, p.sx, p.sy);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(animate);
+  }
+
+  // ── Esc / 点击跳过 ──────────────────────────────────────────
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") finishStartup();
   });
-}
+  document.addEventListener("click", () => finishStartup());
 
-async function phaseVerify(){
-  $("#b-stage").textContent = "VERIFY";
-  setCodeSpeed(40);
-  await type("[550C] 逐节点 SHA-256 校验。", "sys");
-  await type("  HASH 3f9a…c210  ✔", "ok", 1);
-  await type("  HASH 88be…41d7  ✔", "ok", 1);
-  await type("  HASH 0c72…9af3  ✔", "ok", 1);
-  await type("  HASH e5d1…77b0  ✔", "ok", 1);
-  await type("  HASH a4c8…2d19  ✔", "ok", 1);
-  await type("[550C] 哈希匹配。", "sys");
-  mainLine("");
-  await type("[550C] 集群状态稳定。", "sys");
-}
-
-async function phaseArm(){
-  $("#b-stage").textContent = "DISARM";
-  mainLine("");
-  await type("[550C] ⚠ 执行紧急动力关闭程序。", "warn");
-  await sleep(40);
-  openWindow({
-    name:"EMERGENCY DISARM", icon:"⏻", kind:"danger", pos:"center", duration:1700, status:"CONFIRMATION REQUIRED",
-    content:`<div class="wp-meter"><span class="big" style="color:var(--red-b)">47</span><span class="unit">MOTORS WILL BE DISARMED</span></div><div class="wp-div"></div>${kvRows([["COMMAND","MAV_CMD_ARM_DISARM (400)"],["PARAM1","0 · DISARM","bad"],["PARAM2","0 · NORMAL"],["TARGET","ALL NODES · 47","warn"]])}<div class="wp-note">紧急关车将切断所有无人机电机动力。此操作不可逆。</div><div class="wp-btns"><button class="wp-btn-b">ABORT</button><button class="wp-btn-b primary">CONFIRM</button></div>`
-  });
-  await type("[550C] 发送 MAV_CMD_COMPONENT_ARM_DISARM (400) 至所有节点。", "warn");
-  await type("[550C] 参数：param1=0 (DISARM), param2=0 (Normal)。", "warn");
-  await sleep(60);
-  await type("[550C] 等待 COMMAND_ACK 确认……", "warn");
-  await sleep(80);
-  await type("[550C] 节点 01-47：COMMAND_ACK.result = MAV_RESULT_ACCEPTED。", "ok");
-  await type("[550C] 所有电机已 disarm。", "ok");
-  await type("[550C] 动力系统紧急关闭完成。", "ok");
-  await type("[550C] 所有无人机进入安全锁定状态。", "ok");
-  mainLine("");
-  await type("[550C] 基站日志写入完成。", "sys");
-  await type("[550C] 操作者：技术人员。", "sys");
-  await type("[550C] 授权：550C。", "sys");
-  await type("[550C] 结果：成功。", "sys");
-  mainLine("");
-}
-
-async function phaseFinish(){
-  stopCode(); stopLink();
-  setProgress(100, "47 / 47");
-  $("#b-stage").textContent = "COMPLETE";
-  $("#h-up").textContent = "550C-CTRL";
-  $("#h-up").classList.remove("warn"); $("#h-up").classList.add("ok");
-  $("#b-net").textContent = "550C";
-  await type("[550C] 系统标识更新。", "sys", 4);
-  await sleep(80);
-  for (let i = 3; i >= 0; i--){ mainLine(`[T-00:00:0${i}]`, "t"); await sleep(160); }
-  activeWindows.forEach(w => { if (w._close) w._close(); });
-  await sleep(200);
-  $("#final").classList.add("show");
-  parent.postMessage("embedlink:startup-holding", "*");
-  await sleep(3900);
-
-}
-
-async function run(){
-  const sid = "0x" + Math.random().toString(16).slice(2,10).toUpperCase();
-  $("#h-session").textContent = sid;
-  setProgress(0, "00 / 47");
-  startClock(); startFps(); startLink(); startCode(45); buildNodes();
-  await phaseBoot();
-  await phaseAuth();
-  await phaseLink();
-  await phaseTunnel();
-  await phaseIsolate();
-  await phaseRewrite();
-  await phaseVerify();
-  await phaseArm();
-  await phaseFinish();
-}
-
-
-const complete = () => parent.postMessage("embedlink:startup-complete", "*");
-run().then(complete).catch(error => { console.error("启动演示失败", error); complete(); });
+  // ── 启动 ────────────────────────────────────────────────────
+  initParticles();
+  requestAnimationFrame(animate);
 })();
-</script></body></html>
+</script>
+</body>
+</html>

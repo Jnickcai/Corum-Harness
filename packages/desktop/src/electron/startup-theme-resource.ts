@@ -5,7 +5,7 @@ import { Readable } from 'node:stream'
 import { resolveThemeFile, type ResolvedStartupTheme } from './startup-themes.ts'
 
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.mp4': 'video/mp4', '.webm': 'video/webm' }
-export const THEME_CSP = "default-src 'none'; script-src 'unsafe-inline' corumapp://startup-theme; style-src 'unsafe-inline' corumapp://startup-theme; img-src data: blob: corumapp://startup-theme; font-src data: corumapp://startup-theme; media-src corumapp://startup-theme; connect-src corumapp://startup-theme; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+export const THEME_CSP = "default-src 'none'; script-src 'unsafe-inline' corumapp://startup-theme corumapp://startup-sdk; style-src 'unsafe-inline' corumapp://startup-theme; img-src data: blob: corumapp://startup-theme; font-src data: corumapp://startup-theme; media-src corumapp://startup-theme; connect-src corumapp://startup-theme; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
 
 /** 与 Electron 注册分开，以普通 Node 测试验证文件与 Range 边界。 */
 export async function readStartupThemeResource(theme: ResolvedStartupTheme, request: Request): Promise<Response> {
