@@ -42,6 +42,16 @@
    reload via HMR. Any cross-package state / shell / scheduler change must pass
    the three-layer on-device CDP verification (UI renders + behavior + zero
    console errors). "It compiles" is not "done".
+   - **Do not filter `disabled` patches out of the boot() layer stack.**
+     `disabled` patch rows carry a dual duty: (a) index marker for "this plugin
+     is off" AND (b) the config that suppresses the **official** package so the
+     **fork** can monopolize the cordis service name. A `.filter(p => p.disabled !== true)`
+     on the composed overlays (#54) made the official `dsh-subagent` /
+     `dsh-sandbox` / `dsh-credentials-local` reactivate alongside their fork
+     counterparts → `service "…" has been registered` → host bridge exit 1.
+     If you want to skip disabled config I/O, do it inside cordis (don't resolve
+     the config), never by dropping the row from the caller. Evidence:
+     `docs/LESSONS.md` §1.17 (2026-10-15); PR #55 reverted #54's filter.
 6. **UI-plugin builds are three steps, all required** — `tsc -b && tsdown &&
    node scripts/inline-css.mjs`. Running `tsdown` alone extracts CSS to an
    external `lib/style.css` that the dev runtime cannot load (404), so all

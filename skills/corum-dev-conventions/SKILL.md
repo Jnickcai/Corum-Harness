@@ -18,6 +18,7 @@ description: Use when changing anything in this repo (corum Agent OS / kkc-deskt
 3. **跨 bundle 类型脸不匹配 → 用本地能力接口收窄**：consumer 注入到的可能是官方基线的窄接口（corum 运行时是超集），不要耦合到实现包——用本地能力接口（capability interface + helper）收窄。
 4. **消费 cordis service 走 `inject` 声明**，不要在未装配的服务上 `ctx.get`（`ctx.remote` 坑）。
 5. **host 插件改动必须重启应用**（只有 renderer 走 HMR）；跨包状态 / 壳 / 调度改动必须过**三层实机验证**：界面渲染 + 行为 + 零新增控制台报错。
+   - **不要从 `boot()` 的 patch 层栈里 filter 掉 disabled 行**。disabled patch 行有双重职责：①「这个插件被禁用」的索引标记；②**禁用官方包让 fork 独占 cordis service 名**的配置载体。`boot.ts` 里 `.filter(p => p.disabled !== true)`（#54）让官方 `dsh-subagent` / `dsh-sandbox` / `dsh-credentials-local` 重新激活，和 fork 包注册同名 service → `service "…" has been registered` → host bridge exit 1。想跳过 disabled 的 config I/O，改在 cordis 内部做（不解析 config），**绝不在调用方 filter 掉整行**。证据：`docs/LESSONS.md` §1.17；PR #55 回退了 #54 的 filter。
 6. **三个平台，每次改动都要过（核心原则）**：改完问一句「这在 darwin / linux / win32 上是否不同——三个都覆盖了吗？」**「编译过」与「我机器上跑得通」在这里都不算完成**——本仓最贵的失败是**隐式假设**（硬编码 `/bin/zsh`、`~/.corum-desktop`、只用 `/` 拼路径、macOS 交通灯像素内边距、POSIX 专用命令白名单），它们在第三个平台上**不报错、只是行为不同**。
    - **两种合法布局**：corum 自有代码可用 `platform/` 目录（一平台一实现）；**官方 fork 包沿用官方「同级文件」惯例**（`fs-local/src/{fsio.ts, win32.ts}`）——**同一包内不混用**。
    - **平台选择只跟随实际运行平台**（`getPlatform()` → `process.platform`），烘入常量（`__CORUM_TARGET_PLATFORM__`）只用于一致性断言与诊断，**不得用于选实现**。
