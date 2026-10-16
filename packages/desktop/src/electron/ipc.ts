@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, dialog, ipcMain, BrowserWindow, Notification, type IpcMainInvokeEvent } from 'electron'
+import { app, dialog, ipcMain, shell, BrowserWindow, Notification, type IpcMainInvokeEvent } from 'electron'
 import type { HostBridgeClient } from './bridge-client.ts'
 import { findCombo, loadAllCombos, touchCombo } from './combos.ts'
 import { createInputHal, type InputHal } from './input-hal.ts'
@@ -601,6 +601,18 @@ export function registerIpc(
     const win = getWindow()
     if (win === null || win.isDestroyed()) return false
     return win.isMaximized()
+  })
+
+  // ── 外链（渲染层要用系统默认浏览器打开）──────────────────────────────
+  //
+  // 只放行 http/https，其它 scheme 一律拒绝：这条 handler 是渲染层 → 主进程的
+  // 任意 URL 通道，放行 `file:` / `javascript:` 之类等于把本机文件与脚本执行面
+  // 开到渲染层（渲染层自身跑的是插件 bundle，不是可信边界）。
+  ipcMain.handle('corum:open-external', async (_event, request: { url: string }) => {
+    const url = String(request?.url ?? '')
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'invalid url' }
+    await shell.openExternal(url)
+    return { ok: true }
   })
   // 最大化态变化转发给 renderer（按钮图标跟着切）。只在首次有 listener 时
   // 挂事件——但 ipcMain.handle 是进程级单次注册，事件挂载也跟着一次性挂；

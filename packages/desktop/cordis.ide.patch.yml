@@ -262,6 +262,13 @@
     # 「already declared」）。
     - id: ide-integrations-pages
       name: '@corum/corum-ide-integrations-pages-ui'
+    # Issue 提交入口：贴边悬浮 bug 按钮（可拖动吸附 + 位置持久化）+ 提交面板
+    # （类型/标题/描述/环境信息 + 剪贴板截图 chip）。**不走 slot**：client apply
+    # 自建 body 级容器 + createRoot（浮层不属于任何网格区域）；提交流程纯手工
+    # 组装 GitHub `issues/new` URL，经 preload 的 `corumDesktop.openExternal`
+    # 交给系统浏览器（外链只此一条路，不用 window.open）。
+    - id: corum-issue-reporter
+      name: '@corum/corum-issue-reporter-ui'
     # 状态栏已整体移除（corum.statusBar 槽不再由 ide-shell 声明/渲染）；
     # @corum/corum-ide-statusbar-ui 插件代码保留在 packages/plugins/ui/ide-statusbar
     # 备查，如需恢复可重新挂载本行。

@@ -18,6 +18,7 @@
     "@corum/corum-ide-plugin-manager-ui": "workspace:*",
     "@corum/corum-ide-sidebar-ui": "workspace:*",
     "@corum/corum-ide-ui": "workspace:*",
+    "@corum/corum-issue-reporter-ui": "workspace:*",
     "@corum/corum-mcp-manager": "workspace:*",
     "@corum/corum-memory": "workspace:*",
     "@corum/corum-ollama": "workspace:*",

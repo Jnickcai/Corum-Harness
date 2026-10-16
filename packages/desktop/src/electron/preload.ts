@@ -130,6 +130,13 @@ export interface CorumDesktopBridge {
   isMaximized: () => Promise<boolean>
   /** 订阅最大化态变化（按钮图标跟着切）。 */
   onMaximizeChange: (callback: (maximized: boolean) => void) => () => void
+  /**
+   * 用系统默认浏览器打开外链（只放行 http/https，其余 scheme 由主进程拒绝）。
+   *
+   * 渲染层**不能用 `window.open` 代替**：壳的 webContents 会把它当新窗口处理
+   * （被拦，或开出一个没有壳的裸窗口）。外链只有这一条路。
+   */
+  openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>
 }
 
 /**
@@ -302,4 +309,7 @@ contextBridge.exposeInMainWorld('corumDesktop', {
       maximizeListeners.delete(callback)
     }
   },
+  /** 用系统默认浏览器打开外链（http/https only；主进程侧校验并返回 ok/error）。 */
+  openExternal: (url: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('corum:open-external', { url }),
 })

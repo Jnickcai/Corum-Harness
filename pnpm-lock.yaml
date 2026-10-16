@@ -288,6 +288,9 @@ importers:
       '@corum/corum-ide-ui':
         specifier: workspace:*
         version: link:../plugins/ui/corum-ide-ui
+      '@corum/corum-issue-reporter-ui':
+        specifier: workspace:*
+        version: link:../plugins/ui/corum-issue-reporter-ui
       '@corum/corum-mcp-manager':
         specifier: workspace:*
         version: link:../plugins/agent/corum-mcp-manager
@@ -649,6 +652,9 @@ importers:
       '@corum/corum-ide-ui':
         specifier: workspace:*
         version: link:../../plugins/ui/corum-ide-ui
+      '@corum/corum-issue-reporter-ui':
+        specifier: workspace:*
+        version: link:../../plugins/ui/corum-issue-reporter-ui
       '@corum/corum-mcp-manager':
         specifier: workspace:*
         version: link:../../plugins/agent/corum-mcp-manager
@@ -3420,6 +3426,37 @@ importers:
       vitest:
         specifier: ^5.0.0
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.19.1)(vite@7.3.7(@types/node@24.19.1)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
+
+  packages/plugins/ui/corum-issue-reporter-ui:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.2
+        version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
+      lucide-react:
+        specifier: ^0.460.0
+        version: 0.460.0(react@18.3.1)
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@tsdown/css':
+        specifier: ^0.22.14
+        version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
+      '@types/react':
+        specifier: ~18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.31)
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(@tsdown/css@0.22.14)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
   packages/plugins/ui/corum-rpc-client:
     dependencies:
