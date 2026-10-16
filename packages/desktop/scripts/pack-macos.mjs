@@ -1204,10 +1204,14 @@ async function buildApp() {
   const savedDeps = pkg.dependencies
   pkg.dependencies = {}
   await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-  console.log('[pack-macos] electron-builder: dependencies temporarily emptied (host runtime is in extraResources)')
+  const platform = resolveTargetPlatform()
+  const arch = resolveTargetArch()
+  const ebPlatform = platform === 'darwin' ? '--mac' : platform === 'win32' ? '--win' : '--linux'
+  const ebArch = arch === 'arm64' ? '--arm64' : '--x64'
+  console.log(`[pack-macos] electron-builder: dependencies temporarily emptied, target ${platform}-${arch}`)
   try {
     await run('electron-builder', join(DESKTOP_ROOT, 'node_modules', '.bin', 'electron-builder'), [
-      '--mac', '--arm64',
+      ebPlatform, ebArch,
     ], { cwd: DESKTOP_ROOT })
   } finally {
     await writeFile(pkgPath, original)
