@@ -8,7 +8,7 @@
  */
 
 import type {
-  ClientRemote, CredentialInfo, LlmConfigurableProvider, LlmProviderInfo, SettingsNamespaceView,
+  ClientRemote, CredentialInfo, LlmConfigurableProvider, LlmProviderInfo, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -169,8 +169,15 @@ export function protocolChoices(
   return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
 }
 
-/** The credential reference a resolved profile names (its `apiKeyEnv` field). */
-function apiKeyEnvOf(
+/**
+ * The credential reference a resolved profile names (its `apiKeyEnv` field): the
+ * profile half of the rule {@link keyRefFor} completes.
+ * @param namespace - the namespace view holding the resolved profile.
+ * @param path - path from the section root to this provider's profile.
+ * @param schema - settings schema operations.
+ * @returns the reference the profile names, or undefined when it names none.
+ */
+export function apiKeyEnvOf(
   namespace: SettingsNamespaceView | undefined,
   path: readonly string[],
   schema: SettingsSchemaOperations,
@@ -180,6 +187,20 @@ function apiKeyEnvOf(
   if (typeof profile !== 'object' || profile === null) return undefined
   const ref = (profile as { apiKeyEnv?: unknown }).apiKeyEnv
   return typeof ref === 'string' && ref.length > 0 ? ref : undefined
+}
+
+/**
+ * The credential reference a provider resolves keys through: the one its
+ * resolved profile names, else the conventional derived name. This is the single
+ * home for that rule — the surface that stores a typed key and the runtime that
+ * reads it must agree on the reference, and a profile updated by one code path
+ * but not the other leaves the key under a name nothing reads.
+ * @param provider - provider route id (e.g. `anthropic`, `minimax-cn`).
+ * @param named - the `apiKeyEnv` the resolved profile carries, when it carries one.
+ * @returns the reference to read and write.
+ */
+export function keyRefFor(provider: string, named: string | undefined): string {
+  return named === undefined || named.length === 0 ? deriveKeyRef(provider) : named
 }
 
 /** The models settings page controller (one per settings surface). */
@@ -316,6 +337,104 @@ export class ModelsSettingsStore {
       s.routeModels = routeModels
     })
   }
+}
+
+/** What the provider detail card's form holds when the user submits it. */
+export interface ProviderProfileEdit {
+  /** Path from the section root to this provider's profile. */
+  readonly settingsPath: readonly string[]
+  /** The `apiKeyEnv` the resolved profile already declares (undefined = none). */
+  readonly declaredApiKeyEnv: string | undefined
+  /** The reference a typed key is stored under ({@link keyRefFor}). */
+  readonly keyRef: string
+  /** The typed key, trimmed; an empty string means the field supplied none. */
+  readonly key: string
+  /** Official catalog routes carry neither an endpoint nor message-role compat. */
+  readonly isOfficial: boolean
+  /** The endpoint field's current value. */
+  readonly baseURL: string
+  /** The message-role switch's current value. */
+  readonly systemRole: boolean
+  /** The message-role switch's stored value, for the changed test. */
+  readonly systemRoleStored: boolean
+}
+
+/**
+ * Every profile write one save of the detail card owes, as one op list: the
+ * `apiKeyEnv` declaration, the endpoint, and the message-role compat flag. The
+ * declaration travels with the profile rather than with the key because a stored
+ * key is invisible to the runtime until the resolved profile names the reference
+ * it sits under (a missing declaration is what the pi-ai adapter reads as an
+ * absent key).
+ * @param edit - the card's form values.
+ * @returns the ops for a single `settings/mutate`, empty when nothing changed.
+ */
+export function providerProfileOps(edit: ProviderProfileEdit): SettingsPathOpView[] {
+  const ops: SettingsPathOpView[] = []
+  // Only a profile naming no reference declares one: a reference already in the
+  // profile is the user's own configuration and is never overwritten.
+  if (edit.key !== '' && edit.declaredApiKeyEnv === undefined) {
+    ops.push({ op: 'set', path: [...edit.settingsPath, 'apiKeyEnv'], value: edit.keyRef })
+  }
+  if (!edit.isOfficial) {
+    ops.push({ op: 'set', path: [...edit.settingsPath, 'baseURL'], value: edit.baseURL.trim() })
+    // 兼容性开关只在改动时写：开 → false，关 → 删键（回到 pi-ai 的 URL 自动判定）。
+    if (edit.systemRole !== edit.systemRoleStored) {
+      const compatPath = [...edit.settingsPath, 'compat', 'supportsDeveloperRole']
+      ops.push(edit.systemRole
+        ? { op: 'set', path: compatPath, value: false }
+        : { op: 'unset', path: compatPath })
+    }
+  }
+  return ops
+}
+
+/**
+ * Commit one save of the detail card: the profile writes first, the credential
+ * write second. The order is the point. A credential stored before the profile
+ * names it is an orphan — no reader anywhere consults the reference, so the page
+ * reports a stored key while the provider stays unusable, and no later save can
+ * reach it. A profile naming a reference whose credential is missing instead
+ * states what is true ("the key comes from X and X is unset"), which the page
+ * shows as unconfigured and the user repairs by saving the key again.
+ * @param api - the settings and credentials wire faces.
+ * @param settingsNs - the namespace owning this provider's profile.
+ * @param edit - the card's form values.
+ * @param revision - the namespace revision the ops are written against.
+ * @returns the failure message, or undefined when every write succeeded.
+ */
+export async function saveProviderProfile(
+  api: Pick<ModelsWire, 'settings' | 'credentials'>,
+  settingsNs: string,
+  edit: ProviderProfileEdit,
+  revision: number | undefined,
+): Promise<string | undefined> {
+  // One mutate for every profile field: separate calls would each carry the
+  // revision read before the previous one landed, so the second would either
+  // lose to a conflict or write over the first.
+  const ops = providerProfileOps(edit)
+  if (ops.length > 0) {
+    const response = await api.settings.mutate(settingsNs, ops, revision)
+    if (!response.ok) return response.error.message
+  }
+  if (edit.key !== '') {
+    const stored = await api.credentials.set(edit.keyRef, edit.key)
+    if (!stored.ok) return stored.error.message
+  }
+  return undefined
+}
+
+/**
+ * Whether a key for this provider is on file. A row whose profile names a
+ * reference is judged by that reference's own credential; a row whose profile
+ * names none is judged by the derived reference this page stores typed keys
+ * under — the state the row carries as `derivedCredential`, without which a
+ * stored key reads as unset.
+ * @param row - one joined provider row.
+ * @returns whether a key for this provider is stored.
+ */
+export function keyConfiguredFor(row: ProviderRow): boolean {
+  return (row.credential ?? row.derivedCredential)?.configured === true
 }
 
 /**

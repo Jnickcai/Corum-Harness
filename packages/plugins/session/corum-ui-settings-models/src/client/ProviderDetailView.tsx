@@ -9,7 +9,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfirmDialog } from '@corum/corum-ui-base/client'
-import { deriveKeyRef, messageOf } from './store.ts'
+import { keyConfiguredFor, keyRefFor, messageOf, saveProviderProfile } from './store.ts'
 import type { ModelsSettingsStore, ModelsWire } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { ModelCard, ProviderCard } from './model-cards.ts'
@@ -38,7 +38,7 @@ export function ProviderDetailView({ provider, state, api, schema, onBack, onOpe
   const liveProvider = collectProviderCards(state, schema).find(p => p.provider === provider.provider) ?? provider
   provider = liveProvider
   const isOfficial = provider.settingsNs === 'llm-deepseek'
-  const keyRef = provider.apiKeyEnv ?? deriveKeyRef(provider.provider)
+  const keyRef = keyRefFor(provider.provider, provider.apiKeyEnv)
   // 兼容性：pi-ai 对 OpenAI 兼容网关默认按 URL 猜「支持 developer role」，自建/内网
   // 网关普遍不认（system 提示词被拒 → 400 且正文读不出，见 2026-09-09 实测）。
   // 开 = 写 compat.supportsDeveloperRole:false（改用 system role）。
@@ -46,7 +46,9 @@ export function ProviderDetailView({ provider, state, api, schema, onBack, onOpe
   const systemRoleStored = settingsNamespace !== undefined
     && schema.getPath(settingsNamespace.value, [...provider.settingsPath, 'compat', 'supportsDeveloperRole']) === false
   const [keyDraft, setKeyDraft] = useState('')
-  const [keyConfigured, setKeyConfigured] = useState(provider.row.credential?.configured === true)
+  // 已配置判定同时认 profile 声明的 ref 与详情页推导出来的 ref：后者是「有密钥但
+  // profile 没声明」那种行的唯一密钥证据，只读 credential 会把它显示成未配置。
+  const [keyConfigured, setKeyConfigured] = useState(keyConfiguredFor(provider.row))
   const [baseURL, setBaseURL] = useState(provider.baseURL ?? '')
   const [systemRole, setSystemRole] = useState(systemRoleStored)
   const [busy, setBusy] = useState(false)
@@ -86,32 +88,24 @@ export function ProviderDetailView({ provider, state, api, schema, onBack, onOpe
     setFailure(undefined)
     setSaved(false)
     try {
-      if (keyDraft.trim() !== '') {
-        const cred = await api.credentials.set(keyRef, keyDraft.trim())
-        if (!cred.ok) { setFailure(cred.error.message); return }
+      const key = keyDraft.trim()
+      const namespace = state.namespaces.get(provider.settingsNs)
+      // profile 的全部写入（含 apiKeyEnv 声明）合成一次 mutate，先落盘、再写 credential；
+      // 顺序与理由见 saveProviderProfile（credential 先写会留下没人读得到的孤儿密钥）。
+      const message = await saveProviderProfile(api, provider.settingsNs, {
+        settingsPath: provider.settingsPath,
+        declaredApiKeyEnv: provider.apiKeyEnv,
+        keyRef,
+        key,
+        isOfficial,
+        baseURL,
+        systemRole,
+        systemRoleStored,
+      }, namespace?.revision)
+      if (message !== undefined) { setFailure(message); return }
+      if (key !== '') {
         setKeyDraft('')
         setKeyConfigured(true)
-      }
-      if (!isOfficial) {
-        const namespace = state.namespaces.get(provider.settingsNs)
-        const res = await api.settings.mutate(
-          provider.settingsNs,
-          [{ op: 'set', path: [...provider.settingsPath, 'baseURL'], value: baseURL.trim() }],
-          namespace?.revision,
-        )
-        if (!res.ok) { setFailure(res.error.message); return }
-        // 兼容性开关只在改动时写：开 → false，关 → 删键（回到 pi-ai 的 URL 自动判定）。
-        if (systemRole !== systemRoleStored) {
-          const compatPath = [...provider.settingsPath, 'compat', 'supportsDeveloperRole']
-          const compatRes = await api.settings.mutate(
-            provider.settingsNs,
-            [systemRole
-              ? { op: 'set', path: compatPath, value: false }
-              : { op: 'unset', path: compatPath }],
-            namespace?.revision,
-          )
-          if (!compatRes.ok) { setFailure(compatRes.error.message); return }
-        }
       }
       setSaved(true)
       onChanged()
