@@ -11,7 +11,7 @@ host 运行时旁的 `<runtime>/shipped-skills/`，与 `shipped-presets/` 同款
 
 ## 收录判定
 
-判定动作：在官方检出 `/Users/kukucai/dsh` 里 `find . -name SKILL.md`，
+判定动作：在官方 dsh 检出里 `find . -name SKILL.md`，
 **能在官方检出里找到同名 SKILL.md 的才算官方技能**。逐条结论：
 
 | 目录 | 判定 | 来源 |
@@ -116,7 +116,7 @@ cp -R skills/<name>/. packages/desktop/shipped-modules/corum-dev/skills/<name>/
 发官方原文反而会给出指向另一套仓库布局的排除路径。
 **升级纪律（重要）**：同步官方技能时**不要**用官方原文直接覆盖这两份——先
 `cmp`/`diff`（用 `/usr/bin/diff`，本机 PATH 的 diff 不可信）
-`/Users/kukucai/dsh/.agents/skills/<name>/` 与本目录同名技能，
+官方 dsh 检出的 `.agents/skills/<name>/` 与本目录同名技能，
 把官方新增内容手工合并（否则会静默丢掉 corum 适配，与 `docs/fork-delta.md` 记录的
 「整文件覆盖把定制删掉」事故同型）。
 
