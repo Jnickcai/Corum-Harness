@@ -1,0 +1,395 @@
+/* corum-issue-reporter —— 悬浮提交入口 + 提交面板。
+   形态对齐 design.pen 的 `drawer-tab`（通知 bell）：56×52、玻璃底 + 描边 + 外阴影、
+   吸附后圆角朝贴边侧翻转。**全部颜色走已存在的设计 token**（`--corum-glass-*` /
+   `--corum-*` / `--dsw-alias-*`，深浅主题随 body[data-ds-dark-theme] 翻转），
+   不硬编码 hex；仅外阴影保留数值（与通知 bell 同款做法，设计稿数值即如此）。 */
+
+/* ── A. 悬浮入口按钮 ───────────────────────────────────────────────── */
+
+.tab {
+  position: fixed;
+  right: 0;
+  top: 184px; /* 缺省轴向偏移 184（bell 是 120，本入口排它下面一行，不压未读徽标） */
+  z-index: 9999;
+  box-sizing: border-box;
+  width: 56px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--corum-glass-border);
+  background: var(--corum-glass-1);
+  box-shadow: 0 6px 16px #0000004D;
+  backdrop-filter: blur(12px);
+  color: var(--dsw-alias-brand-primary); /* 品牌色：与 bell 的次级文字色区分开 */
+  cursor: grab;
+  touch-action: none; /* 指针拖动期间不触发滚动/缩放手势 */
+  user-select: none;
+}
+
+/* 圆角朝向跟随吸附边缘（贴右 = 只圆左侧两角，贴左镜像）。 */
+.tab[data-edge='right'] { border-radius: 14px 0 0 14px; border-right: none; }
+.tab[data-edge='left'] { border-radius: 0 14px 14px 0; border-left: none; }
+
+/* 拖动中：改用视口绝对定位（内联 left/top 覆盖贴边），并给出抓取光标与抬升感。 */
+.tab[data-dragging] {
+  cursor: grabbing;
+  border-radius: 14px;
+  border: 1px solid var(--corum-glass-border-active);
+  box-shadow: 0 12px 28px #00000066;
+}
+.tab:hover { background: var(--corum-glass-2); }
+.tabIcon { flex: none; }
+
+/* 未提交草稿圆点（6px，品牌强调色）。 */
+.tabDot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--corum-brand-accent);
+}
+
+/* 悬停提示气泡：贴右时浮在按钮左侧，贴左时镜像；150–200ms 淡入。 */
+.hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: var(--corum-glass-3);
+  backdrop-filter: blur(12px);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none; /* 气泡不吃指针，避免它在按钮旁闪断 hover */
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.tab[data-edge='right'] .hint { right: calc(100% + 8px); }
+.tab[data-edge='left'] .hint { left: calc(100% + 8px); }
+.tab:hover .hint { opacity: 1; }
+.tab[data-dragging] .hint { opacity: 0; }
+
+/* ── B. 面板 ──────────────────────────────────────────────────────── */
+
+/* 定位（贴哪边、top 多少、translateY(-50%)）全由内联样式给：它依赖当前吸附位置
+   与按钮的垂直中心；CSS 只负责外观与内部滚动。 */
+.panel {
+  position: fixed;
+  z-index: 9999;
+  box-sizing: border-box;
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto; /* 超出时面板内部滚动（不把整页撑高） */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 16px;
+  background: var(--corum-glass-1);
+  box-shadow: 0 14px 34px #00000052;
+  backdrop-filter: blur(12px);
+  /* 只动 opacity：内联的 translateY(-50%) 不能被动画的 transform 覆盖掉
+     （animation-fill-mode: both 的终态会赢过内联样式 ⇒ 面板会丢掉垂直居中）。 */
+  animation: panelEnter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes panelEnter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 头部：bug 图标 + 标题 + 仓库胶囊 + 关闭 ×。 */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.headIcon { flex: none; color: var(--dsw-alias-brand-primary); }
+.headTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.repoPill {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+.headSpacer { flex: 1; min-width: 0; }
+
+.closeBtn {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.closeBtn:hover { color: var(--dsw-alias-label-primary); background: var(--corum-glass-2); }
+
+.divider {
+  flex: none;
+  height: 1px;
+  background: var(--corum-glass-border);
+}
+
+/* 类型分段（三档；选中 = 品牌色底 + 反色文字）。 */
+.kinds { display: flex; gap: 6px; }
+.kind {
+  flex: 1;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.kind:hover { color: var(--dsw-alias-label-primary); }
+.kind[data-active] {
+  border-color: transparent;
+  background: var(--dsw-alias-brand-primary);
+  color: var(--corum-label-on-brand);
+  font-weight: 600;
+}
+
+/* 字段（label 行 + 控件）。 */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.labelRow { display: flex; align-items: baseline; gap: 6px; }
+.label {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+/* 「必填」/「支持 Markdown」：右对齐的辅助小字。 */
+.required,
+.hintText {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.input {
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 10px;
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.input::placeholder { color: var(--dsw-alias-label-tertiary); }
+.input:focus { border-color: var(--corum-glass-border-active); }
+
+/* 描述框：外框即那道 150 高、圆角 10、内边距 10 的输入区；截图 chip 行在它内部。 */
+.descBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 10px;
+  background: var(--corum-glass-2);
+}
+.textarea {
+  box-sizing: border-box;
+  min-height: 150px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+}
+.textarea::placeholder { color: var(--dsw-alias-label-tertiary); }
+
+/* 截图 chip 行（每行最多 3 个：3×104 + 2×8 = 328 < 372 可用宽，第 4 个自然换行）。 */
+.shotRow { display: flex; flex-wrap: wrap; gap: 8px; }
+.shot {
+  position: relative;
+  box-sizing: border-box;
+  width: 104px;
+  height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: var(--corum-glass-3);
+  overflow: hidden;
+}
+.shotIcon { flex: none; color: var(--dsw-alias-label-secondary); }
+.shotName {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+.shotRemove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.shotRemove:hover { color: var(--dsw-alias-state-error-primary); }
+
+/* 环境信息卡片（确定性读取，用户只能勾/不勾）。 */
+.envCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--corum-glass-2);
+}
+.envCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.envCheck input { accent-color: var(--dsw-alias-brand-primary); }
+.envLine {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* 底部动作行（按钮多时换行，不挤走「打开 GitHub」）。 */
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actionsSpacer { flex: 1; min-width: 0; }
+
+.btnGhost {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.btnGhost:hover { color: var(--dsw-alias-label-primary); background: var(--corum-glass-2); }
+
+.btnPrimary {
+  height: 28px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary);
+  color: var(--corum-label-on-brand);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btnPrimary:hover:not(:disabled) { filter: brightness(1.1); }
+/* 标题为空即禁用（不是点击后才报错）：底回到玻璃层、文字弱化。 */
+.btnPrimary:disabled {
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-dimmed);
+  cursor: not-allowed;
+}
+
+/* ── 结果卡（成功 / 失败，替换表单本体）────────────────────────────── */
+
+.resultHead { display: flex; align-items: center; gap: 8px; }
+.resultTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.okIcon { flex: none; color: var(--dsw-alias-state-success-primary); }
+.errIcon { flex: none; color: var(--dsw-alias-state-error-primary); }
+
+.resultBody { display: flex; flex-direction: column; gap: 6px; }
+.resultMeta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.resultEcho {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+.steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.resultUrl {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+  user-select: text; /* 打不开浏览器时，用户要能手工选中这条链接 */
+}
+.errMsg {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+.resultNote {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 动效降级。 */
+@media (prefers-reduced-motion: reduce) {
+  .panel { animation: none; }
+  .hint { transition: none; }
+}
