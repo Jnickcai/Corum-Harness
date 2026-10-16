@@ -20,7 +20,7 @@
  */
 
 import {
-  useCallback, useEffect, useRef, useState,
+  useCallback, useEffect, useLayoutEffect, useRef, useState,
   type CSSProperties, type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent,
 } from 'react'
@@ -211,12 +211,26 @@ function tabStyle(position: TabPosition): CSSProperties {
     : { left: 0, top: position.offset }
 }
 
-/** 面板样式：垂直中心对齐按钮中心，贴右时在按钮左侧、贴左时镜像。 */
-function panelStyle(position: TabPosition): CSSProperties {
-  // 面板高度可变（内容而定），故用 top=中心 + translateY(-50%) 表达「中心对齐」，
-  // 而不是去测量面板高度（测量会引入一次额外的 layout 与抖动）。
+/**
+ * 面板样式：优先垂直中心对齐按钮中心，**夹进视口**；贴右时在按钮左侧、贴左时镜像。
+ *
+ * 为什么必须夹紧而不是只用 `top=中心 + translateY(-50%)`：面板高度随内容变（空白态
+ * 481px、有草稿/截图 557px），而按钮贴顶时中心只有 210px ⇒ 面板顶缘会顶出视口
+ * （实测 top=-30 / -68，头部行连同关闭按钮被裁掉，用户无法关闭面板）。
+ *
+ * 用**绝对 top**（不用 transform）表达：夹紧结果是一个绝对值，再叠一个百分比
+ * transform 两者会互相打架（transform 会把夹好的 top 又拉回去）。
+ * @param position - 吸附位置（边 + 轴向偏移）。
+ * @param panelHeight - `panelRef` 实测的面板高度（首帧未测到时为 0）。
+ * @param viewportHeight - 当前视口高度（`window.innerHeight`）。
+ */
+function panelStyle(position: TabPosition, panelHeight: number, viewportHeight: number): CSSProperties {
   const center = position.offset + TAB_HEIGHT / 2
-  const base: CSSProperties = { top: center, transform: 'translateY(-50%)' }
+  const GAP = 8
+  let top = center - panelHeight / 2 // 优先「中心对齐按钮」
+  top = Math.max(GAP, Math.min(top, viewportHeight - GAP - panelHeight)) // 夹进视口
+  // 面板比视口还高时上式把 top 夹到 GAP（顶部对齐），配合 CSS 的 max-height + 内部滚动。
+  const base: CSSProperties = { top }
   return position.edge === 'right'
     ? { ...base, right: TAB_WIDTH + PANEL_GAP }
     : { ...base, left: TAB_WIDTH + PANEL_GAP }
@@ -288,6 +302,10 @@ export function IssueReporter() {
   const [copiedShot, setCopiedShot] = useState(0)
   /** 环境信息（确定性读取，取不到就显示 unknown，不编造）。 */
   const [env, setEnv] = useState({ appVersion: 'unknown', baseline: 'unknown', platform: 'unknown' })
+  /** 面板实测高度（未展开/未测到 = 0；面板垂直夹紧要用它，见 `panelStyle`）。 */
+  const [panelHeight, setPanelHeight] = useState(0)
+  /** 当前视口高度（面板垂直夹紧的另一半输入；resize 时更新）。 */
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight))
 
   const tabRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -300,6 +318,27 @@ export function IssueReporter() {
   const shotsRef = useRef<Shot[]>([])
   /** 进行中的拖动监听清理器（组件在拖动中途卸载时不漏监听）。 */
   const dragCleanupRef = useRef<(() => void) | null>(null)
+
+  // 面板高度实测 + 视口高度跟踪（垂直夹紧的输入）。
+  // 用 useLayoutEffect：首帧就在 paint 前测出高度并同步修正 top，用户看不到抖动。
+  useLayoutEffect(() => {
+    const onResize = () => { setViewportHeight(window.innerHeight) }
+    onResize()
+    window.addEventListener('resize', onResize)
+    const node = panelRef.current
+    if (node === null) {
+      setPanelHeight(0)
+      return () => { window.removeEventListener('resize', onResize) }
+    }
+    const measure = () => { setPanelHeight(node.getBoundingClientRect().height) }
+    measure() // 先同步测一次，不依赖 ResizeObserver 的首个回调时机
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(node)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [open])
 
   // 贴边位置持久化（与通知 bell 同一套：UI 偏好写 localStorage，不进跨 bundle 状态）。
   useEffect(() => { writeStorage(TAB_KEY, tab) }, [tab])
@@ -664,7 +703,7 @@ export function IssueReporter() {
       </button>
 
       {open && (
-        <div ref={panelRef} className={css.panel} data-testid="issue-reporter-panel" style={panelStyle(tab)} role="dialog" aria-label="提交 Issue">
+        <div ref={panelRef} className={css.panel} data-testid="issue-reporter-panel" style={panelStyle(tab, panelHeight, viewportHeight)} role="dialog" aria-label="提交 Issue">
           {result === null ? (
             <>
               <div className={css.head}>

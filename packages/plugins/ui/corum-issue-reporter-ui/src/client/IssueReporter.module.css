@@ -77,8 +77,8 @@
 
 /* ── B. 面板 ──────────────────────────────────────────────────────── */
 
-/* 定位（贴哪边、top 多少、translateY(-50%)）全由内联样式给：它依赖当前吸附位置
-   与按钮的垂直中心；CSS 只负责外观与内部滚动。 */
+/* 定位（贴哪边、top 多少）全由内联样式给：它依赖当前吸附位置、按钮的垂直中心
+   与面板实测高度（垂直方向会被夹进视口）；CSS 只负责外观与内部滚动。 */
 .panel {
   position: fixed;
   z-index: 9999;
@@ -96,8 +96,8 @@
   background: var(--corum-glass-1);
   box-shadow: 0 14px 34px #00000052;
   backdrop-filter: blur(12px);
-  /* 只动 opacity：内联的 translateY(-50%) 不能被动画的 transform 覆盖掉
-     （animation-fill-mode: both 的终态会赢过内联样式 ⇒ 面板会丢掉垂直居中）。 */
+  /* 只动 opacity：面板的 top 是内联绝对值（见 panelStyle），动画不得碰
+     transform/位置，否则会覆盖内联定位。 */
   animation: panelEnter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
