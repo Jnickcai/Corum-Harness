@@ -52,9 +52,8 @@ import { registerListSubagentModels } from './list-models.ts'
 import { resolveChildModel } from './child-model-resolution.ts'
 import {
   corumAskAboutModelFailure,
-  corumAskAboutModelOnce,
-  FOLLOW_MAIN,
-  type CorumDelegationPolicyState,
+  corumAskAboutModelUnlessStale,
+  corumDelegationPolicyStateFrom,
   type CorumModelAskChannel,
   type CorumModelCatalog,
   type CorumProfileWriteFace,
@@ -1524,17 +1523,16 @@ export function apply(ctx: Context, config: Config): void {
   const corumReadonlyResearch = config.readonlyResearch === true
   const corumMaxParallelChildren = config.maxParallelChildren ?? corumGlobal().maxParallelChildren ?? 4
 
-  /** 机制状态面（`corumOrchestration` 已在本 apply 顶部强制就绪）。 */
-  const corumPolicyState: CorumDelegationPolicyState = {
-    // 三态透传（含 `'follow-main'` 哨兵）：`orchestration.setModelOverride` 的第三参已
-    // 放宽到含哨兵，但窄接口的调用形态是 `(sessionId, role, route)`，故这里按角色转发。
-    setModelOverride: (sessionId, route, role) =>
-      role === undefined
-        ? orchestration.setModelOverride(sessionId, route)
-        : orchestration.setModelOverride(sessionId, role, route),
-    modelOverrideOf: sessionId => orchestration.modelOverrideOf(sessionId),
-    clearModelOverride: sessionId => orchestration.clearModelOverride(sessionId),
-  }
+  /**
+   * 机制状态面（`corumOrchestration` 已在本 apply 顶部强制就绪）。
+   *
+   * ★ 2026-10-16 真因修复：构造搬到 `model-ask-run.ts` 的 `corumDelegationPolicyStateFrom`。
+   * 旧的行内箭头 `modelOverrideOf: sessionId => orchestration.modelOverrideOf(sessionId)`
+   * **吃掉了 role 参数** ⇒ research 角色恒读 worker 键 ⇒ 陈旧判据误判 ⇒ 只读调研的
+   * 「模型不可用」永不弹面板（详见该函数的头注释）。搬成纯函数后，回归测试可以直接
+   * 驱动真正的转发逻辑，而不是只对源码文本做断言。
+   */
+  const corumPolicyState = corumDelegationPolicyStateFrom(orchestration)
 
   /**
    * fork（corum）2026-09-18：**子 Agent 模型不可用 ⇒ 问用户**，并按下文两规则处置。
@@ -1555,44 +1553,10 @@ export function apply(ctx: Context, config: Config): void {
     notify: boolean,
     childId: string | undefined,
   ): Promise<{ route: CorumRoute | undefined; summary: string }> => {
-    /**
-     * ★ 2026-09-21：**陈旧失败不问**。
-     *
-     * 实机现场（会话 `corum-task-1b927cf3`）：主 Agent 同时发两个 subagent，两个都拿
-     * `deepseek-v4.1-flash` 起跑。用户在第 1 个弹窗选了「永久改为 glm-5.3-flash」⇒
-     * 会话级覆盖已写、预设已改。但**第 2 个兄弟的失败在那之前就已产生**，它带着
-     * 「配置模型 = deepseek-v4.1-flash」这一**已经过时**的事实来问，于是用户被同一个根因
-     * 又问了一遍（seq 191「No choice was made」）。
-     *
-     * 判据：本次失败声称的「配置模型」若**已不等于**该会话当前生效的路由，说明用户/机制
-     * 已经换过了 —— 这条失败是旧路由的遗留，再问一次毫无信息量。直接返回「无决议」，
-     * 让调用方按原样把失败交回主 Agent（**不重跑**：这次失败本身没有用户许可）。
-     *
-     * ⚠️ 只在「当前生效路由与失败路由**不同**」时才跳过：相同 ⇒ 换了也还是坏的，
-     * 那时必须问（那是真·新的信息）。
-     *
-     * ★ 2026-10-04 语义收窄（temporary 档改判「一次性消费」）：temporary 自该日起
-     * **不再写会话级覆盖**（旧实现写了且无清理 ⇒ 后续所有派发都被污染，已修复），
-     * 故本判据只会命中 **permanent 两档**写下的覆盖，语义收窄为「用户已永久换过
-     * 路由，这条失败是旧路由遗留」。temporary 的一次性消费天然免疫陈旧失败：
-     * 每次重试的路由都是调用方显式给的，不会残留进任何跨委派状态。
-     */
-    const effectiveNow = corumPolicyState.modelOverrideOf(String(parent.session.id), role)
-    // `'follow-main'` 哨兵**不是路由**：它表示「已永久改成跟随主 Agent」⇒ 任何用具体路由
-    // 报上来的失败都已成为陈旧信息（与下面"路由变了"同一条判据，只是落点是跟随）。
-    // 漏掉这一分支会让哨兵走到 `effectiveNow.provider` ⇒ 运行时 undefined !== 'xxx'
-    // 恒真 ⇒ 恰好也 skip，但那是「靠巧合正确」；写明判据才经得起后人改动。
-    const staleBecauseFollowMain = effectiveNow === FOLLOW_MAIN
-    if (staleBecauseFollowMain
-      || (effectiveNow !== undefined
-        && (effectiveNow.provider !== configuredModel.provider || effectiveNow.model !== configuredModel.model))) {
-      ctx.logger.info(
-        `subagent (${label}): stale model failure ignored — configured ${configuredModel.provider}/${configuredModel.model} `
-        + `is no longer this session's child route (now ${effectiveNow === FOLLOW_MAIN ? 'follows the main Agent' : `${effectiveNow?.provider}/${effectiveNow?.model}`})`,
-      )
-      return { route: undefined, summary: '' }
-    }
     // 回退路由 = 父 Agent 的真实路由（用户要的「和主 Agent 一样」）。拿不到就只报告。
+    // ⚠️ 这一步排在「陈旧闸门」之前（闸门在 corumAskAboutModelUnlessStale 里）：facts.fallback
+    // 必须先拿到父路由才成形。两者的**副作用**与顺序无关（都不写状态），产物也同形
+    // （route undefined + 空 summary = 不重跑、如实交回）。
     const parentOptions = parentAgentOptionsForDelegation(parent)
     if (parentOptions.provider === undefined || parentOptions.model === undefined) {
       ctx.logger.warn(
@@ -1615,7 +1579,11 @@ export function apply(ctx: Context, config: Config): void {
     // 实机现场：主 Agent 在同一消息里发两个并行 subagent（会话 corum-task-1b927cf3 的
     // step 27 的 :187/:188），两个子 Agent 都用坏模型起跑 ⇒ 各自失败 ⇒ 用户被同一个根因
     // 连问两次（seq 190 已答、seq 191 又问）。共享后只问一次。
-    const outcome = await corumAskAboutModelOnce(
+    // ★ 2026-10-16：入口换成 `corumAskAboutModelUnlessStale` = 「陈旧闸门（★2026-09-21 的
+    // 规矩）+ 至多一次询问」的合一实现。合一的目的正是让「role 为 research、配置模型不可用
+    // ⇒ 机制**确实派发了询问**」这条回归断言能驱动真链路（见
+    // `tests/model-ask-role-key.spec.ts`；缺陷就在这条链的接缝上：闸门读错了角色的键）。
+    const outcome = await corumAskAboutModelUnlessStale(
       {
         state: corumPolicyState,
         channel: corumModelAskChannel(ctx),
