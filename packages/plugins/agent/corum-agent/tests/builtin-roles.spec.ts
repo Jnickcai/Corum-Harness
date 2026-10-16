@@ -303,7 +303,7 @@ describe('开发者私网网关残留的定向清除（2026-10-16）', () => {
       },
     } as never
     const r = refreshFromSpec(existing, fixedSpec)
-    const next = r.next as Record<string, unknown>
+    const next = r.next as unknown as Record<string, unknown>
     // 键要**真的不存在**（不是设成 undefined —— 那样落盘后仍是键）
     expect('subagentModel' in next).toBe(false)
     expect('researchModel' in next).toBe(false)
@@ -318,7 +318,7 @@ describe('开发者私网网关残留的定向清除（2026-10-16）', () => {
   it('老安装（无基线）：播种时同样清（否则缺陷留痕最久的正是那批用户）', () => {
     const existing = { id: 'conductor-lead', trust: 'system', nickname: '指挥模式', model: gateway('kimi-k3'), researchModel: gateway('glm-5.3-flash') } as never
     const r = refreshFromSpec(existing, fixedSpec)
-    const next = r.next as Record<string, unknown>
+    const next = r.next as unknown as Record<string, unknown>
     expect(next.model).toEqual(PRODUCT_DEFAULT)
     expect('researchModel' in next).toBe(false)
   })
@@ -328,7 +328,7 @@ describe('开发者私网网关残留的定向清除（2026-10-16）', () => {
     const myChild = { provider: 'localhost', model: 'my-child-model' }
     const existing = { id: 'x', trust: 'system', nickname: 'n', specBaseline: {}, model: mine, subagentModel: myChild, researchModel: myChild } as never
     const r = refreshFromSpec(existing, { id: 'x', nickname: 'n' } as never)
-    const next = r.next as Record<string, unknown>
+    const next = r.next as unknown as Record<string, unknown>
     expect(next.model).toEqual(mine)
     expect(next.subagentModel).toEqual(myChild)
     expect(next.researchModel).toEqual(myChild)
@@ -349,7 +349,7 @@ describe('开发者私网网关残留的定向清除（2026-10-16）', () => {
   it('reasoningEffort 不参与判定：用户只调过档位也照样清', () => {
     const existing = { id: 'conductor-lead', trust: 'system', nickname: '指挥模式', model: gateway('kimi-k3', 'max') } as never
     const r = refreshFromSpec(existing, fixedSpec)
-    expect((r.next as Record<string, unknown>).model).toEqual(PRODUCT_DEFAULT)
+    expect((r.next as unknown as Record<string, unknown>).model).toEqual(PRODUCT_DEFAULT)
   })
 
   it('spec 仍声明该键时一律不清除（常规刷新语义照旧生效）', () => {
@@ -357,7 +357,7 @@ describe('开发者私网网关残留的定向清除（2026-10-16）', () => {
     const spec = { id: 'x', nickname: 'n', model: declared, subagentModel: { provider: 'localhost', model: 'm' } } as never
     const existing = { id: 'x', trust: 'system', nickname: 'n', specBaseline: {}, model: { ...declared }, subagentModel: { provider: 'localhost', model: 'm' } } as never
     const r = refreshFromSpec(existing, spec)
-    const next = r.next as Record<string, unknown>
+    const next = r.next as unknown as Record<string, unknown>
     expect(next.model).toEqual(declared)
     expect(next.subagentModel).toEqual({ provider: 'localhost', model: 'm' })
   })
