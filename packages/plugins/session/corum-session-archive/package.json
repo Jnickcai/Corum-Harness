@@ -25,7 +25,7 @@
   "scripts": {
     "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
     "test": "vitest run",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false"
   },
   "dependencies": {
     "@corum/corum-ide-ui": "workspace:*",
