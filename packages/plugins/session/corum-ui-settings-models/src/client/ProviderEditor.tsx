@@ -33,7 +33,7 @@ import {
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
+import { apiKeyEnvOf, keyRefFor, messageOf, protocolChoices } from './store.ts'
 import type { ModelsWire } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
@@ -143,11 +143,9 @@ function refFor(
   path: readonly string[],
   provider: string,
 ): string {
-  const profile = schema.getPath(namespace.value, path)
-  const named = typeof profile === 'object' && profile !== null
-    ? (profile as { apiKeyEnv?: unknown }).apiKeyEnv
-    : undefined
-  return typeof named === 'string' && named.length > 0 ? named : deriveKeyRef(provider)
+  // 规则的家在 store（`keyRefFor`）：本卡片声明的 apiKeyEnv 与详情页存密钥用的 ref
+  // 若各写一份，就会再次漂移成「密钥存进一个运行时从不读的 ref」。
+  return keyRefFor(provider, apiKeyEnvOf(namespace, path, schema))
 }
 
 /**
