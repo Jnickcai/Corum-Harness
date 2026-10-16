@@ -6,7 +6,11 @@
  *   1. 新增「通用」维度在**后端校验**与**UI 下拉**两处同步（漏一处 → 保存被静默丢弃
  *      或编辑器里选不到）；
  *   2. 内置岗位「全能助手」（`general-assistant`）存在且用 `dimension: '通用'`；
- *   3. 岗位 persona 的语言纪律由 `prompt-language.spec.ts` 覆盖（本 spec 不重复）。
+ *   3. 岗位 persona 的语言纪律由 `prompt-language.spec.ts` 覆盖（本 spec 不重复）；
+ *   4. 内置 profile **不得携带开发者私网网关 provider**（2026-10-16 用户报障：产品内置的
+ *      「指挥模式」把主/子 Agent 模型全钉在 `localhost` ⇒ 每个新用户第一次使用就
+ *      `no adapter registered for provider "localhost"`）；
+ *   5. 该缺陷在老安装里的残留由 `refreshFromSpec` 的定向清除负责（同批新增）。
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -190,5 +194,171 @@ describe('内置角色的幂等刷新：spec 演进落地 + 用户数据不被�
     expect(next.skills).toEqual([{ name: 's', versionId: '' }])
     expect(next.mcpServers).toEqual(['a'])
     expect(next.memoryPolicy).toEqual({ scope: 'agent' })
+  })
+})
+
+/**
+ * 回归守卫：内置 profile **不得指向开发者私网网关**（2026-10-16 用户报障）。
+ *
+ * 现象：产品内置的「指挥模式」（`conductor-lead`）把主 Agent / 写子 Agent / 研究子 Agent
+ * 三档模型全钉在 `provider: 'localhost'` —— 那是**项目开发者本机**的本地网关 provider，
+ * 普通用户机器上根本不存在，于是新用户第一个指挥会话主/子 Agent 双双
+ * `no adapter registered for provider "localhost"`。同源的前一次是 2026-09-26 的
+ * `kimi-k3-1` 报障（见 builtin-profiles.ts 里 conductor-lead 的历史注释）。
+ *
+ * 为什么用源码扫描：内置角色表 `BUILTIN_ROLES` 是模块私有常量，且「不许钉私网网关」
+ * 正是这张静态表的内容纪律（同本 spec 对五个模式入口的命名对账做法）。
+ *
+ * `pi-ai` **不在**判据内：那是第三方适配器注册的 provider 名，用户自己的合法配置就走它；
+ * 私网判据只有 `localhost`。
+ */
+describe('内置 profile 不得携带开发者私网网关 provider（2026-10-16 用户报障）', () => {
+  const src = readFileSync(join(AGENT_SRC, 'builtin-profiles.ts'), 'utf8')
+  /**
+   * 只取 `BUILTIN_ROLES` 数组字面量本身（到行首的 `]` 为止）。
+   *
+   * 切片到文件尾会把 `DEV_PRIVATE_GATEWAY_RESIDUES` 那张「我们下发过的残留路由」表
+   *（里面**故意写着** `provider: 'localhost'`）一起扫进来 ⇒ 假红；而取太窄（比如只取第一个
+   * 角色块）⇒ 假绿。
+   */
+  const region = src.match(/const BUILTIN_ROLES[^\n]*= \[([\s\S]*?)\n\]/)?.[1] ?? ''
+  /**
+   * 只扫**代码行**（去掉行注释）：conductor-lead 的历史注释里就写着反面教材字样
+   * `provider: 'localhost'`，直接扫全文会把这句说明当成缺陷 ⇒ 假红。
+   */
+  const code = region.split('\n').filter(line => !line.trim().startsWith('//')).join('\n')
+  const providers = [...code.matchAll(/provider:\s*'([^']*)'/g)].map(m => m[1])
+
+  it('取到的是完整的 BUILTIN_ROLES 区域（否则下面会退化成空扫假绿）', () => {
+    expect(code, 'BUILTIN_ROLES 区域没取到').not.toBe('')
+    expect(code).toContain("id: 'conductor-lead'")            // 本次报障的那个角色
+    expect((code.match(/\n\s*id: '/g) ?? []).length).toBeGreaterThanOrEqual(26)
+  })
+
+  it('没有任何内置角色把 provider 钉在 localhost（用户机器上没有这个 provider）', () => {
+    expect(providers.filter(p => p === 'localhost')).toEqual([])
+  })
+
+  it('守卫本身有效：样例里钉回 localhost，同一套扫描能抓到（防判据失效后仍显示绿）', () => {
+    const sample = [
+      'const BUILTIN_ROLES: readonly BuiltinRoleSpec[] = [',
+      '  {',
+      "    id: 'x',",
+      "    model: { provider: 'localhost', model: 'm' },",
+      '  },',
+      ']',
+    ].join('\n')
+    const sampleRegion = sample.match(/const BUILTIN_ROLES[^\n]*= \[([\s\S]*?)\n\]/)?.[1] ?? ''
+    const sampleProviders = [...sampleRegion.matchAll(/provider:\s*'([^']*)'/g)].map(m => m[1])
+    expect(sampleProviders).toEqual(['localhost'])
+  })
+
+  it('conductor-lead 不声明任何模型字段（⇒ 主 Agent 落全局默认、子 Agent 继承会话路由）', () => {
+    const at = code.indexOf("id: 'conductor-lead'")
+    expect(at).toBeGreaterThan(-1)
+    // 角色块 = 该 id 到下一个角色的 id（数组末尾则到区域末尾）
+    const rest = code.slice(at)
+    const end = rest.indexOf("\n    id: '", 1)
+    const block = end === -1 ? rest : rest.slice(0, end)
+    for (const field of ['model', 'subagentModel', 'researchModel']) {
+      expect(block, `${field} 仍被声明`).not.toMatch(new RegExp(`(^|\\n)\\s*${field}:`))
+    }
+  })
+})
+
+/**
+ * 开发者私网网关残留的**定向清除**（2026-10-16）。
+ *
+ * 为什么必须有：把这些模型字段从 spec 里删掉后，`refreshFromSpec` 的常规语义是
+ * 「spec 未给值 ⇒ 不动现值」⇒ **老安装里残留的 localhost 路由永远不会被清掉**，缺陷在老
+ * 用户身上不消失（他那台机器上每次新建指挥会话照旧报 `no adapter registered for
+ * provider "localhost"`，还得手动去设置里改）。
+ *
+ * 判据与落点（2026-10-16 指挥者裁定）：
+ * · **精确配对**：只有 provider 与 model 都等于我们当年下发的那个组合才算残留
+ *   （`reasoningEffort` 不参与判定）；只匹配 provider 会误删用户自己叫 `localhost` 的网关。
+ * · `subagentModel` / `researchModel` ⇒ **删除**键（absent = 不覆盖 ⇒ 继承会话路由）。
+ * · `model` ⇒ **替换成产品默认** `deepseek-official/deepseek-v4-flash`，不能删成 absent
+ *   （创建路径给全新安装写的就是这个显式值；absent 的语义是「继承全局默认」，两者不等价）。
+ */
+describe('开发者私网网关残留的定向清除（2026-10-16）', () => {
+  /** 修好后的 conductor-lead spec：只保留非模型字段（模型钉已删）。 */
+  const fixedSpec = { id: 'conductor-lead', nickname: '指挥模式', title: '编排指挥', dimension: '研发', baseMode: 'conductor', prompt: 'P' } as never
+  const PRODUCT_DEFAULT = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  const gateway = (model: string, reasoningEffort = 'high'): { provider: string; model: string; reasoningEffort: string } =>
+    ({ provider: 'localhost', model, reasoningEffort })
+
+  it('老 profile（带基线）：两个子 Agent 残留被删键、主 model 残留被换成产品默认', () => {
+    const existing = {
+      id: 'conductor-lead',
+      trust: 'system',
+      model: gateway('kimi-k3'),
+      subagentModel: gateway('deepseek-v4.1-flash'),
+      researchModel: gateway('glm-5.3-flash'),
+      specBaseline: {
+        nickname: '指挥模式',
+        model: gateway('kimi-k3'),
+        subagentModel: gateway('deepseek-v4.1-flash'),
+        researchModel: gateway('glm-5.3-flash'),
+      },
+    } as never
+    const r = refreshFromSpec(existing, fixedSpec)
+    const next = r.next as unknown as Record<string, unknown>
+    // 键要**真的不存在**（不是设成 undefined —— 那样落盘后仍是键）
+    expect('subagentModel' in next).toBe(false)
+    expect('researchModel' in next).toBe(false)
+    // 主 Agent 模型不能删成 absent：必须落到与全新安装一致的产品默认
+    expect(next.model).toEqual(PRODUCT_DEFAULT)
+    expect(r.changed).toBe(true)                  // 动了东西 ⇒ 必须落盘
+    expect(r.baseline.subagentModel).toBeNull()   // spec 不再拥有它，别把被清的值记成基线
+    expect(r.baseline.researchModel).toBeNull()
+    expect(r.baseline.model).toBeNull()
+  })
+
+  it('老安装（无基线）：播种时同样清（否则缺陷留痕最久的正是那批用户）', () => {
+    const existing = { id: 'conductor-lead', trust: 'system', nickname: '指挥模式', model: gateway('kimi-k3'), researchModel: gateway('glm-5.3-flash') } as never
+    const r = refreshFromSpec(existing, fixedSpec)
+    const next = r.next as unknown as Record<string, unknown>
+    expect(next.model).toEqual(PRODUCT_DEFAULT)
+    expect('researchModel' in next).toBe(false)
+  })
+
+  it('负向守卫：用户**自己**的本地网关（localhost + 别的模型名）原样不动', () => {
+    const mine = { provider: 'localhost', model: 'my-local-model' }
+    const myChild = { provider: 'localhost', model: 'my-child-model' }
+    const existing = { id: 'x', trust: 'system', nickname: 'n', specBaseline: {}, model: mine, subagentModel: myChild, researchModel: myChild } as never
+    const r = refreshFromSpec(existing, { id: 'x', nickname: 'n' } as never)
+    const next = r.next as unknown as Record<string, unknown>
+    expect(next.model).toEqual(mine)
+    expect(next.subagentModel).toEqual(myChild)
+    expect(next.researchModel).toEqual(myChild)
+    expect(r.changed).toBe(false)                 // 无副作用：连落盘都不需要
+  })
+
+  it('用户自选的其它 provider（deepseek-official / pi-ai）一律不动', () => {
+    const mine = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+    const piAi = { provider: 'pi-ai', model: 'glm-5.3' }
+    const existing = { id: 'x', trust: 'system', nickname: 'n', specBaseline: {}, subagentModel: mine, researchModel: piAi } as never
+    const r = refreshFromSpec(existing, { id: 'x', nickname: 'n' } as never)
+    const next = r.next as { subagentModel?: unknown; researchModel?: unknown }
+    expect(next.subagentModel).toEqual(mine)
+    expect(next.researchModel).toEqual(piAi)
+    expect(r.changed).toBe(false)
+  })
+
+  it('reasoningEffort 不参与判定：用户只调过档位也照样清', () => {
+    const existing = { id: 'conductor-lead', trust: 'system', nickname: '指挥模式', model: gateway('kimi-k3', 'max') } as never
+    const r = refreshFromSpec(existing, fixedSpec)
+    expect((r.next as unknown as Record<string, unknown>).model).toEqual(PRODUCT_DEFAULT)
+  })
+
+  it('spec 仍声明该键时一律不清除（常规刷新语义照旧生效）', () => {
+    const declared = { provider: 'localhost', model: 'kimi-k3' }
+    const spec = { id: 'x', nickname: 'n', model: declared, subagentModel: { provider: 'localhost', model: 'm' } } as never
+    const existing = { id: 'x', trust: 'system', nickname: 'n', specBaseline: {}, model: { ...declared }, subagentModel: { provider: 'localhost', model: 'm' } } as never
+    const r = refreshFromSpec(existing, spec)
+    const next = r.next as unknown as Record<string, unknown>
+    expect(next.model).toEqual(declared)
+    expect(next.subagentModel).toEqual({ provider: 'localhost', model: 'm' })
   })
 })

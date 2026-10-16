@@ -102,6 +102,121 @@ export interface CorumModelAskOutcomeEvent {
  */
 export const FOLLOW_MAIN = 'follow-main' as const
 
+/**
+ * 会话级覆盖的**上游面**（`corumOrchestration` 服务的三个方法；键是「sessionId + 角色」双键）。
+ *
+ * 为什么单独声明而不是直接把服务传进来：本包按红线 3 不 import 实现包的类型面；更重要的
+ * 是，只有这样「调用时到底把角色转下去了没有」才是**可单测**的一件事
+ * （见 {@link corumDelegationPolicyStateFrom}——2026-10-16 的实机缺陷正出在这里）。
+ */
+export interface CorumOrchestrationOverrideFace {
+  /** 缺省（2 参）形态 = `'worker'` 角色（历史兼容，见 corum-orchestration 的同名注释）。 */
+  setModelOverride(sessionId: string, route: CorumRoute | typeof FOLLOW_MAIN): void
+  setModelOverride(sessionId: string, role: 'worker' | 'research', route: CorumRoute | typeof FOLLOW_MAIN): void
+  /** 缺省角色 = `'worker'`。 */
+  modelOverrideOf(sessionId: string): CorumRoute | typeof FOLLOW_MAIN | undefined
+  modelOverrideOf(sessionId: string, role: 'worker' | 'research'): CorumRoute | typeof FOLLOW_MAIN | undefined
+  /** 缺省 = 两角色一起清（decline 档语义）。 */
+  clearModelOverride(sessionId: string): void
+  clearModelOverride(sessionId: string, role: 'worker' | 'research'): void
+}
+
+/**
+ * 把编排服务的会话级覆盖面收成 {@link CorumDelegationPolicyState}（本包内部的窄面）。
+ *
+ * ## ★ 2026-10-16 真因修复：**研究角色（research）模型不可用时永不弹处理面板**
+ *
+ * 用户报障：只读调研子 Agent 的 provider 不存在、模型调用失败时，本该像 worker 一样弹出
+ * 「模型不可用」面板让用户决定，实际却直接以错误返回（`no fallback was authorized`）。
+ *
+ * 旧实现把三个方法里最关键的一个写成了
+ * `modelOverrideOf: sessionId => orchestration.modelOverrideOf(sessionId)` ——
+ * **role 参数被丢在地上**，于是「按角色取值」静默退化成「恒取 worker 键」
+ * （上游 `modelOverrideOf` 的缺省角色 = `'worker'`）。实机现场（会话
+ * `corum-task-5dcf1f0b`，证据见 `.corum/logs/agent-lifecycle.jsonl` 与
+ * `.corum/.agent-presets/conductor-lead/agent.json`）：
+ *
+ * | 时刻 | 事实 |
+ * |---|---|
+ * | 15:28:54Z | 用户答了 **worker** 角色的面板（永久改 `deepseek-official/deepseek-flash`）⇒ 机制用**正确的键** `setModelOverride(sessionId, route, 'worker')` 写下 worker 覆盖 |
+ * | 15:39:01Z | 同一会话的 `subagent_research` 失败（配置模型 `localhost/glm-5.3-flash`）⇒ 陈旧判据拿**worker 键**去比 ⇒ 判成「陈旧失败」⇒ 静默跳过提问 ⇒ 上层抛 "no fallback was authorized"，面板永不出现 |
+ *
+ * 这同时解释了报障里的不对称：worker 角色的缺省恰好就是正确的键，所以 worker 弹得出来。
+ *
+ * 修法只此一处：三个方法都把 `role` **逐参转发**（与 `setModelOverride` 既有写法对齐）。
+ * 「陈旧失败不问」这条规矩本身一字未改，由 {@link corumModelFailureIsStale} 保持。
+ */
+export function corumDelegationPolicyStateFrom(
+  orchestration: CorumOrchestrationOverrideFace,
+): CorumDelegationPolicyState {
+  return {
+    // 三态透传（含 `'follow-main'` 哨兵）：窄接口的调用形态是 `(sessionId, route, role?)`。
+    setModelOverride: (sessionId, route, role) => role === undefined
+      ? orchestration.setModelOverride(sessionId, route)
+      : orchestration.setModelOverride(sessionId, role, route),
+    modelOverrideOf: (sessionId, role) => role === undefined
+      ? orchestration.modelOverrideOf(sessionId)
+      : orchestration.modelOverrideOf(sessionId, role),
+    // 缺省清两角色：decline 档的语义是「本会话的临时决定整体作废」（见 corum-orchestration
+    // 的同名注释），刻意不改成按角色清 —— 那是另一个已裁决的语义，不夹带。
+    clearModelOverride: sessionId => orchestration.clearModelOverride(sessionId),
+  }
+}
+
+/**
+ * 陈旧失败判据：本次失败声称的「配置模型」若已不等于该会话**该角色当前生效的路由**，
+ * 说明用户/机制已经换过了 ⇒ 这条失败是旧路由的遗留，**不问**（返回 `stale: true`）。
+ *
+ * ## 为什么有这条规矩（★ 2026-09-21，用户实测后立）
+ *
+ * 实机现场（会话 `corum-task-1b927cf3`）：主 Agent 同时发两个 subagent，两个都拿
+ * `deepseek-v4.1-flash` 起跑。用户在第 1 个弹窗选了「永久改为 glm-5.3-flash」⇒ 会话级覆盖
+ * 已写、预设已改。但**第 2 个兄弟的失败在那之前就已产生**，它带着「配置模型 =
+ * deepseek-v4.1-flash」这一**已经过时**的事实来问，于是用户被同一个根因又问了一遍
+ * （seq 191「No choice was made」）。
+ *
+ * ⚠️ 只在「当前生效路由与失败路由**不同**」时才跳过：相同 ⇒ 换了也还是坏的，那时必须问
+ * （那是真·新的信息）。
+ *
+ * ⚠️ `'follow-main'` 哨兵**不是路由**：它表示「已永久改成跟随主 Agent」⇒ 任何用具体路由
+ * 报上来的失败都已成为陈旧信息（与"路由变了"同一条判据，只是落点是跟随）。漏掉这一分支
+ * 会让哨兵走到 `effectiveNow.provider` ⇒ 运行时 undefined !== 'xxx' 恒真 ⇒ 恰好也 skip，
+ * 但那是「靠巧合正确」；写明判据才经得起后人改动。
+ *
+ * ★ 2026-10-04 语义收窄（temporary 档改判「一次性消费」）：temporary 自该日起**不再写会话级
+ * 覆盖**（旧实现写了且无清理 ⇒ 后续所有派发都被污染，已修复），故本判据只会命中 **permanent
+ * 两档**写下的覆盖，语义收窄为「用户已永久换过路由，这条失败是旧路由遗留」。temporary 的
+ * 一次性消费天然免疫陈旧失败。
+ *
+ * ★ 2026-10-16 抽成纯函数（真因修复的配套）：判据必须能吃 `role` 并**按该角色取键**——
+ * 研究角色恒读 worker 键就会把「换了 worker 的模型」误判成「research 这条失败已过时」，
+ * 于是 research 的模型不可用永不弹面板。角色 `'worker'` 与 `'research'` 写的是预设里
+ * 不同的键（`subagentModel` / `researchModel`），判据必须在同一维度上比较。
+ *
+ * @param state - 会话级覆盖面（角色感知）。
+ * @param sessionId - 父（委派方）会话 id。
+ * @param role - 本次失败的角色（读**该角色**的覆盖）。
+ * @param configured - 本次失败声称的「配置模型」。
+ * @returns `stale=true` ⇒ 调用方按原样把失败交回主 Agent（**不重跑、不弹框**）；
+ *   `effective` 供日志说明「现在是什么」。
+ */
+export function corumModelFailureIsStale(
+  state: CorumDelegationPolicyState,
+  sessionId: string,
+  role: 'worker' | 'research',
+  configured: { provider: string; model: string },
+): { stale: boolean, effective: CorumRoute | typeof FOLLOW_MAIN | undefined } {
+  // ⚠️ 必须传 role：这是 2026-10-16 缺陷的全部要害（见本函数头注释与 state 工厂的注释）。
+  const effectiveNow = state.modelOverrideOf(sessionId, role)
+  const staleBecauseFollowMain = effectiveNow === FOLLOW_MAIN
+  if (staleBecauseFollowMain
+    || (effectiveNow !== undefined
+      && (effectiveNow.provider !== configured.provider || effectiveNow.model !== configured.model))) {
+    return { stale: true, effective: effectiveNow }
+  }
+  return { stale: false, effective: effectiveNow }
+}
+
 /** 永久档的写入面（`corumAgent` 服务的窄面；缺失=无法永久写，降级为只报告）。 */
 export interface CorumProfileWriteFace {
   /**
@@ -306,6 +421,43 @@ export function corumAskAboutModelOnce(
     if (inFlightAsks.get(key) === ask) inFlightAsks.delete(key)
   })
   return ask
+}
+
+/**
+ * 生产链路入口：**陈旧闸门 → 至多一次询问**（`index.ts` 的 `corumAskAboutModel` 用的就是它）。
+ *
+ * ## 为什么把两步合成一个导出函数（★ 2026-10-16）
+ *
+ * 「模型不可用时会不会弹面板」这件事的全部逻辑就是「闸门 + 询问」这两步的**组合**：
+ * 闸门单独看没错（判据写法逐字正确）、询问单独看也没错（有通道就派发），而 2026-10-16 的
+ * 缺陷恰好只在这两步的**接缝**上暴露——闸门**读错了角色的键** ⇒ 恒判陈旧 ⇒ 询问这一步
+ * 永不执行 ⇒ 只读调研的模型不可用静默失败，用户看不到面板。两步分开摆时，回归测试只能
+ * 各自断言一段（于是都绿），合成一个导出函数后测试才能直接驱动真链路、并复现真症状。
+ *
+ * @param deps - 同 {@link corumAskAboutModelFailure}。
+ * @param parent - 委派方 Agent（键的会话来源）。
+ * @param facts - 失败事实（`role` 同时进**判据的角色键**与在飞表的键）。
+ * @param signal - 取消信号。
+ * @param logger - 告警/说明出口（`info` 记「陈旧失败已跳过」）。
+ * @returns 陈旧 ⇒ `dismissed` + 空 `summary`（调用方按原样把失败交回主 Agent，**不重跑**：
+ *   这次失败本身没有用户许可）；否则 = {@link corumAskAboutModelOnce} 的结果。
+ */
+export async function corumAskAboutModelUnlessStale(
+  deps: Parameters<typeof corumAskAboutModelFailure>[0],
+  parent: Agent,
+  facts: CorumModelFailureFacts,
+  signal: AbortSignal,
+  logger: { warn: (message: string) => void, info?: (message: string) => void },
+): Promise<CorumModelAskOutcome> {
+  const verdict = corumModelFailureIsStale(deps.state, String(parent.session.id), facts.role, facts.configured)
+  if (!verdict.stale) return corumAskAboutModelOnce(deps, parent, facts, signal, logger)
+  const effectiveNow = verdict.effective
+  logger.info?.(
+    `subagent (${facts.label}): stale model failure ignored — configured ${facts.configured.provider}/${facts.configured.model} `
+    + `is no longer this session's ${facts.role} child route (now ${effectiveNow === FOLLOW_MAIN ? 'follows the main Agent' : `${effectiveNow?.provider}/${effectiveNow?.model}`})`,
+  )
+  // 不得伪造一个路由：伪造等于替用户同意重跑（旧的「自动回退」正是被用户否掉的形态）。
+  return { decision: { kind: 'dismissed' }, override: undefined, persisted: false, summary: '' }
 }
 
 /**

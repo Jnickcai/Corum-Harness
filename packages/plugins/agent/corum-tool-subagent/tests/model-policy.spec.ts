@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const SRC = readFileSync(join(import.meta.dirname, '../src/index.ts'), 'utf8')
+const ASK_RUN_SRC = readFileSync(join(import.meta.dirname, '../src/model-ask-run.ts'), 'utf8')
 const COMPILE_SRC = readFileSync(
   join(import.meta.dirname, '../../corum-agent/src/compile.ts'),
   'utf8',
@@ -454,24 +455,44 @@ describe('策略③④ 两种 Agent 一致 + 提示词诚实', () => {
     // 实机现场（会话 corum-task-1b927cf3）：两个并行 subagent 都拿 deepseek-v4.1-flash
     // 起跑；用户在第 1 个弹窗选了「永久改为 glm-5.3-flash」；第 2 个兄弟带着**已过时**的
     // 「配置模型」事实来问 ⇒ 用户被同一个根因连问两次（seq 191「No choice was made」）。
-    const guard = between('const effectiveNow = corumPolicyState.modelOverrideOf', 'const parentOptions =')
+    //
+    // ⚠️ 2026-10-16 布局变更（判据重构，断言强度不变，只跟着钉新位置）：判据从 index.ts
+    // 的内联块抽成 `model-ask-run.ts` 的纯函数 `corumModelFailureIsStale` + 合一入口
+    // `corumAskAboutModelUnlessStale`——为的是让「research 角色模型不可用时也必须照样问」
+    // 写得出**会先红**的回归测试（见 `tests/model-ask-role-key.spec.ts`；本次实机缺陷正是
+    // 这个内联块里「按角色取覆盖」的一环被丢掉了角色参数而恒取 worker 键）。
+    const guard = between(
+      'export function corumModelFailureIsStale',
+      'export async function corumAskAboutModelFailure',
+      ASK_RUN_SRC,
+    )
     // 2026-10-04 语义收窄：temporary 档自该日起不再写会话级覆盖（一次性消费裁决），
     // 本判据只会命中 permanent 两档写的覆盖；读取必须**带角色**（worker/research 键分开）。
-    expect(guard).toContain("modelOverrideOf(String(parent.session.id), role)")
-    expect(guard).toContain('effectiveNow.provider !== configuredModel.provider')
-    expect(guard).toContain('effectiveNow.model !== configuredModel.model')
-    // 跳过时必须返回「无决议」而不是伪造一个 route —— 伪造等于替用户同意重跑。
-    expect(guard).toContain('route: undefined')
-    expect(guard).not.toContain('fallback')
+    expect(guard).toContain('state.modelOverrideOf(sessionId, role)')
+    expect(guard).toContain('effectiveNow.provider !== configured.provider')
+    expect(guard).toContain('effectiveNow.model !== configured.model')
     // 相同 ⇒ 仍然要问（换了也还是坏的，那是真·新信息）：判据必须是「不同才跳过」。
     expect(guard).toMatch(/effectiveNow !== undefined/)
+    // 跳过时必须返回「无决议」而不是伪造一个 route —— 伪造等于替用户同意重跑。
+    const gate = between(
+      'export async function corumAskAboutModelUnlessStale',
+      'export function applyCorumModelDecision',
+      ASK_RUN_SRC,
+    )
+    expect(gate).toContain('override: undefined')
+    expect(gate).toContain('if (!verdict.stale) return corumAskAboutModelOnce(')
+    expect(gate).not.toMatch(/route:/)
+    // 生产链路必须真的走这个合一入口（否则被抽出来的闸门等于没人调）。
+    expect(SRC).toContain('await corumAskAboutModelUnlessStale(')
   })
 
   it('★★ 同一父会话同一角色只问一次：走 corumAskAboutModelOnce（并行兄弟共享决定）', () => {
     // 实机同一现场的另一半：两个并行失败各自弹窗。共享后只问一次。
-    expect(SRC).toContain('await corumAskAboutModelOnce(')
+    // 2026-10-16：index.ts 的调用点已收进 `corumAskAboutModelUnlessStale`（闸门 + 询问合一），
+    // 故锚点跟着搬到 model-ask-run.ts——断言强度不变（仍然只许走共享入口）。
+    expect(ASK_RUN_SRC).toContain('return corumAskAboutModelOnce(')
     // 不许退回直接调 failure 版（那会绕过共享锁）。
-    expect(SRC).not.toContain('await corumAskAboutModelFailure(')
+    expect(ASK_RUN_SRC).not.toContain('return corumAskAboutModelFailure(')
   })
 
   it('★★ 决策落地后回写子会话 model/selection 投影（2026-10-04 用户实测：卡片仍显示旧模型）', () => {
@@ -486,7 +507,8 @@ describe('策略③④ 两种 Agent 一致 + 提示词诚实', () => {
     expect(notifyIdx, 'corumNotifyModelDecision 调用点缺失（对账锚点）').toBeGreaterThan(-1)
     expect(writeIdx, '回写必须先于通知：通知引用的是新决策，投影必须先翻').toBeLessThan(notifyIdx)
     // 双闸条件：有 childId 且拿到了 override。
-    const block = between('const outcome = await corumAskAboutModelOnce(', 'corumNotifyModelDecision(parent, childId')
+    // （2026-10-16：调用点改名 corumAskAboutModelUnlessStale = 陈旧闸门 + 至多一次询问；取样区间随之。）
+    const block = between('const outcome = await corumAskAboutModelUnlessStale(', 'corumNotifyModelDecision(parent, childId')
     const code = stripComments(block)
     expect(code).toContain('childId !== undefined && outcome.override !== undefined')
     // 事件名与数据形状（与官方 modelSelectionSchema 对齐：provider/model 必填，reasoningEffort 可选）。
