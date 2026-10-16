@@ -3,7 +3,7 @@
  * design frame: conn-dot (7px $state-success) + "Connected" + project name +
  * flex spacer + model name (11px Inter). Connection state rides the shell's
  * host-description source (present = connected); project/model fall back to
- * the design's defaults until the host reports real values.
+ * neutral placeholders until the host reports real values.
  */
 import { useSyncExternalStore } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -20,7 +20,7 @@ export interface StatusBarInjected {
 /** Composed props: the shell's owner share + this plugin's injected face. */
 export type StatusBarProps = PropsRuntime<'corum.statusBar'> & StatusBarInjected
 
-/** Project label: the host's cwd basename when described, else the design default. */
+/** Project label: the host's cwd basename when described, else a neutral placeholder. */
 function projectLabel(description: unknown): string {
   const value = (description as { value?: unknown } | undefined)?.value
   const cwd = (value as { cwd?: unknown } | undefined)?.cwd
@@ -28,15 +28,15 @@ function projectLabel(description: unknown): string {
     const base = cwd.split(/[\\/]/).filter(Boolean).pop()
     if (base !== undefined && base !== '') return base
   }
-  return 'kkc-desktop'
+  return '—'
 }
 
-/** Model label: the host's model id when described, else the design default. */
+/** Model label: the host's model id when described, else a neutral placeholder. */
 function modelLabel(description: unknown): string {
   const value = (description as { value?: unknown } | undefined)?.value
   const model = (value as { model?: unknown } | undefined)?.model
   if (typeof model === 'string' && model !== '') return model
-  return 'Claude Sonnet 4.5'
+  return '—'
 }
 
 /** The IDE status bar (see module doc). */
