@@ -374,7 +374,7 @@ export function ModelConfigView({ card, state, api, schema, onBack, onChanged, i
           ? (
             <SettingRow
               label="支持的档位"
-              desc="勾选该模型实际支持的推理档。取消勾选当前默认档时会自动改默认档；全不勾 = 该模型不提供思考等级。⚠️ Agent 预设里固定了某档位（如「指挥模式」的 kimi-k3 · high）时，取消勾选该档会让预设的请求在发送时失败（pi-ai 报 does not support reasoning effort）——改前请确认没有预设正在用被去掉的档。"
+              desc="勾选该模型实际支持的推理档。取消勾选当前默认档时会自动改默认档；全不勾 = 该模型不提供思考等级。⚠️ 某个 Agent 预设固定了某档位时，取消勾选该档会让预设的请求在发送时失败（pi-ai 报 does not support reasoning effort）——改前请确认没有预设正在用被去掉的档。"
               stacked
               divider={false}
               control={(

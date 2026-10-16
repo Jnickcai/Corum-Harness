@@ -1,6 +1,6 @@
 ---
 name: dsh-prose-standard
-description: Use when writing, reviewing, restoring, trimming, or auditing prose in this repo (corum Agent OS / kkc-desktop), including deciding where documentation or comments are required across Markdown, JSDoc, code and test comments, prompts, descriptions, diagnostics, and CLI or UI strings.
+description: Use when writing, reviewing, restoring, trimming, or auditing prose in this repo (corum Agent OS), including deciding where documentation or comments are required across Markdown, JSDoc, code and test comments, prompts, descriptions, diagnostics, and CLI or UI strings.
 ---
 
 # DeepSeek Harness Prose Standard（corum 本地副本）
