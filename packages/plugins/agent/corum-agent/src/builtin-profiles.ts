@@ -470,34 +470,36 @@ const BUILTIN_ROLES: readonly BuiltinRoleSpec[] = [
     // baseMode:'conductor' = 继承指挥模式：工具面同标准模式，主 Agent 执行工具在运行时
     // 被裁掉（见 conductor.ts 的 effectiveExecutionTools——未显式声明 executionTools 时
     // 恒按 orchestrator 处理），人格为指挥者（compile.ts 的 MODE_CORE_IDENTITY.conductor）。
-    // 子 Agent 模型锁到本地网关（省费用）；隔离策略沿用并发感知默认。
-    // 2026-09-13 用户定调（fork 成效验证轮）：主 Agent = localhost/Kimi-k3。
+    // 模型：**一律不锁**（2026-10-16 修正）。主 Agent 不声明 `model` ⇒ 创建期落到全局默认
+    // `deepseek-official/deepseek-v4-flash`（见 ensureBuiltinRoleProfiles 的兜底）；子 Agent /
+    // 研究子 Agent 不声明 `subagentModel` / `researchModel` ⇒ 「键不存在 = 不覆盖」⇒
+    // **子 Agent 继承会话路由**（三态见 profile.ts 的 ProfileChildModel）。隔离策略沿用
+    // 并发感知默认。
     //
-    // ⚠️ 2026-09-26 修正（用户报障）：这里此前写的是 `kimi-k3-1`——该 id 在 `settings.yaml`
-    // 的 localhost provider 里**根本不存在**（只有 `kimi-k3`）。用户手动删掉它之后，每个新
-    // 指挥会话第一句就 `UNKNOWN_MODEL` 硬失败（实测 `corum-task-b36de140`）。按上面
-    // 2026-09-13 的定调原文（「Kimi-k3」）改回 `kimi-k3`。
+    // ⚠️ 历史（同类缺陷两次，别再犯）：这里曾把三档模型全钉在 `provider: 'localhost'` ——
+    // 那是**项目开发者本机**的本地网关 provider（2026-09-13 定调「主 Agent = localhost/Kimi-k3」；
+    // 2026-09-14 定调「子 Agent 统一 localhost/glm-5.3-flash、思考 High，理由是 deepseek
+    // 额度不足以支撑长任务」），普通用户机器上不存在 ⇒ 每个新用户的第一个指挥会话主/子 Agent
+    // 双双 `no adapter registered for provider "localhost"`。
+    // 同源的前一次是 2026-09-26 用户报障：`kimi-k3-1` 在该 provider 里**根本不存在**（只有
+    // `kimi-k3`），用户手动删掉后每个指挥会话第一句就 `UNKNOWN_MODEL` 硬失败（实测
+    // `corum-task-b36de140`）——那次只把 id 改回 `kimi-k3`，**没看出「钉开发者私网网关」本身
+    // 就是缺陷**，所以这次改成全部不锁。
+    // 机制侧另有兜底「预设模型不可用 ⇒ 回落全局默认 + 显式告知」（见 `model-availability.ts`），
+    // 但兜底不该是分发缺陷的第一道防线：**内置 spec 不得携带只有开发者环境才成立的模型钉**。
+    // 老安装里已经存下的 localhost 残留由 refreshFromSpec 的定向清除处理（`model` 换回产品
+    // 默认、两个子模型键删除，见 `pruneDevGatewayResidue`）；回归守卫见
+    // `tests/builtin-roles.spec.ts` 的「内置 profile 不得指向开发者私网网关」。
     //
-    // 注：**机制侧的兜底不依赖这里改对**——运行期已加「预设模型不可用 ⇒ 回落全局默认 +
-    // 显式告知」（见 `model-availability.ts`）；本处只把产品自带的默认值修正到实际存在的
-    // 模型，避免家目录副本被幂等刷新写回一个死 id。
-    // 2026-09-14 用户改定（额度轮）：子 Agent（写 / 只读研究）**统一**
-    // localhost/glm-5.3-flash，思考等级 High —— 原话「使用 glm-5.3-flash 或者 localhost
-    // 的 GLM-5.2 作为子 Agent，思考都是 high，这些模型的额度足以支撑长期任务」；
-    // 取 5.3-flash、GLM-5.2 作后备，理由是 deepseek 额度不足以支撑长任务。
-    // **这里必须改 spec 而不是 agent.json**——system profile 的幂等刷新会把
-    // nickname/title/dimension/baseMode/prompt/executionTools/
-    // subagentModel.model/researchModel.model 按 spec 覆写（含 model），
-    // 改家目录副本在下次启动即被刷回（见 ensureBuiltinRoleProfiles）。
+    // **这里必须改 spec 而不是 agent.json**——system profile 的幂等刷新会在「用户没改过」的
+    // 字段上按 spec 覆写（含 model），改家目录副本在下次启动即被刷回（见
+    // ensureBuiltinRoleProfiles）。
     id: 'conductor-lead',
     avatar: roleAvatar('conductor-lead'),
     nickname: '指挥模式',
     title: '编排指挥',
     dimension: '研发',
     baseMode: 'conductor',
-    model: { provider: 'localhost', model: 'kimi-k3', reasoningEffort: 'high' },
-    subagentModel: { provider: 'localhost', model: 'deepseek-v4.1-flash', reasoningEffort: 'high' },
-    researchModel: { provider: 'localhost', model: 'glm-5.3-flash', reasoningEffort: 'high' },
     // 2026-09-21 裁定：`parallelWork.isolation` 已随隔离机制恒定生效剔除（死键清除），
     // 故此处不再声明；并发上限仍可由用户在「模型与并发」卡片改（maxParallelChildren）。
     // 人格只讲「我是谁 / 怎么干」，机制细节（隔离触发、模型锁、声明式验收、结果回传）
@@ -579,10 +581,100 @@ const BUILTIN_ROLES: readonly BuiltinRoleSpec[] = [
  * 判据：某字段**从未被用户改过**（当前值 === 基线值）⇒ 允许随 spec 演进刷新；
  * 一旦用户改过（当前值 !== 基线值）⇒ 永久保留用户值，spec 不再覆盖。
  *
- * `skills` / `mcpServers` / `terminal` / `memoryPolicy` / `avatar` 等**不在集合内**：
+ * `skills` / `mcpServers` / `terminal` / `memoryPolicy` 等**不在集合内**：
  * 它们属能力与个人化配置，spec 从不管，也就永远不会被刷新碰到。
+ * （`avatar` 自 2026-10-06 起**已进集合**：内置角色头像随 spec 下发，用户换过的仍保留。）
  */
 const stableStringify = (v: unknown): string => JSON.stringify(v ?? null)
+
+/**
+ * 我们**确实下发过**的「开发者私网网关」模型路由 —— 只有 provider 与 model **都**相等才算残留。
+ *
+ * `localhost` 是项目开发者本机的本地网关 provider（经 `llm-pi-ai` settings namespace 注册），
+ * 普通用户机器上不存在，钉在 profile 上只会让新用户第一次使用就
+ * `no adapter registered for provider "localhost"`（2026-10 实测报障，见 BUILTIN_ROLES 里
+ * conductor-lead 的历史注释）。
+ *
+ * 为什么是**精确配对**而不是裸 provider：`localhost` 这个名字用户自己也可能给本地网关起
+ * （同 `pi-ai` 的道理——那是第三方适配器注册的 provider 名，用户合法配置就走它）。只看
+ * provider 会把用户自选的本地模型一并删掉，所以判据收窄到「我们当年下发的那个 (provider,
+ * model) 组合」。`reasoningEffort` **不参与判定**：用户只调过档位也仍要清。
+ */
+const DEV_PRIVATE_GATEWAY_RESIDUES: readonly {
+  field: 'model' | 'subagentModel' | 'researchModel'
+  provider: string
+  model: string
+}[] = [
+  { field: 'model', provider: 'localhost', model: 'kimi-k3' },
+  { field: 'subagentModel', provider: 'localhost', model: 'deepseek-v4.1-flash' },
+  { field: 'researchModel', provider: 'localhost', model: 'glm-5.3-flash' },
+]
+
+/**
+ * 产品默认模型 —— **单一事实源**：内置角色的创建兜底与清 `model` 残留时的替换值都用它。
+ *
+ * 为什么抽成函数：2026-10-16 之前这两处各写一份相同字面量，靠注释维系一致——而「同一件事
+ * 有两处认知」正是本缺陷（把开发者私网网关钉进内置角色）的成因类型。现在不变量由代码保证。
+ * 每次返回新对象，避免两个 profile 共享同一个可变引用。
+ */
+const productDefaultModel = (): { provider: string; model: string } =>
+  ({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+
+/**
+ * 定向清除「开发者私网网关残留」（2026-10-16）。
+ *
+ * 由来：`conductor-lead` 的内置 spec 曾把主 Agent / 写子 Agent / 研究子 Agent 三档模型全钉在
+ * `localhost`（开发者本机网关）。这些模型字段从 spec 里删掉之后，{@link refreshFromSpec} 的
+ * 常规语义是「spec 未给值 ⇒ 不动现值」——于是**老安装里残留的 localhost 路由永远不会被清掉**，
+ * 缺陷在老用户身上不消失（他那台机器上每次新建指挥会话照旧
+ * `no adapter registered for provider "localhost"`，还要手动去设置里改）。故此处补一次定向清除。
+ *
+ * 收窄条件（重要，别过度清除）：
+ * · 只在 **spec 已不再声明**该字段时动手（spec 仍声明 ⇒ 交给常规刷新语义）；
+ * · 只在**现值与我们当年下发的 (provider, model) 配对精确相等**时才动
+ *   （见 {@link DEV_PRIVATE_GATEWAY_RESIDUES}）——只匹配 provider 会误删用户自己叫
+ *   `localhost` 的网关，`reasoningEffort` 不参与判定。
+ * 不在这张表里的任何组合一律不碰（对照 `tests/builtin-roles.spec.ts` 的负向守卫
+ * 「用户自己的本地网关原样不动」与「用户改过的字段：spec 不得覆盖」）。
+ *
+ * 三个字段的**落点不一样**（2026-10-16 指挥者裁定）：
+ * · `subagentModel` / `researchModel` ⇒ **删除**键（absent = 不覆盖 ⇒ 子 Agent 继承会话路由，
+ *   这正是用户拍板的语义）；
+ * · `model` ⇒ **替换成产品默认**（见 {@link productDefaultModel}），不能删：创建路径给全新安装
+ *   写的就是这个显式值，升级路径若删成 absent，那语义是「继承全局默认」——而用户的全局默认
+ *   未必是它，全新装与老安装就此分叉。
+ *
+ * 唯一被它绕过的既有约定是「播种不改现值」：那种精确配对只可能由我们自己的 spec 写下，
+ * 不是用户数据，所以没有基线的老安装也必须清（否则缺陷留痕最久的恰恰是那批用户）。
+ *
+ * 端到端落盘证明（不是只有内存对象）：`tests/builtin-profiles-e2e.spec.ts` —— 拿真实家目录
+ * 那份 `agent.json` 的逐字副本在临时 home 里跑 `ensureBuiltinRoleProfiles()`，重读盘断言，
+ * 并以 mtime/version 证明第二次不再写盘。
+ *
+ * @param next - 正在计算的 profile 副本（原地删除 / 替换）。
+ * @param spec - 内置角色 spec（唯一事实源）。
+ * @param baseline - 正在计算的新基线（被清字段记 null = spec 不再拥有它）。
+ * @returns 是否真的动了东西（决定要不要落盘）。
+ */
+function pruneDevGatewayResidue(
+  next: Record<string, unknown>,
+  spec: BuiltinRoleSpec,
+  baseline: Record<string, unknown>,
+): boolean {
+  let removed = false
+  for (const residue of DEV_PRIVATE_GATEWAY_RESIDUES) {
+    if ((spec as unknown as Record<string, unknown>)[residue.field] !== undefined) continue
+    const current = next[residue.field] as { provider?: unknown; model?: unknown } | undefined | null
+    if (current === undefined || current === null) continue
+    if (String(current.provider) !== residue.provider) continue
+    if (String(current.model) !== residue.model) continue
+    if (residue.field === 'model') next[residue.field] = productDefaultModel()
+    else delete next[residue.field]
+    baseline[residue.field] = null
+    removed = true
+  }
+  return removed
+}
 
 /**
  * 按「字段来源」计算一次幂等刷新（2026-09-14 用户拍板：手动改的配置属用户数据，
@@ -590,6 +682,7 @@ const stableStringify = (v: unknown): string => JSON.stringify(v ?? null)
  *
  * 语义：对每个可同步字段，
  * · spec 未给值 ⇒ 不动（保留现值；基线记 null 表示「spec 不拥有它」）；
+ *   —— 例外：spec 停发的**开发者私网网关残留**会被定向清除（见 {@link pruneDevGatewayResidue}）。
  * · spec 给了值：
  *   - **当前值 === 基线值** ⇒ 用户没改过 ⇒ 写入 spec 值（让改名/演进落地）；
  *   - **当前值 !== 基线值** ⇒ 用户改过 ⇒ **保留用户值**；
@@ -616,9 +709,13 @@ export function refreshFromSpec(
   // 因此绝不会覆盖用户数据。
   //
   // 代价（如实记录）：**本次 spec 的改动对「本次之前就已偏离 spec」的老安装不追溯生效**
-  // ——例如把 conductor-lead 的 subagentModel 从 glm-5.3-flash 改成 deepseek-v4.1-flash，
-  // 装了老 profile 的用户不会自动拿到新值（无法区分「它偏离 spec」是用户改的还是老默认）。
+  // ——例如把 conductor-lead 的 subagentModel 从 glm-5.3-flash 改成 deepseek-v4.1-flash
+  //（两个 id 都是开发者本机模型，该 profile 的模型钉已于 2026-10-16 整体删除），装了老
+  // profile 的用户不会自动拿到新值（无法区分「它偏离 spec」是用户改的还是老默认）。
   // 需要追溯时须走**显式迁移**（按 profile.version 升版）或由用户在 设置→Agent 预设 里改。
+  // 唯一的例外是**开发者私网网关残留定向清除**（见 `pruneDevGatewayResidue`）——那种值只可能
+  // 来自我们自己的 spec，不是用户数据，故 spec 停发后必须主动删掉，否则「不追溯」会变成
+  // 「缺陷永久留在老安装里」。
   const seeding = prev === undefined
   let changed = seeding   // 播种需要落盘一次，让基线持久化
   for (const field of SPEC_SYNCED_FIELDS) {
@@ -638,6 +735,7 @@ export function refreshFromSpec(
       changed = true
     }
   }
+  changed = pruneDevGatewayResidue(next, spec, baseline) || changed
   return { next: next as unknown as AgentProfile, baseline, changed }
 }
 
@@ -685,10 +783,15 @@ export function ensureBuiltinRoleProfiles(): void {
       dimension: spec.dimension,
       baseMode: spec.baseMode,
       prompt: spec.prompt,
-      // fork（corum）：模型兜底——spec.model 优先（编排专用 Agent 指定本地模型），
-      // 否则沿用原 deepseek-official flash 兜底。
-      model: spec.model ?? { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      // fork（corum）：模型兜底——spec 声明了就照它的写，否则落到产品默认的
+      // deepseek-official flash。（历史上这里写的是「编排专用 Agent 指定本地模型」，指的是
+      // conductor-lead 曾钉开发者本机网关那件事，2026-10-16 已纠正：内置角色不携带私网 provider。）
+      // 取值走 {@link productDefaultModel} 这个**单一事实源**，不在这里再写一份字面量——
+      // 「同一件事有两处认知」正是本缺陷的成因类型（清残留时的替换值也必须与它同一个）。
+      model: spec.model ?? productDefaultModel(),
       ...(spec.executionTools !== undefined ? { executionTools: spec.executionTools } : {}),
+      // 子 Agent 模型：**spec 不声明就不写键**（= 不覆盖 ⇒ 会话路由决定），而不是写成默认值——
+      // 写一个具体 provider 就等于替用户锁死路由。
       ...(spec.subagentModel !== undefined ? { subagentModel: spec.subagentModel } : {}),
       ...(spec.researchModel !== undefined ? { researchModel: spec.researchModel } : {}),
       ...(spec.parallelWork !== undefined ? { parallelWork: spec.parallelWork } : {}),
