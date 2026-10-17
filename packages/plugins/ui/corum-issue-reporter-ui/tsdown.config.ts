@@ -23,6 +23,14 @@ export default defineConfig(() => [
     fixedExtension: false,
     dts: false,
     clean: false,
+    // host 半新增的官方依赖：桌面闭包由 dsh-base 提供同一份实例，必须 external
+    // （同 corum-ollama / corum-web-search 的 host 条目——内联会多出一份
+    //  TypertRemoteService/CredentialProvider，插件的服务绑定就不再是同一类）。
+    external: [
+      '@deepseek-ai/cordis',
+      '@deepseek-ai/dsh-typert-protocol',
+      '@deepseek-ai/dsh-credentials',
+    ],
   },
   {
     name: `${CLIENT_ID}/client`,

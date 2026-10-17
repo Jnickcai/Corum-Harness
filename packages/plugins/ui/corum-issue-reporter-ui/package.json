@@ -7,7 +7,9 @@
   "dsh": {
     "client": {
       "platform": "web",
-      "inject": [],
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
       "immediately": false
     }
   },
@@ -28,6 +30,8 @@
   },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "lucide-react": "^0.460.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
