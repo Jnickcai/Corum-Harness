@@ -895,17 +895,26 @@ case "$CMD" in
     # 打包态一轮更新：构建改动包 → 重打 host 闭包 + .app → 重启。
     # ⚠️ 这里**不要**跑 `pnpm install`（本仓库裸装会挂；带 --filter 会剪掉别的项目依赖）。
     assert_no_active_turns || exit 1
-    log "1/3 构建 desktop 壳与 client 插件产物"
-    ( cd "$DESKTOP" && ./node_modules/.bin/tsc -b >/dev/null && ./node_modules/.bin/tsdown --config tsdown.config.ts >/dev/null && node scripts/inline-monaco-css.mjs >/dev/null )
-    log "2/3 重打 host 闭包 + .app（pack-macos.mjs 失败即整体失败）"
+    # 1/4 全量编译所有 workspace 包（含 client 插件），按依赖拓扑序。
+    #
+    # 为什么不再只建 desktop 壳：打包会断言**每个** client 插件都过了完整构建
+    # （lib/client.js 存在 + CSS 已内联），但它只断言不补做。2026-10-17 实测：
+    # 两个新合的插件从没构建过 ⇒ pack:host 在最后一步才失败；而且它们还依赖
+    # corum-ui-base 的**新导出**，手工补建时若先建插件仍会报 has no exported member。
+    # 交给 build-all.mjs 就没这个顺序问题（拓扑序 + 失败即停 + 结尾自断言）。
+    log "1/4 全量编译（scripts/build-all.mjs，拓扑序）"
+    ( cd "$ROOT" && CORUM_TARGET_PLATFORM=darwin node scripts/build-all.mjs ) || { log "全量编译失败，未进入打包"; exit 1; }
+    log "2/4 校验 client 插件就绪（与打包断言同口径）"
+    ( cd "$ROOT" && node scripts/build-all.mjs --verify ) || { log "有 client 插件未就绪，未进入打包"; exit 1; }
+    log "3/4 重打 host 闭包 + .app（pack-macos.mjs 失败即整体失败）"
     ( cd "$DESKTOP" && CORUM_TARGET_PLATFORM=darwin node scripts/pack-macos.mjs --platform=darwin --arch=arm64 ) || { log "pack-macos.mjs 失败，未产出新包，保持旧实例运行"; exit 1; }
     # electron-builder 已由 pack-macos.mjs 的 buildApp() 调用（临时清空 dependencies 规避
     # pnpm link: override 的 `must be under .pnpm` 兼容问题，2026-10-15 根治）。
-    log "3/3 重启打包实例"
+    log "4/4 重启打包实例"
     MODE=packaged
     do_stop >/dev/null || true
     do_start
-    log "完成。改了 client 源码的插件需要在 update 前先各自 build"
+    log "完成。全量编译已包含全部 client 插件，不会再出现「插件未构建」导致的打包失败"
     ;;
   master-key)
     resolve_master_key
