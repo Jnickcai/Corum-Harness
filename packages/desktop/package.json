@@ -202,6 +202,7 @@
     "@corum/corum-ui-settings-plugins": "workspace:*",
     "@corum/corum-ui-titlebar": "workspace:*",
     "@corum/corum-ui-trajectory": "workspace:*",
+    "@corum/corum-web-search": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-include": "^1.0.6",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
