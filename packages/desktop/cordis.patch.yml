@@ -39,6 +39,29 @@
     surfaceContext: true
     trustedHosts: []
 
+# 联网搜索 provider 的 pin（用户 2026-10-17 拍板，方案 B = 聚合 provider）。
+#
+# 为什么不能沿用基座的 `searchProvider: deepseek-official`：
+#   ① `dsh-web` 的 `searchProvider` **只在 WebRuntime 构造时读一次**
+#      （lib/index.js:57，来源是插件 config 或 $DSH_WEB_SEARCH_PROVIDER），没有任何
+#      运行时切换面 ⇒ 写死的 pin 让任何新注册的 provider 永远选不上；
+#   ② 官方 `deepseek-official` 的 `available()` **恒为 true**
+#      （lib/index.js:100-103 判的是「resolveApiKey 是否存在」，与有没有 Key 无关）
+#      ⇒ 摘掉 pin 再启用第二个 provider 立刻 `WEB_PROVIDER_AMBIGUOUS`
+#      （同文件 130）。
+# 所以 corum 把 pin 钉在**自己的**聚合 provider（@corum/corum-web-search，id
+# `corum-web-search`）上：它永远在册、永远可解析，而「用哪个供应商」降级成
+# settings namespace `corum-web-search` 的 `activeProvider`——**每次搜索现读**
+# ⇒ 切换即时生效、不需要重启、也不可能 AMBIGUOUS。
+#
+# ⚠️ 本 patch 是**键级整值覆盖**（dsh-app-boot/lib/index.js:102-105 的
+# `target[key] = value`，不走深合并；id 匹配即可，name 可省略）⇒ config 必须
+# **整份写回**：把 `fetchProvider: http` 一起写上，否则 fetch 会失去 provider。
+- id: web
+  config:
+    searchProvider: corum-web-search
+    fetchProvider: http
+
 # ── KV storage backend: sqlite (user decision 2026-09-15) ──────────────────
 #
 # The base bundle routes every domain to the JSON backend (`storage-domain`
@@ -450,6 +473,18 @@
     # scripts/verify-fork-drift.sh §8 断言守护。
     - id: corum-ollama
       name: '@corum/corum-ollama'
+
+    # 联网搜索（2026-10-17 用户拍板，方案 B = 聚合 provider）：host 半 provide
+    # cordis 服务 `corumWebSearch`（子 provider 注册面 `registerSubProvider` +
+    # `/api/corumWebSearch/describe|setActive`），并把聚合 provider 注册进 ctx.web
+    # （上方 web 行把它 pin 住）；client 半在「设置 → 扩展」注册「联网搜索」
+    # section（order 193）。装配规则同 corum-ollama（短 id + 只在此处 mount；
+    # client bundle URL 是 /plugins/<行 id>/client.js）。
+    # ⚠️ settings namespace `corum-web-search` 由本插件 host apply 直接注册，而本行
+    # 是 boot 常驻行 ⇒ 冷启动即在册（不需要 corum-memory 那种独立 settings-registrar
+    # 行——那条纪律针对的是「只在按需打开的设置页里注册」的插件）。
+    - id: corum-web-search
+      name: '@corum/corum-web-search'
 
     # 通用记忆底座（讨论定稿；产品形态见 docs/PLAN-memory-settings-product-design.md）：
     # host 半 provide cordis 服务 `memory`（MemoryService —— 事实级记忆组织 + 人工修剪），

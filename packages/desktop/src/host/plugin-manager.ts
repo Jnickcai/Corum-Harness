@@ -55,6 +55,13 @@ export const CORE_PLUGIN_PACKAGES: ReadonlySet<string> = new Set([
   // 更新检查（核心插件）：检测当前版本与 GitHub release、判断平台是否需要更新。
   // 停用它 = 用户菜单的「检查更新」入口失去数据源（占位红点永远不亮）。
   '@corum/corum-update-checker',
+  // 联网搜索的宿主（2026-10-17，用户拍板的「聚合 provider」方案）：桌面 overlay
+  // patch 把 dsh-web 的 `searchProvider` 钉在本插件注册的聚合 provider
+  // （id `corum-web-search`）上，而 dsh 的 searchProvider **只在 WebRuntime 构造时
+  // 读一次**（dsh-web/lib/index.js:57），没有任何运行时兜底。停用它 = pin 指向的
+  // provider 不存在 = 整个 web 搜索能力失效（WEB_PROVIDER_CONFIGURED_MISSING），
+  // 比「没装这个插件」更脆（那时 pin 还指向官方的 deepseek-official）。
+  '@corum/corum-web-search',
 ])
 
 /**
@@ -67,6 +74,12 @@ export const CORE_PLUGIN_ENTRIES: ReadonlySet<string> = new Set([
   'corum-git-core',
   'corum-platform',
   'corum-update-checker',
+  // 同上（联网搜索的宿主）：entry id = cordis.patch.yml 里那条 insert 行的 id。
+  // ⚠️ 两个清单必须**同时**在册：`setEnabled` 只按包名拒绝，而 persistDisabled 持久化
+  // 的是 entryId —— 只登记包名的话，禁用清单里以 entry id 记下的那条会绕过白名单，
+  // 在 boot.ts:304 的 `isCorePluginEntry` 过滤里漏过，并被当作 `disabled: true` 的
+  // 补丁行叠加进组合（结果同「被停用」）。
+  'corum-web-search',
 ])
 
 /** 判定包名是否为不可关闭的 corum 基础能力插件。 */
