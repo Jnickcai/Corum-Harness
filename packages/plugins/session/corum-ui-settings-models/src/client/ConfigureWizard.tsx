@@ -278,6 +278,9 @@ function PickPath({ state, api, schema, onChanged, onBack, presetProvider }: Det
             onChange={e => { setApiKey(e.target.value) }}
           />
         </div>
+        {provider === 'kimi-coding'
+          ? <p className={styles['notice']}>使用 Kimi Code 控制台生成的 API Key，消耗会员编程额度；与月之暗面开放平台的 API Key 不通用。</p>
+          : null}
         <span className={styles['footRight']}>
           <GlassButton icon={<IconZap size={12} />} disabled={detect.detecting} onClick={() => { void doDetect() }}>
             {detect.detecting ? '侦测中…' : '侦测模型'}
