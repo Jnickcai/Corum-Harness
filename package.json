@@ -10,6 +10,8 @@
   },
   "scripts": {
     "build": "pnpm -r run build",
+    "build:all": "node scripts/build-all.mjs",
+    "build:verify": "node scripts/build-all.mjs --verify",
     "typecheck": "pnpm -r run typecheck",
     "shell:dev": "pnpm --filter corum-desktop run start",
     "shell:smoke": "pnpm --filter corum-desktop run smoke",
