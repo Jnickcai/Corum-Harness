@@ -7,6 +7,8 @@ import css from './StartupAnimationSetting.module.css'
 interface StartupThemeInfo {
   id: string; name: string; version: string; type: 'html' | 'video'; builtin: boolean
   author?: string; previewUrl?: string
+  /** Present on segmented video themes: one clip per boot stage. */
+  segments?: { stage: string; file: string }[]
 }
 interface StartupThemeCatalog { themes: StartupThemeInfo[]; selectedId: string }
 
@@ -18,6 +20,22 @@ interface StartupBridge {
   selectStartupTheme: (id: string) => Promise<void>
   deleteStartupTheme: (id: string) => Promise<{ cancelled: boolean }>
   previewStartupTheme: (id: string) => Promise<void>
+}
+
+/**
+ * One-line description of a theme.
+ *
+ * Segmented themes get called out explicitly: they look like plain "视频" in the
+ * catalog otherwise, and the fact that the animation changes per boot stage is the
+ * whole point of picking one.
+ */
+function describeTheme(theme: StartupThemeInfo): string {
+  const kind = theme.type === 'html'
+    ? 'HTML 动画'
+    : theme.segments && theme.segments.length > 0
+      ? `分段视频（${theme.segments.length} 段）`
+      : '视频'
+  return [kind, `v${theme.version}`, theme.builtin ? '内置' : '', theme.author ?? ''].filter(Boolean).join(' · ')
 }
 
 /** 桌面启动偏好由 Electron 壳持久化，网页模式不显示此设置。 */
@@ -73,7 +91,7 @@ export function StartupAnimationSetting() {
             {theme.previewUrl && <img className={css.preview} src={theme.previewUrl} alt="" />}
             <div className={css.meta}>
               <strong>{theme.name}</strong>
-              <span className={css.detail}>{theme.type === 'html' ? 'HTML 动画' : '视频'} · {theme.version}{theme.builtin ? ' · 内置' : ''}{theme.author ? ` · ${theme.author}` : ''}</span>
+              <span className={css.detail}>{describeTheme(theme)}</span>
             </div>
             <div className={css.actions}>
               <button className={css.button} aria-label={`预览 ${theme.name}`} disabled={busy} onClick={() => { void run(() => desktop.previewStartupTheme!(theme.id), false) }}>预览</button>
