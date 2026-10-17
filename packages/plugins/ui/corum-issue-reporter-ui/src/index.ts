@@ -38,6 +38,10 @@
  * @module @corum/corum-issue-reporter-ui
  */
 
+import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import * as os from 'node:os'
+
 import type { Context } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -87,6 +91,7 @@ import type {
   AuthStartResult,
   AuthStatusResult,
   EnsureAssetsRepoResult,
+  EnvInfoResult,
   GithubFailure,
   SignOutResult,
   SubmitIssueResult,
@@ -162,6 +167,82 @@ type TokenOutcome =
 type PutOutcome =
   | { readonly ok: true; readonly result: UploadAssetResult }
   | { readonly ok: false; readonly failure: GithubFailure; readonly retryable: boolean }
+
+// ── 环境侦测（issue 正文「### 环境」表的 host 一半）───────────────────
+//
+// 隐私红线：这一段**不碰** `os.hostname()` / `os.homedir()` / `os.userInfo()` /
+// `process.cwd()` / `process.argv`。只读版本号、架构、内存总量与两个壳层注入的
+// 环境变量；解析出来的**路径一律用完即弃**（返回值里没有 path 字段）。
+
+/**
+ * 从本插件的加载点起算的 require（**只为 resolve 包清单**）。
+ *
+ * 起点必须是 `import.meta.url`：打包态本文件在
+ * `resources/host/node_modules/@corum/corum-issue-reporter-ui/lib/index.js`，
+ * 只有从那里起算，Node 才会走到闭包自带的 `@deepseek-ai/dsh-base`。
+ */
+const requireFromPlugin = createRequire(import.meta.url)
+
+/** 第一解析路径：官方基座包（成熟形态下唯一需要的路径）。 */
+const DSH_BASE_MANIFEST = '@deepseek-ai/dsh-base/package.json'
+
+/**
+ * 第二解析路径：本插件**已声明依赖**的官方 dsh 包。
+ *
+ * 依据：官方 `dsh-*` 与基座是**同一条版本线**（`docs/VERSIONING.md`：应用版本与
+ * 基座版本两条线，基座侧所有包同版跟进）。开发态（工作区直跑）里 `dsh-base` 只装在
+ * `packages/desktop/node_modules` 下，从本包起算是 MODULE_NOT_FOUND；而这条退路
+ * 在工作区**一定**解析得到，正是修掉「dsh unknown」的那条。
+ */
+const DSH_PEER_MANIFEST = '@deepseek-ai/dsh-typert-protocol/package.json'
+
+/** 第三兜底：启动环境里显式给出的基座版本（壳层 / CI 可注入）。 */
+const DSH_VERSION_ENV_KEYS: readonly string[] = ['DSH_VERSION', 'CORUM_DSH_VERSION', 'DSH_BASELINE_VERSION']
+
+/**
+ * 读某个包清单的 `version`。
+ * @param specifier - 包内清单的模块描述符（如 `@scope/pkg/package.json`）。
+ * @returns 版本字符串；解析/读取/解析 JSON 任一失败都返回 null（这只是展示用，不值得抛）。
+ */
+function manifestVersion(specifier: string): string | null {
+  try {
+    const raw = readFileSync(requireFromPlugin.resolve(specifier), 'utf8')
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const { version } = parsed as { version?: unknown }
+    return typeof version === 'string' && version.trim() !== '' ? version.trim() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 解析 dsh 基座版本：包清单（`dsh-base` → `dsh-typert-protocol`）→ 环境变量 → `unknown`。
+ * @returns 版本字符串；**不含任何路径**。
+ */
+function resolveDshVersion(): string {
+  for (const specifier of [DSH_BASE_MANIFEST, DSH_PEER_MANIFEST]) {
+    const version = manifestVersion(specifier)
+    if (version !== null) return version
+  }
+  for (const key of DSH_VERSION_ENV_KEYS) {
+    const value = process.env[key]
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  return 'unknown'
+}
+
+/** 运行形态（壳层按 combo 注入，见 `packages/desktop/src/host/boot.ts`；未注入 = unknown，**不猜**）。 */
+function readMode(): string {
+  const value = process.env.CORUM_DESKTOP_MODE
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : 'unknown'
+}
+
+/** 调试端口（没有就 null——与「空字符串」区分开）。 */
+function readDebugPort(): string | null {
+  const value = process.env.CORUM_DEBUG_PORT
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -539,6 +620,41 @@ export class IssueReporterService extends TypertRemoteService {
       return fail('parse-error', '创建 issue 成功但响应缺少 number/html_url')
     }
     return { ok: true, number, url: parseApiUrl(json) ?? htmlUrl, htmlUrl }
+  }
+
+  /**
+   * host 侧环境侦测（issue 正文「### 环境」表的 host 一半）。
+   *
+   * 参数面**平铺无参数**（网关按源码形参名取参，解构/默认值会被判
+   * `gateway/signature-invalid`）。只回运行期数值与版本号，**绝不含路径 / 用户名 /
+   * 机器名 / IP / MAC**（见文件头隐私红线）。
+   */
+  @Remote('envInfo')
+  async envInfo(): Promise<EnvInfoResult> {
+    try {
+      const osType = os.type()
+      return {
+        ok: true,
+        value: {
+          dshVersion: resolveDshVersion(),
+          mode: readMode(),
+          debugPort: readDebugPort(),
+          os: {
+            type: osType,
+            release: os.release(),
+            // 只有 Windows 的 os.version() 是「版本名」（如 `Windows 11 Pro`）；
+            // 其余平台它给的是与 release 重复的内核串，故上报空串（消费方按缺项处理）。
+            version: osType.startsWith('Windows') ? os.version() : '',
+            arch: process.arch,
+          },
+          node: process.versions.node ?? 'unknown',
+          v8: process.versions.v8 ?? 'unknown',
+          memGB: Math.round(os.totalmem() / 1024 ** 3),
+        },
+      }
+    } catch (error) {
+      return fail('env-error', `环境侦测失败：${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /** 目标仓库现有 label 名（任何失败都返回空数组：不因它阻断提交）。 */

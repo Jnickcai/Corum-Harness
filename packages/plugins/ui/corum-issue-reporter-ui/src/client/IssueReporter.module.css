@@ -336,6 +336,43 @@
   overflow-wrap: anywhere;
 }
 
+/* 环境表预览（默认为折叠 4 行；展开是全部 12 行——用户提交前必须能看清每一行）。 */
+.envPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.envRow {
+  display: flex;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-tertiary);
+}
+.envRowKey {
+  flex: 0 0 96px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+.envRowValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.envToggle {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-brand-primary);
+  font-family: inherit;
+  font-size: 9.5px;
+  cursor: pointer;
+}
+.envToggle:hover { text-decoration: underline; }
+
 /* 底部动作行（按钮多时换行，不挤走「打开 GitHub」）。 */
 .actions {
   display: flex;

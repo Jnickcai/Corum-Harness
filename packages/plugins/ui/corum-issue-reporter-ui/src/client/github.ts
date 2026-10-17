@@ -35,6 +35,7 @@ import type {
   AuthStartResult,
   AuthStatusResult,
   EnsureAssetsRepoResult,
+  EnvInfoResult,
   GithubFailure,
   SignOutResult,
   SubmitIssueResult,
@@ -72,7 +73,7 @@ export interface GithubConnection {
   }
 }
 
-/** 7 个方法的薄包装（返回类型与 host 一致）。 */
+/** 8 个方法的薄包装（返回类型与 host 一致）。 */
 export interface GithubClient {
   authStart(): Promise<AuthStartResult>
   authPoll(deviceCode: string): Promise<AuthPollResult>
@@ -81,6 +82,11 @@ export interface GithubClient {
   ensureAssetsRepo(): Promise<EnsureAssetsRepoResult>
   uploadAsset(name: string, base64: string): Promise<UploadAssetResult>
   submitIssue(title: string, body: string, labels?: readonly string[]): Promise<SubmitIssueResult>
+  /**
+   * host 侧环境侦测（issue 正文「### 环境」表的 host 一半）。
+   * 旧 host / 没连接 ⇒ `{ ok:false, code:'unsupported' }`，面板据此把 host 那几行写成 unknown。
+   */
+  envInfo(): Promise<EnvInfoResult>
 }
 
 /** `unsupported` 失败信封（host 半缺席/旧版专用文案）。 */
@@ -148,6 +154,9 @@ export function createGithubClient(connection: GithubConnection | undefined | nu
     },
     async submitIssue(title: string, body: string, labels: readonly string[] = []): Promise<SubmitIssueResult> {
       return await invoke('submitIssue', { title, body, labels: [...labels] }) as SubmitIssueResult
+    },
+    async envInfo(): Promise<EnvInfoResult> {
+      return await invoke('envInfo', {}) as EnvInfoResult
     },
   }
 }

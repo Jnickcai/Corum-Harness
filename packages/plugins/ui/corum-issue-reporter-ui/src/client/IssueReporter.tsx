@@ -35,13 +35,15 @@
  * 成功卡上的 issue 页面）。截图只存在内存（ObjectURL），**不落 localStorage**；
  * 落盘的只有草稿三项 + 环境勾选 + 「已同意截图托管」这一个标记。
  *
- * 为什么环境信息是「只读一行 + 一个勾」而不是可编辑文本框：它是**确定性读取**
- * （应用版本 / dsh 基座版本 / 平台），让用户能改就等于让报障信息可以失真。
+ * 为什么环境信息是「只读预览 + 一个勾」而不是可编辑文本框：它是**确定性读取**
+ * （12 项，渲染层 6 项 + host 6 项，见 `./env.ts`），让用户能改就等于让报障信息可以
+ * 失真。但**能看**是隐私要求而不是装饰：默认折叠显示前 4 行，点「共 N 项 · 展开」看
+ * 全部——用户提交前必须能确认到底附上了什么。
  * @module corum-issue-reporter/client/IssueReporter
  */
 
 import {
-  useCallback, useEffect, useLayoutEffect, useRef, useState,
+  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
   type CSSProperties, type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent,
   type ReactElement,
@@ -51,6 +53,11 @@ import {
   LoaderCircle, RefreshCw, ShieldCheck, TriangleAlert, X,
 } from 'lucide-react'
 import { readBridge } from './bridge.ts'
+import {
+  ENV_PREVIEW_ROWS, UNKNOWN_LOCAL_ENV, detectEnvLocal, envTableMarkdown, mergeEnv,
+  type LocalEnv, type MergedEnv,
+} from './env.ts'
+import type { HostEnvInfo } from '../types.ts'
 import type { GithubClient } from './github.ts'
 import css from './IssueReporter.module.css'
 
@@ -457,7 +464,24 @@ function uploadLabel(state: UploadState): { text: string; icon: 'spinner' | 'che
   }
 }
 
-/** 面板的 prop：host 半边的 7 个方法（由 `apply` 建一次后传进来）。 */
+/**
+ * 向 host 要一次环境侦测。
+ *
+ * 任何失败（旧 host 的 `unsupported`、连接层抛、host 内部 fail）都收敛成 `null`：
+ * 这只影响展示（host 那几行落成 unknown），不该让面板报错或挡住提交。
+ * @param client - host 半边的调用层。
+ * @returns host 上报的环境；取不到 → null。
+ */
+async function readHostEnv(client: GithubClient): Promise<HostEnvInfo | null> {
+  try {
+    const result = await client.envInfo()
+    return result.ok ? result.value : null
+  } catch {
+    return null
+  }
+}
+
+/** 面板的 prop：host 半边的 8 个方法（由 `apply` 建一次后传进来）。 */
 export interface IssueReporterProps {
   /** `createGithubClient(connection)` 的产物（面板不自己造）。 */
   readonly client: GithubClient
@@ -479,8 +503,16 @@ export function IssueReporter({ client }: IssueReporterProps) {
   const [dragging, setDragging] = useState(false)
   /** 拖动中的临时位置（视口坐标；松手吸附后清空）。 */
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
-  /** 环境信息（确定性读取，取不到就显示 unknown，不编造）。 */
-  const [env, setEnv] = useState({ appVersion: 'unknown', baseline: 'unknown', platform: 'unknown' })
+  /**
+   * 环境信息（确定性读取）。
+   * 本地半边（渲染层）与 host 半边分开存：host 半边可能取不到（旧 host / 没连接），
+   * 那时本地那几行照样完整，host 那几行落成 unknown。
+   */
+  const [localEnv, setLocalEnv] = useState<LocalEnv | null>(null)
+  /** host `envInfo` 的 `value`（失败/缺席 = null）。 */
+  const [hostEnv, setHostEnv] = useState<HostEnvInfo | null>(null)
+  /** 环境表预览是否展开（默认折叠：只显示前 4 行 + 「共 N 项 · 展开」）。 */
+  const [envOpen, setEnvOpen] = useState(false)
   /** 面板实测高度（未展开/未测到 = 0；面板垂直夹紧要用它，见 `panelStyle`）。 */
   const [panelHeight, setPanelHeight] = useState(0)
   /** 当前视口高度（面板垂直夹紧的另一半输入；resize 时更新）。 */
@@ -588,32 +620,17 @@ export function IssueReporter({ client }: IssueReporterProps) {
     if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
   }, [])
 
-  // 环境信息（应用版本 / dsh 基座版本异步取一次；平台同步取）。
+  // 环境信息（本地半边在渲染层算，host 半边问一次 RPC；两边都不抛）。
   useEffect(() => {
-    const bridge = readBridge()
-    const platform = bridge?.getPlatform?.()
-    if (platform !== undefined) setEnv(prev => ({ ...prev, platform }))
     let cancelled = false
     void (async () => {
-      try {
-        const version = await bridge?.getAppVersion?.()
-        if (!cancelled && typeof version === 'string' && version !== '') {
-          setEnv(prev => ({ ...prev, appVersion: version }))
-        }
-      } catch {
-        // 取不到就保留 unknown（宁可显示 unknown，也不编造一个版本号）。
-      }
-      try {
-        const baseline = await bridge?.getDshBaselineVersion?.()
-        if (!cancelled && typeof baseline === 'string' && baseline !== '') {
-          setEnv(prev => ({ ...prev, baseline }))
-        }
-      } catch {
-        // 同上：基座版本取不到时显示 unknown。
-      }
+      const [local, host] = await Promise.all([detectEnvLocal(), readHostEnv(client)])
+      if (cancelled) return
+      setLocalEnv(local)
+      setHostEnv(host)
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [client])
 
   // 窗口缩放后把 offset 夹回可见范围（否则可能被推出屏幕）。
   useEffect(() => {
@@ -1100,18 +1117,25 @@ export function IssueReporter({ client }: IssueReporterProps) {
 
   // ── 正文 / 提交 ───────────────────────────────────────────────────
 
-  /** 环境信息行（确定性读取的三段；取不到的那段显示 unknown）。 */
-  const envLine = `Corum v${env.appVersion} · dsh ${env.baseline} · ${env.platform}`
+  /**
+   * 环境表（12 行，行序固定）：预览与正文用的**同一份**数据。
+   * 本地半边还没侦测完时用 {@link UNKNOWN_LOCAL_ENV}，先渲染出 12 行 unknown，
+   * 不让面板出现「少了几行」的中间态。
+   */
+  const envRows: MergedEnv = useMemo(
+    () => mergeEnv(localEnv ?? UNKNOWN_LOCAL_ENV, hostEnv),
+    [localEnv, hostEnv],
+  )
 
   /**
-   * 组装正文：描述 + （勾选时）环境块 + （有成功上传的图时）每张一行 `![]()`。
+   * 组装正文：描述 + （勾选时）环境表 + （有成功上传的图时）每张一行 `![]()`。
    * **只带真正上传成功的图**——没上传的截图绝不出现在正文里。
    * @param imageLines - 已拼好的图片行。
    * @returns 提交用的完整正文。
    */
   const buildBody = (imageLines: readonly string[]): string => {
     const parts = [draft.body]
-    if (draft.includeEnv) parts.push(`---\n\n### 环境\n- ${envLine}`)
+    if (draft.includeEnv) parts.push(`---\n\n${envTableMarkdown(envRows)}`)
     if (imageLines.length > 0) parts.push(imageLines.join('\n'))
     return parts.join('\n\n')
   }
@@ -1627,7 +1651,29 @@ export function IssueReporter({ client }: IssueReporterProps) {
                       />
                       <span>附带环境信息（自动附加，可取消）</span>
                     </label>
-                    <span className={css.envLine}>{envLine}</span>
+                    {/* 预览：默认折叠前 4 行，展开后是**全部 12 行**——用户提交前必须能
+                        看清将被附上的每一行（隐私要求，不是装饰）。 */}
+                    <div
+                      className={css.envPreview}
+                      data-testid="issue-reporter-env-preview"
+                      data-expanded={envOpen ? 'true' : undefined}
+                    >
+                      {(envOpen ? envRows : envRows.slice(0, ENV_PREVIEW_ROWS)).map(row => (
+                        <div key={row.key} className={css.envRow} data-testid="issue-reporter-env-row" data-key={row.key}>
+                          <span className={css.envRowKey}>{row.key}</span>
+                          <span className={css.envRowValue}>{row.value}</span>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className={css.envToggle}
+                        data-testid="issue-reporter-env-toggle"
+                        aria-expanded={envOpen}
+                        onClick={() => { setEnvOpen(prev => !prev) }}
+                      >
+                        {envOpen ? '收起' : `共 ${envRows.length} 项 · 展开`}
+                      </button>
+                    </div>
                     {shots.length > 0 && (
                       <span className={css.envLine}>
                         {consent === 'accepted'
