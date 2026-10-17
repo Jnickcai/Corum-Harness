@@ -165,3 +165,33 @@ describe('CUSTOM_TEMPLATES：第三方通道与 pi-ai 目录分离', () => {
     expect(found?.name.en).toBe('Volcengine Ark')
   })
 })
+
+describe('阿里百炼三条通道：显示名必须可区分', () => {
+  const channels = ['qwen-token-plan-cn', 'qwen-token-plan-individual', 'qwen-token-plan']
+
+  it('三者在中文下名字各不相同（否则用户无法选择）', () => {
+    const names = channels.map(id => brandNameOf(brandOf(id)!.name, 'zh-CN'))
+    expect(new Set(names).size).toBe(3, `实际出现重名：${names.join(' / ')}`)
+  })
+
+  it('三者在英文下名字各不相同', () => {
+    const names = channels.map(id => brandNameOf(brandOf(id)!.name, 'en'))
+    expect(new Set(names).size).toBe(3, `实际出现重名：${names.join(' / ')}`)
+  })
+
+  it('后缀正确表达区域与订阅类型', () => {
+    expect(brandNameOf(brandOf('qwen-token-plan-cn')!.name, 'zh-CN')).toContain('国内')
+    expect(brandNameOf(brandOf('qwen-token-plan')!.name, 'zh-CN')).toContain('海外')
+    expect(brandNameOf(brandOf('qwen-token-plan-individual')!.name, 'zh-CN')).toContain('个人')
+  })
+
+  it('不会互相串味（-cn 不落到个人/海外，反之亦然）', () => {
+    expect(brandOf('qwen-token-plan-cn')!.name.zh).toContain('国内')
+    expect(brandOf('qwen-token-plan-individual')!.name.zh).toContain('个人')
+    expect(brandOf('qwen-token-plan')!.name.zh).toContain('海外')
+  })
+
+  it('普通 qwen（通义千问）不被百炼条目吞掉', () => {
+    expect(brandOf('qwen')!.name.zh).toBe('通义千问')
+  })
+})

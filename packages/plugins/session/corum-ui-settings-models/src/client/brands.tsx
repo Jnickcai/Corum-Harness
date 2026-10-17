@@ -41,7 +41,14 @@ const both = (en_: string, zh: string): BrandName => ({ en: en_, zh })
 /** provider route id / 关键字 → 品牌。匹配用 includes 小写。 */
 const BRANDS: ReadonlyArray<readonly [string, Brand]> = [
   ['deepseek', { name: both('DeepSeek', '深度求索'), mark: 'DS', color: '#4D6BFE' }],
-  ['qwen-token-plan', { name: both('Alibaba Bailian', '阿里百炼'), mark: '百', color: '#FF6A00' }],
+  // 阿里百炼有三条独立通道（不同区域/订阅），显示名必须能区分，否则用户看到三个
+  // 一模一样的「阿里百炼」无从选择。差异是实测的：
+  //   -cn         cn-beijing 节点，18 个模型（团队/企业订阅）
+  //   （无后缀）    ap-southeast-1 节点，18 个模型（海外）
+  //   -individual ap-southeast-1 节点， 9 个模型（个人订阅，模型更少）
+  ['qwen-token-plan-cn', { name: both('Alibaba Bailian (CN)', '阿里百炼（国内）'), mark: '百', color: '#FF6A00' }],
+  ['qwen-token-plan-individual', { name: both('Alibaba Bailian (Individual)', '阿里百炼（个人）'), mark: '百', color: '#FF6A00' }],
+  ['qwen-token-plan', { name: both('Alibaba Bailian (Overseas)', '阿里百炼（海外）'), mark: '百', color: '#FF6A00' }],
   ['qwen', { name: both('Qwen', '通义千问'), mark: '千', color: '#FF6A00' }],
   ['zai', { name: both('Z.ai', '智谱'), mark: 'GLM', color: '#3B5BFD' }],
   ['glm', { name: both('GLM', '智谱'), mark: 'GLM', color: '#3B5BFD' }],
