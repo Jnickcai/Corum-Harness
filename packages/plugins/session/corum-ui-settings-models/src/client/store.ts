@@ -380,7 +380,7 @@ export class ModelsSettingsStore {
         routeModels.set('ollama', models.map(id => ({
           provider: 'ollama',
           modelId: id,
-          brand: { name: 'Ollama', mark: '🦙', color: '#22C55E' },
+          brand: { name: { en: 'Ollama' }, mark: '🦙', color: '#22C55E' },
           providerName: 'Ollama（本地）',
           imageInput: false,
           settingsNs: '',

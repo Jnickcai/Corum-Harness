@@ -134,7 +134,7 @@ export function collectProviderCards(state: ModelsSettingsState, schema: Setting
     // 配置界面）不跳过，显示一张只读卡片。
     if (namespace === undefined) {
       if (row.entry.settingsNs === '') {
-        const brand = brandOf(row.entry.provider) ?? { name: row.entry.provider, mark: row.entry.provider.slice(0, 2).toUpperCase(), color: '#888888' }
+        const brand = brandOf(row.entry.provider) ?? { name: { en: row.entry.provider }, mark: row.entry.provider.slice(0, 2).toUpperCase(), color: '#888888' }
         const cards = state.routeModels.get(row.entry.provider) ?? []
         out.push({
           provider: row.entry.provider,

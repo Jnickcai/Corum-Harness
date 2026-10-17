@@ -98,12 +98,18 @@ export function apply(ctx: ClientContext): void {
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
+  // Provider names are product nouns, not UI copy: they ride each brand as a
+  // `{ en, zh }` map instead of dictionary keys (a key per vendor would rebuild the
+  // self-maintained list this page just got rid of). The active locale id is read
+  // from the service on each render, so switching language re-renders the names.
+  const activeLocale = (): string => ctx.locale.getLocale().active
   const injected = (): ModelsSectionInjected => ({
     controller,
     hooks: { snapshot: controller.store },
     api: wire,
     schema,
     t,
+    activeLocale,
   })
   const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
     controller,
