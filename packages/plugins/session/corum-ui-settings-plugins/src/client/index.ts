@@ -1,9 +1,14 @@
 /**
- * fork（corum）：Plugins settings surface 的 corum 版——与官方逐行一致，唯一
- * 实质 diff = 移除 SubagentModelSelectionCard 的注册（官方「允许 LLM 自主选
- * 子 Agent 模型」开关与 fork #10 模型锁语义互斥）。controller 实例保留
- * （settings namespace `subagent-model-selection` 的 host 面仍可读写，避免
- * 存量设置文档出现未注册段），仅 UI 卡不再渲染。
+ * fork（corum）：Plugins settings surface 的 corum 版——与官方逐行一致，两处实质 diff：
+ *   ① 移除 SubagentModelSelectionCard 的注册（官方「允许 LLM 自主选子 Agent 模型」
+ *      开关与 fork #10 模型锁语义互斥）。controller 实例保留（settings namespace
+ *      `subagent-model-selection` 的 host 面仍可读写，避免存量设置文档出现未注册段），
+ *      仅 UI 卡不再渲染。
+ *   ② **移除 web-search 卡的注册**（2026-10-17）：该槽 `settings.plugin.item` 当前
+ *      **没有任何渲染者**（渲染它的 ExtensionsSection 已随「插件管理」设置分区于
+ *      2026-10-03 整块移除），所以那张卡在 UI 上完全不可达；它的全部字段（endpoint /
+ *      maxUses / Key 状态）已搬到 @corum/corum-web-search 的「设置 → 扩展 → 联网搜索」
+ *      section，随附那条 `credentials/reference-updated` 订阅一并搬走。
  * 原始模块：@deepseek-ai/dsh-client-ui-settings-plugins。
  *
  * Plugins settings surface, browser half — one section whose feature-owned
@@ -30,14 +35,12 @@ import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
-import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
 import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
-import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
 import { en, zh } from './locales.ts'
 
 export type { ConfigurablePluginsTabProps } from './ConfigurablePluginsTab.tsx'
@@ -50,14 +53,13 @@ export type {
 } from './card-form.ts'
 export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-controller.ts'
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
-export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+  'slots', 'locale', 'remote', 'remote.session', 'settingsScope',
 ]
 
 /**
@@ -70,20 +72,16 @@ export function apply(ctx: ClientContext): void {
 
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
-  const webSearch = new WebSearchCardController(
-    ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), ctx)
   const subagentModelSelection = new SubagentModelSelectionCardController(
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
     ctx,
   )
 
-  // The credential a card reports is not part of any settings section, so its
-  // scope publishes nothing when one is written. This is the only signal that
-  // a key written on another surface reached the Host.
-  ctx.effect(
-    () => ctx.remote.$on('credentials/reference-updated', (ref) => { webSearch.refreshCredential(ref) }),
-    'ui-settings-plugins: credential invalidations',
-  )
+  // credential 面的订阅（`credentials/reference-updated`）随 web-search 卡一并
+  // **搬去** @corum/corum-web-search 的 client 半（订阅者与被通知者是同一个 UI 面；
+  // 卡删除后留在这里就是对已不渲染的 controller 做死写）。下面两条
+  // `llm/adapters-updated` / `settings/document-updated` 服务的是
+  // SubagentModelSelectionCard，与本变更无关，留在原处。
   ctx.effect(
     () => ctx.remote.$on('llm/adapters-updated', () => { subagentModelSelection.refreshCatalog() }),
     'ui-settings-plugins: subagent adapter invalidations',
@@ -111,9 +109,9 @@ export function apply(ctx: ClientContext): void {
   // fork（corum，重构 2 决策 2）：不再注册独立的「插件」settings.section 导航入口
   // ——该入口的 tab chrome（PluginsSettingsSection）由 @corum/corum-ide-ui 的
   // 「插件管理」扩展 section 承接（它声明并渲染共享槽 settings.plugins.tab）。
-  // 本包保留：配置 tab（settings.plugins.tab 的 configurable entry）+ 三张卡
-  // （settings.plugin.item 的 shell/agent-loop/web-search 注册）。官方
-  // plugin-inventory 的「插件列表」tab 仍注册进 settings.plugins.tab，一并归入
+  // 本包保留：配置 tab（settings.plugins.tab 的 configurable entry）+ 两张卡
+  // （settings.plugin.item 的 shell/agent-loop 注册；web-search 卡已移除，见文件头）。
+  // 官方 plugin-inventory 的「插件列表」tab 仍注册进 settings.plugins.tab，一并归入
   // 「插件管理」。
 
   // The existing configuration page is one ordinary tab. It keeps ownership
@@ -146,11 +144,9 @@ export function apply(ctx: ClientContext): void {
     // corum「子 Agent」设置 section 承载（corum-subagent namespace）。
     void SUBAGENT_MODEL_SELECTION_NS
     void SubagentModelSelectionCard
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: WEB_SEARCH_NS,
-      locale: NS,
-      inject: () => webSearch.inject(),
-    }, WebSearchCard)
+    // fork（corum，2026-10-17）：官方 web-search 卡（key `web-search-deepseek`）
+    // 的注册**已移除**——本槽没有渲染者（见文件头），且该卡的全部字段已搬到
+    // @corum/corum-web-search 的「设置 → 扩展 → 联网搜索」section（那是它第一次
+    // 真正可用）。⚠️ 不要在这里恢复：恢复会造出第二份 web-search 配置面。
   })
 }
