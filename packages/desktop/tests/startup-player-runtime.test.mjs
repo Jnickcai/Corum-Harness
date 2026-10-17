@@ -26,9 +26,19 @@ function makeEnv() {
       this.muted = true
       this.loop = false
       this.duration = 3
-      this.src = ''
       this.currentTime = 0
+      // 真实 <video> 的 src 是访问器：赋新值会中止正在进行的加载与 play。
+      // 用普通属性赋值就模拟不出「换 src 打断 play()」这个关键行为，
+      // 而它正是 2026-10-17「主题无法播放」报障的触发条件。
+      this._src = ''
       videos.push(this)
+    }
+    get src() {
+      return this._src
+    }
+    set src(value) {
+      if (this._src !== '' && this._src !== value) this.interrupt()
+      this._src = value
     }
     addEventListener(type, fn) {
       ;(this.listeners[type] ??= []).push(fn)
@@ -40,13 +50,41 @@ function makeEnv() {
       for (const fn of this.listeners[type] ?? []) fn({ type })
     }
     play() {
+      this.__playCalls = (this.__playCalls ?? 0) + 1
+      // 真实行为（2026-10-17 在 Electron 43 实测）：若在一次 play() 尚未 settle 时
+      // 又换了 src，上一次 play() 会以 AbortError 拒绝。这里必须模拟出来，
+      // 否则「把 AbortError 当致命错误」这个 bug 在测试里永远抓不到。
+      if (this.pendingPlay !== undefined) {
+        const previous = this.pendingPlay
+        this.pendingPlay = undefined
+        previous.reject(Object.assign(new Error('The play() request was interrupted'), { name: 'AbortError' }))
+      }
       this.paused = false
       // Real players fire loadedmetadata then playing; emulate that order.
       queueMicrotask(() => {
         this.emit('loadedmetadata')
         this.emit('playing')
+        // 'playing' 到达 = 真正开始播 = play() promise 兑现。
+        if (this.pendingPlay !== undefined) {
+          const settled = this.pendingPlay
+          this.pendingPlay = undefined
+          settled.resolve()
+        }
       })
-      return Promise.resolve()
+      // 真实语义：play() 的 promise 在「开始播放」后才 resolve，而不是立刻。
+      // 若这里用 microtask 马上 resolve，AbortError 就永远来不及发生 ——
+      // 「换 src 打断 play」这个 bug 也就抓不到（本测试最初正是这么漏掉的）。
+      // 所以在 'playing' 事件里 settle。
+      return new Promise((resolve, reject) => {
+        this.pendingPlay = { resolve, reject }
+      })
+    }
+    /** 模拟「换 src 打断上一次 play」（真实浏览器必然如此）。 */
+    interrupt() {
+      if (this.pendingPlay === undefined) return
+      const previous = this.pendingPlay
+      this.pendingPlay = undefined
+      previous.reject(Object.assign(new Error('interrupted'), { name: 'AbortError' }))
     }
     pause() {
       this.paused = true
@@ -144,6 +182,7 @@ function makeEnv() {
     videos,
     calls,
     statusHandlers,
+    log: [],
     timers,
     /** Fire every pending timer whose delay is <= `ms` (and mark the rest). */
     fireTimersAtLeast(ms) {
@@ -159,8 +198,13 @@ function makeEnv() {
   }
 }
 
+// 必须含 env 与 spawn **两者**：真实启动时 publishStage('env') 与 ('spawn')
+// 几乎同一 tick 到达，正是「换 src 打断上一次 play」的触发条件。
+// 早先这份夹具漏了 spawn，第二次 playSegment 因 !seg 直接 return，
+// 于是「连续换段」从未被模拟，AbortError 也就永远抓不到。
 const SEGMENTS = [
   { stage: 'env', file: 'segments/env.mp4' },
+  { stage: 'spawn', file: 'segments/spawn.mp4' },
   { stage: 'mounting', file: 'segments/mounting.mp4' },
   { stage: 'ready', file: 'segments/ready.mp4' },
 ]
@@ -282,3 +326,55 @@ test('分段播放器：关闭动画时直接收尾，不创建 video', async ()
     env.restore()
   }
 })
+
+test('分段播放器：env→spawn 快速连发（换 src 打断 play）不得报「主题无法播放」', async () => {
+  // 2026-10-17 的实机报障：启动时 publishStage('env') 与 ('spawn') 几乎同一 tick
+  // 到达，playSegment 连续换两次 src；env 的 play() promise 以 AbortError 拒绝，
+  // 旧代码 `video.play().catch(mediaError)` 把它当致命错误 → 整段动画被跳过并
+  // 显示「主题无法播放」。
+  const { env, statusHandlers } = await boot()
+  try {
+    const v = env.videos.at(0) ?? null
+    statusHandlers[0]({ phase: 'loading', stage: 'env' })
+    // 不 await：模拟同一 tick 内下发下一个阶段
+    statusHandlers[0]({ phase: 'loading', stage: 'spawn' })
+    await flush()
+    // 关键断言：没有触发收尾（mediaError -> stopAnimation -> finishStartup）
+    assert.equal(env.calls.finish, 0, 'AbortError 不应让启动动画提前收尾')
+    // 且视频仍在播（没被 releaseMedia 清掉）
+    assert.ok(env.videos.length >= 1, 'video 元素不应被释放')
+    const last = env.videos.at(-1)
+    assert.equal(last?.paused, false, '换段后应当继续播放')
+  } finally {
+    env.restore()
+  }
+})
+
+test('分段播放器：陈旧段事件不得替新段解绑兜底（按 epoch 丢弃）', async () => {
+  // 场景：env 已换到 spawn，此时 env 的迟到 loadedmetadata 仍会触发。
+  // 若不加 epoch 校验，回调会用**新段**的 duration/loop 去操作 watchdog，
+  // 等于让上一段的事件替新段做决定。
+  //
+  // 判据不能是「15s 兜底还在」——新段真的播起来之后，onSegPlaying 本就会清掉它
+  // （那是设计）。所以这里改为断言：陈旧事件不会造成任何状态变化，
+  // 即 curStage 仍是 spawn、且没有触发收尾。
+  const { env, statusHandlers, calls } = await boot()
+  try {
+    statusHandlers[0]({ phase: 'loading', stage: 'env' })
+    statusHandlers[0]({ phase: 'loading', stage: 'spawn' })
+    await flush()
+    const v = env.videos.at(-1)
+    const before = env.pendingDelays().slice().sort()
+    v.emit('loadedmetadata')   // env 的迟到事件
+    v.emit('playing')          // 旧段的迟到 playing
+    await flush()
+    const after = env.pendingDelays().slice().sort()
+    // 陈旧事件不应新增任何定时器（尤其是 duration+10s 那种）
+    assert.deepEqual(after, before, '陈旧事件不应改动定时器状态')
+    assert.equal(calls.finish, 0, '陈旧事件不应导致收尾')
+    assert.equal(v.paused, false, '播放不应被打断')
+  } finally {
+    env.restore()
+  }
+})
+
