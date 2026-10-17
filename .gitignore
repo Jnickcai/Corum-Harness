@@ -71,5 +71,13 @@ packages/desktop/dist/
 # 桌面壳打包产物（tsdown 输出的 main.js，不是源码；2026-10-08 实测误入 git 历史）
 packages/desktop/main.js
 
-# 启动动画制作工具（本地调试用，不进版本库——渲染出的 MP4 在 assets/ 里）
+# 启动动画制作工具（本地调试用，不进版本库——渲染产物在 assets/ 里）
 packages/desktop/startup-theme-remotion/
+
+# 分段启动动画（内置默认主题，随包分发）——**必须进版本库**。
+# 生成方式见 packages/desktop/startup-theme-remotion/，但该项目本身是本地调试用的，
+# 所以产物提交、源码不提交；改动动画时重跑 `pnpm build:all` 再提交这些 MP4。
+# 可导入的独立主题包（供分享给他人导入）是 assets/startup-segments.zip ——
+# 它与上面内置的 5 个 MP4 内容重复（约 17MB），且 `pnpm pack:theme` 可随时重生成，
+# 故作为构建产物不进库。
+packages/desktop/assets/startup-segments.zip
