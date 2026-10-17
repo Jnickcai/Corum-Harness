@@ -179,7 +179,10 @@ describe('B. 门禁不得放宽——未合并一律仍判 false', () => {
     corumGit(repo, ['merge', '--no-ff', '-m', 'merge wt', branch])
     reclaimBranch(repo, entry)
     // 快照被抹掉（模拟 2026-09-20 之前落盘的存量条目）：机制无从证明，必须保守判失败。
-    const legacy: CorumWorktreeEntry = { ...entry, tip: undefined }
+    // exactOptionalPropertyTypes 下 `tip?: string` 不接受显式 `undefined` ⇒ 解构「去掉」该字段
+    // 表达同一现场（没有 tip 快照）；取值路径只读 `entry.tip`，两者等价。
+    const { tip: _tip, ...withoutTip } = entry
+    const legacy: CorumWorktreeEntry = withoutTip
     expect(corumEntryIntegrated(repo, legacy)).toBe(false)
     expect(corumIntegrationTruth(repo, [legacy]).integrated).toBe(false)
   })
@@ -226,7 +229,9 @@ describe('D. 快照落点——删分支之前必须先记 tip', () => {
     const childTip = commitInWorktree(worktree, 'DEL-30.txt')
     corumGit(repo, ['merge', '--no-ff', '-m', 'merge wt', branch])
     // 调用方没快照过（存量路径）：清理函数必须补上，否则删完就没证据了。
-    const before: CorumWorktreeEntry = { ...entry, tip: undefined }
+    // 同上：`tip?: string` 在 exactOptionalPropertyTypes 下用「去掉字段」表达「没有快照」。
+    const { tip: _noTip, ...untipped } = entry
+    const before: CorumWorktreeEntry = untipped
     expect(corumCleanupWorktree(repo, before, { force: false })).toBe(true)
     expect(branchExists(repo, branch)).toBe(false)
     expect(before.tip).toBe(childTip) // 删分支前记下的快照

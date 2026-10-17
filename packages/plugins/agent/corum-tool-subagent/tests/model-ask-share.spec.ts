@@ -32,6 +32,7 @@ import {
   type CorumDelegationPolicyState,
   type CorumModelAskChannel,
   type CorumModelAskOutcome,
+  type CorumRoute,
 } from '../src/model-ask-run.ts'
 import type { CorumModelFailureFacts } from '../src/model-ask.ts'
 
@@ -43,9 +44,9 @@ afterEach(() => {
 function makeState(): CorumDelegationPolicyState {
   const overrides = new Map<string, unknown>()
   return {
-    setModelOverride: (sessionId, route) => { overrides.set(sessionId, route) },
-    clearModelOverride: (sessionId) => { overrides.delete(sessionId) },
-    modelOverrideOf: (sessionId) => overrides.get(sessionId) as never,
+    setModelOverride: (sessionId: string, route: CorumRoute) => { overrides.set(sessionId, route) },
+    clearModelOverride: (sessionId: string) => { overrides.delete(sessionId) },
+    modelOverrideOf: (sessionId: string) => overrides.get(sessionId) as never,
   } as unknown as CorumDelegationPolicyState
 }
 
