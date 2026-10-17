@@ -37,7 +37,7 @@
   },
   "scripts": {
     "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false",
     "test": "vitest run"
   },
   "dependencies": {
@@ -61,6 +61,7 @@
   "devDependencies": {
     "@corum/corum-ui-conversation": "workspace:*",
     "@tsdown/css": "^0.22.14",
+    "@types/node": "^22.20.0",
     "@types/react": "~18.3.31",
     "@types/react-dom": "~18.3.0",
     "tsdown": "^0.22.2",
