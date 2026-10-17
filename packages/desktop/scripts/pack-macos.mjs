@@ -1169,6 +1169,25 @@ async function main() {
   await assertUniformDshVersions()
   await copyDesktopArtifacts()
   await materializeSymlinks(join(HOST_DIR, 'node_modules'))
+
+  /**
+   * 写构建渠道标记，供主进程判断「这是正式发布产物还是本地构建」。
+   *
+   * 为什么要它：本地包与线上包**版本号完全相同**（都读 package.json，而版本号由
+   * release.mjs 严格校验并写台账，不能为构建期区分而篡改）。没有这个标记，界面上
+   * 就分不出手上这个包是哪来的 —— 2026-10-17 用户明确要求区分。
+   *
+   * 判据取自「谁来跑这个脚本」：
+   *   - CI（GitHub Actions）里带 `CI=true` 且由 release.yml 触发 ⇒ release
+   *   - 本地 `pack:host` / `corum-instance.sh update` ⇒ local
+   * 也可用 `CORUM_BUILD_CHANNEL` 显式覆盖（发布流水线若换环境仍然可控）。
+   */
+  const channel = process.env.CORUM_BUILD_CHANNEL?.trim()
+    || (process.env.CI === 'true' && process.env.GITHUB_ACTIONS === 'true' ? 'release' : 'local')
+  // 写进 host/ 内部：`build/host` 被 electron-builder 整体映射为 Resources/host，
+  // 所以这个文件最终落在 Resources/host/build-channel，主进程从那里读。
+  await writeFile(join(HOST_DIR, 'build-channel'), `${channel}\n`)
+  console.log(`[pack-macos] build channel = ${channel}`)
   await smokeBridge()
   console.log('[pack-macos] host runtime staged at', HOST_DIR)
   await buildApp()
