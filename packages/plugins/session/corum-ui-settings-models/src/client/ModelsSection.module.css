@@ -592,6 +592,22 @@
   border: 1px solid var(--corum-glass-border);
   border-radius: 10px;
 }
+/** 「更多供应商」展开按钮：与品牌格同宽，作为它的附属动作而非独立按钮。 */
+.inlineLink {
+  align-self: flex-start;
+  margin-top: calc(-2px * var(--corum-density-scale, 1));
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  color: var(--dsw-alias-label-secondary, rgba(0, 0, 0, 0.55));
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.inlineLink:hover {
+  color: var(--dsw-alias-label-primary, #1c2333);
+}
 .brandCell {
   display: inline-flex;
   align-items: center;

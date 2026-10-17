@@ -2,73 +2,222 @@
  * 供应商品牌徽标：文字缩写 + 品牌色（方案 A，对齐设计稿主页/向导）。
  * dsh 无品牌元数据，所以按 provider route id / settingsNs 映射到 corum 品牌表。
  * 自定义供应商给默认 cpu 图标（返回 undefined，调用方渲染 IconCpu）。
+ *
+ * ## 双语显示名
+ *
+ * 供应商名是**产品名词**，不是界面文案：它不能进 `locales.ts` 的键值字典
+ * （那需要为每家供应商手写一个键，等于又建一份自维护清单），而应随名称一起携带
+ * 多语言取值。所以 `name` 用官方的 `LocalizedText` 形态（`{ en, zh }`），由
+ * `brandNameOf()` 按当前语言解析（本仓 locale 包是 0.1.5-rc.3，未提供 resolveText）。
+ *
+ * 未提供中文的品牌（海外厂商）只写 `en`，中文界面下自然落到英文——这比造一个
+ * 生硬音译更符合实际用法。
  */
 
 import type { ReactNode } from 'react'
 import styles from './ModelsSection.module.css'
 
+/** 供应商显示名：单语字符串，或 `{ en, zh }` 多语言映射（官方 LocalizedText 形态）。 */
+export interface BrandName {
+  readonly en: string
+  readonly [locale: string]: string
+}
+
 export interface Brand {
-  /** 显示名（中文优先）。 */
-  name: string
+  /** 显示名；多语言用 `{ en, zh }`。 */
+  name: BrandName
   /** 徽标文字（缩写/单字）。 */
   mark: string
   /** 品牌色（hex；token 体系外的固定品牌资产，属设计稿既定值）。 */
   color: string
 }
 
+/** 只给英文的简写（海外厂商不造中文音译）。 */
+const en = (text: string): BrandName => ({ en: text })
+
+/** 中英双语。 */
+const both = (en_: string, zh: string): BrandName => ({ en: en_, zh })
+
 /** provider route id / 关键字 → 品牌。匹配用 includes 小写。 */
 const BRANDS: ReadonlyArray<readonly [string, Brand]> = [
-  ['deepseek', { name: 'DeepSeek', mark: 'DS', color: '#4D6BFE' }],
-  ['qwen', { name: '通义千问', mark: '千', color: '#FF6A00' }],
-  ['zai', { name: '智谱', mark: 'GLM', color: '#3B5BFD' }],
-  ['glm', { name: '智谱', mark: 'GLM', color: '#3B5BFD' }],
-  ['kimi-coding', { name: 'Kimi Code', mark: 'K', color: '#1A1A1A' }],
-  ['moonshot', { name: '月之暗面', mark: 'K', color: '#1A1A1A' }],
-  ['kimi', { name: '月之暗面', mark: 'K', color: '#1A1A1A' }],
-  ['minimax', { name: 'MiniMax', mark: 'M', color: '#6C5CE7' }],
-  ['baidu', { name: '百度文心', mark: '文', color: '#2932E1' }],
-  ['wenxin', { name: '百度文心', mark: '文', color: '#2932E1' }],
-  ['spark', { name: '讯飞星火', mark: '星', color: '#1E80FF' }],
-  ['xfyun', { name: '讯飞星火', mark: '星', color: '#1E80FF' }],
-  ['doubao', { name: '字节豆包', mark: '豆', color: '#325AB4' }],
-  ['xiaomi', { name: '小米', mark: 'MI', color: '#FF6900' }],
-  ['anthropic', { name: 'Anthropic', mark: 'A', color: '#D97757' }],
-  ['openai', { name: 'OpenAI', mark: '✦', color: '#10A37F' }],
-  ['google', { name: 'Google', mark: 'G', color: '#4285F4' }],
-  ['openrouter', { name: 'OpenRouter', mark: 'OR', color: '#6366F1' }],
-  ['xai', { name: 'xAI', mark: 'X', color: '#1A1A1A' }],
-  ['mistral', { name: 'Mistral', mark: 'M', color: '#FF7000' }],
-  ['ollama', { name: 'Ollama', mark: '🦙', color: '#22C55E' }],
-  ['groq', { name: 'Groq', mark: 'Q', color: '#F55036' }],
-  ['bedrock', { name: 'AWS Bedrock', mark: 'B', color: '#FF9900' }],
-  ['azure', { name: 'Azure', mark: 'Az', color: '#0078D4' }],
+  ['deepseek', { name: both('DeepSeek', '深度求索'), mark: 'DS', color: '#4D6BFE' }],
+  ['qwen-token-plan', { name: both('Alibaba Bailian', '阿里百炼'), mark: '百', color: '#FF6A00' }],
+  ['qwen', { name: both('Qwen', '通义千问'), mark: '千', color: '#FF6A00' }],
+  ['zai', { name: both('Z.ai', '智谱'), mark: 'GLM', color: '#3B5BFD' }],
+  ['glm', { name: both('GLM', '智谱'), mark: 'GLM', color: '#3B5BFD' }],
+  ['moonshot', { name: both('Moonshot', '月之暗面'), mark: 'K', color: '#1A1A1A' }],
+  ['kimi-coding', { name: both('Kimi Code', 'Kimi Code'), mark: 'K', color: '#1A1A1A' }],
+  ['kimi', { name: both('Kimi', '月之暗面'), mark: 'K', color: '#1A1A1A' }],
+  ['minimax', { name: both('MiniMax', 'MiniMax'), mark: 'M', color: '#6C5CE7' }],
+  ['volcengine', { name: both('Volcengine Ark', '火山方舟'), mark: '火', color: '#325AB4' }],
+  ['volc', { name: both('Volcengine Ark', '火山方舟'), mark: '火', color: '#325AB4' }],
+  ['xiaomi', { name: both('Xiaomi', '小米'), mark: 'MI', color: '#FF6900' }],
+  ['anthropic', { name: en('Anthropic'), mark: 'A', color: '#D97757' }],
+  ['openai', { name: en('OpenAI'), mark: '✦', color: '#10A37F' }],
+  ['google', { name: en('Google'), mark: 'G', color: '#4285F4' }],
+  ['openrouter', { name: en('OpenRouter'), mark: 'OR', color: '#6366F1' }],
+  ['xai', { name: en('xAI'), mark: 'X', color: '#1A1A1A' }],
+  ['mistral', { name: en('Mistral'), mark: 'M', color: '#FF7000' }],
+  ['ollama', { name: en('Ollama'), mark: '🦙', color: '#22C55E' }],
+  ['groq', { name: en('Groq'), mark: 'Q', color: '#F55036' }],
+  ['bedrock', { name: en('AWS Bedrock'), mark: 'B', color: '#FF9900' }],
+  ['azure', { name: en('Azure'), mark: 'Az', color: '#0078D4' }],
 ]
 
-/** 常用供应商（配置向导品牌网格展示，国内全部 + 国际常用，按此顺序）。 */
-export const COMMON_PROVIDERS: ReadonlyArray<Brand & { id: string }> = [
-  { id: 'deepseek', name: 'DeepSeek', mark: 'DS', color: '#4D6BFE' },
-  { id: 'qwen', name: '通义千问', mark: '千', color: '#FF6A00' },
-  { id: 'zai', name: '智谱', mark: 'GLM', color: '#3B5BFD' },
-  { id: 'moonshotai', name: '月之暗面', mark: 'K', color: '#1A1A1A' },
-  { id: 'kimi-coding', name: 'Kimi Code', mark: 'K', color: '#1A1A1A' },
-  { id: 'minimax', name: 'MiniMax', mark: 'M', color: '#6C5CE7' },
-  { id: 'baidu', name: '百度文心', mark: '文', color: '#2932E1' },
-  { id: 'spark', name: '讯飞星火', mark: '星', color: '#1E80FF' },
-  { id: 'doubao', name: '字节豆包', mark: '豆', color: '#325AB4' },
-  { id: 'anthropic', name: 'Anthropic', mark: 'A', color: '#D97757' },
-  { id: 'openai', name: 'OpenAI', mark: '✦', color: '#10A37F' },
-  { id: 'google', name: 'Google', mark: 'G', color: '#4285F4' },
-  { id: 'openrouter', name: 'OpenRouter', mark: 'OR', color: '#6366F1' },
+/**
+ * Providers kept at the top of the wizard's brand grid, in this order.
+ *
+ * **This is a presentation preference, never a whitelist.** The set of providers
+ * the user may add comes from pi-ai's own catalog, surfaced through the host's
+ * provider directory (`state.rows`) — see {@link providerChoices}. This list only
+ * decides which of those appear above the "更多" fold, so a commonly used route is
+ * one click away instead of buried among three dozen.
+ *
+ * A route in here that pi-ai no longer ships simply stops matching and drops out,
+ * and a provider pi-ai adds appears under "更多" automatically. That asymmetry is
+ * the point: forgetting to update this list degrades presentation, never
+ * functionality.
+ */
+const PINNED: readonly string[] = [
+  'deepseek',
+  // 阿里百炼：token plan 通道（内含千问/DeepSeek/GLM/Kimi/MiniMax 五家 18 个模型）。
+  // 「千问」只是其中一族，所以显示名用平台名而非模型名。
+  'qwen-token-plan-cn',
+  'zai',
+  'moonshotai',
+  'kimi-coding',
+  'minimax',
+  // 火山方舟：方舟平台的豆包模型入口（第三方通道，见 CUSTOM_TEMPLATES）。
+  'volcengine-ark',
+  'anthropic',
+  'openai',
+  'google',
 ]
+
+/**
+ * Resolve a {@link BrandName} against an active locale id.
+ *
+ * Mirrors the locale service's own fallback rule: try the exact id, then its
+ * language subtag, then English. The installed `dsh-client-locale` (0.1.5-rc.3)
+ * exposes `getLocale().active` but not a `resolveText` helper, so the two-line
+ * chain lives here instead of reaching for an API this version does not ship.
+ *
+ * @param name - the brand's multilingual name.
+ * @param active - active locale id, e.g. `zh-CN` or `en`.
+ * @returns the display string in that language, falling back to English.
+ */
+export function brandNameOf(name: BrandName, active: string): string {
+  const id = active.toLowerCase()
+  return name[id] ?? name[id.split('-')[0] ?? ''] ?? name.en
+}
+
+/**
+ * Third-party channels that pi-ai does not ship a route for.
+ *
+ * They are **not** pi-ai providers, so they must not pretend to be one: the wizard
+ * prefills a custom route (protocol + base URL) from these instead. Keeping them in
+ * a separate list is what makes the distinction honest — `providerChoices` unions
+ * them with the live directory, but nothing here can ever shadow or replace an
+ * upstream route, and removing a vendor is a one-line deletion rather than a hunt
+ * through a 13-line "official" list.
+ *
+ * 火山方舟（Volcengine Ark）是豆包模型的唯一来源，pi-ai 39 家 route 里没有任何一个
+ * 指向 volces，所以它只有走自定义通道这一条路。
+ */
+export interface CustomTemplate {
+  /** Route id the wizard writes for the custom provider. */
+  readonly id: string
+  readonly name: BrandName
+  readonly mark: string
+  readonly color: string
+  /** Wire protocol the endpoint speaks. */
+  readonly api: 'openai-completions' | 'anthropic-messages'
+  /** Base URL prefilled in the custom-provider form. */
+  readonly baseUrl: string
+  /** Seed model ids, so the user is not staring at an empty list. */
+  readonly models: readonly string[]
+}
+
+/** Third-party channels offered alongside the pi-ai directory. */
+export const CUSTOM_TEMPLATES: readonly CustomTemplate[] = [
+  {
+    id: 'volcengine-ark',
+    name: both('Volcengine Ark', '火山方舟'),
+    mark: '火',
+    color: '#325AB4',
+    api: 'openai-completions',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    models: ['doubao-seed-1-6-250615', 'doubao-seed-1-6-flash-250615'],
+  },
+]
+
+/** One choice in the wizard's brand grid. */
+export interface ProviderChoice extends Brand {
+  /** The provider route key the wizard writes. */
+  readonly id: string
+}
+
+/**
+ * Turn the live provider directory into brand-grid choices.
+ *
+ * @param rows - `state.rows`, i.e. pi-ai's configurable-provider directory joined
+ *   with whatever routes are currently registered.
+ * @returns pinned providers first (in {@link PINNED} order), then the rest
+ *   alphabetically. Every row appears exactly once.
+ */
+export function providerChoices(rows: ReadonlyArray<{ provider: string; displayName: string }>): ProviderChoice[] {
+  const byId = new Map<string, ProviderChoice>()
+  // Third-party channels first: they are never in the directory, and a same-id
+  // upstream route (should pi-ai ever ship one) wins by overwriting below.
+  for (const t of CUSTOM_TEMPLATES) byId.set(t.id, { id: t.id, name: t.name, mark: t.mark, color: t.color })
+  for (const row of rows) {
+    // Skip the directory's probe pseudo-route: it exists to name a schema node, not
+    // to be configured. Mirrors the filter the models list already applies.
+    if (row.provider.startsWith('\u0000')) continue
+    byId.set(row.provider, {
+      ...(brandOf(row.provider) ?? { name: { en: row.displayName }, mark: initialOf(row.displayName), color: '#6B7280' }),
+      id: row.provider,
+    })
+  }
+  const rank = new Map(PINNED.map((id, i) => [id, i]))
+  return [...byId.values()].sort((a, b) => {
+    const ra = rank.get(a.id)
+    const rb = rank.get(b.id)
+    if (ra !== undefined && rb !== undefined) return ra - rb
+    if (ra !== undefined) return -1
+    if (rb !== undefined) return 1
+    // Sort by the English name: it is present on every entry and keeps the order
+    // identical across languages, so switching locale never reshuffles the grid.
+    return a.name.en.localeCompare(b.name.en)
+  })
+}
+
+/** Providers the wizard shows above the fold. */
+export function isPinnedProvider(id: string): boolean {
+  return PINNED.includes(id)
+}
+
+/** Last-resort monogram for a provider with no brand entry. */
+function initialOf(name: string): string {
+  const first = [...name.trim()][0]
+  return first === undefined ? '?' : first.toUpperCase()
+}
 
 /** 按 provider route id / settingsNs 推品牌。未知返回 undefined（自定义默认图标）。 */
 export function brandOf(key: string | undefined): Brand | undefined {
   if (key === undefined) return undefined
   const k = key.toLowerCase()
-  for (const [kw, brand] of BRANDS) {
-    if (k.includes(kw)) return brand
+  // Longest keyword wins, so `kimi-coding` cannot be swallowed by the shorter
+  // `kimi` — and the result no longer depends on array order. This was a real bug
+  // (it made Kimi Code display as 月之暗面) that only passed review because the
+  // longer entry happened to sit first.
+  let best: readonly [string, Brand] | undefined
+  for (const entry of BRANDS) {
+    const [kw] = entry
+    if (!k.includes(kw)) continue
+    if (best === undefined || kw.length > best[0].length) best = entry
   }
-  return undefined
+  return best?.[1]
 }
 
 /** 品牌徽标（品牌色方块 + 缩写）。未知品牌调用方传 fallback（IconCpu）。 */

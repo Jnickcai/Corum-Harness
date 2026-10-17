@@ -14,12 +14,18 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { deriveKeyRef, messageOf } from './store.ts'
 import type { ModelsSettingsStore, ModelsWire } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
-import { COMMON_PROVIDERS, BrandLogo, brandOf } from './brands.tsx'
-import type { Brand } from './brands.tsx'
+import { BrandLogo, brandNameOf, brandOf, CUSTOM_TEMPLATES, isPinnedProvider, providerChoices } from './brands.tsx'
+import type { Brand, CustomTemplate } from './brands.tsx'
 
-/** 按 provider route id 找品牌徽标（兼容 deepseek-official 等官方路由 id）。 */
+/**
+ * Brand badge for a provider route id (also covers ids like `deepseek-official`).
+ *
+ * Purely cosmetic: the provider's *existence* comes from the directory, this only
+ * decides the logo. An unknown route falls through to `brandOf` and then to the
+ * default icon.
+ */
 function brandOfProvider(provider: string): Brand | undefined {
-  return COMMON_PROVIDERS.find(b => b.id === provider) ?? brandOf(provider)
+  return brandOf(provider)
 }
 import { useConnTest } from './useConnTest.ts'
 import { catalogFallbackModels, isNoDiscoveryError, wizardProfilePath } from './catalog-fallback.ts'
@@ -33,7 +39,7 @@ type Snapshot = ReturnType<ModelsSettingsStore['store']['getSnapshot']>
 
 type Path = 'pick' | 'custom'
 
-export function ConfigureWizard({ state, api, schema, onBack, onChanged, presetProvider }: {
+export function ConfigureWizard({ state, api, schema, onBack, onChanged, presetProvider, activeLocale }: {
   state: Snapshot
   api: ModelsWire
   schema: SettingsSchemaOperations
@@ -41,8 +47,20 @@ export function ConfigureWizard({ state, api, schema, onBack, onChanged, presetP
   onChanged: () => void
   /** 供应商详情「添加模型」入口：预选该供应商并直接进侦测/选模型。 */
   presetProvider?: string | undefined
+  /** Active locale id, for bilingual provider names. */
+  activeLocale: () => string
+  /** 品牌格里选中第三方模板时回调（切到自定义表单并预填）。 */
+  onPickTemplate?: (template: CustomTemplate) => void
+  /** 待预填的第三方模板（自定义表单用）。 */
+  template?: CustomTemplate | undefined
 }): ReactNode {
   const [path, setPath] = useState<Path>('pick')
+  /** 选中第三方模板（非 pi-ai route）时要预填到自定义表单里。 */
+  const [template, setTemplate] = useState<CustomTemplate | undefined>(undefined)
+  const pickTemplate = (t: CustomTemplate): void => {
+    setTemplate(t)
+    setPath('custom')
+  }
   return (
     <div className={styles['section']}>
       <BackRow onBack={onBack} />
@@ -63,8 +81,8 @@ export function ConfigureWizard({ state, api, schema, onBack, onChanged, presetP
         </button>
       </span>
       {path === 'pick'
-        ? <PickPath state={state} api={api} schema={schema} onChanged={onChanged} onBack={onBack} presetProvider={presetProvider} />
-        : <CustomPath state={state} api={api} schema={schema} onChanged={onChanged} onBack={onBack} />}
+        ? <PickPath state={state} api={api} schema={schema} onChanged={onChanged} onBack={onBack} presetProvider={presetProvider} activeLocale={activeLocale} onPickTemplate={pickTemplate} />
+        : <CustomPath state={state} api={api} schema={schema} onChanged={onChanged} onBack={onBack} activeLocale={activeLocale} template={template} />}
     </div>
   )
 }
@@ -78,6 +96,12 @@ interface DetectProps {
   onChanged: () => void
   onBack: () => void
   presetProvider?: string | undefined
+  /** Active locale id, for bilingual provider names. */
+  activeLocale: () => string
+  /** 品牌格里选中第三方模板时回调（切到自定义表单并预填）。 */
+  onPickTemplate?: (template: CustomTemplate) => void
+  /** 待预填的第三方模板（自定义表单用）。 */
+  template?: CustomTemplate | undefined
 }
 
 function useDetect(api: ModelsWire): {
@@ -128,8 +152,13 @@ function useDetect(api: ModelsWire): {
 
 /* ── 路径 A：选择供应商 ── */
 
-function PickPath({ state, api, schema, onChanged, onBack, presetProvider }: DetectProps): ReactNode {
-  const [provider, setProvider] = useState(presetProvider ?? COMMON_PROVIDERS[0]?.id ?? 'deepseek')
+function PickPath({ state, api, schema, onChanged, onBack, presetProvider, activeLocale, onPickTemplate }: DetectProps): ReactNode {
+  // 可选供应商来自 pi-ai 目录（state.rows），不是任何自维护清单。
+  const choices = providerChoices(state.rows.map(row => row.entry))
+  // 目录有 30+ 家时整格铺开会淹没常用项；默认只显示常用，其余点开。
+  const [showAllProviders, setShowAllProviders] = useState(false)
+  const hiddenProviderCount = choices.filter(b => !isPinnedProvider(b.id)).length
+  const [provider, setProvider] = useState(presetProvider ?? choices[0]?.id ?? 'deepseek')
   const [apiKey, setApiKey] = useState('')
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [customId, setCustomId] = useState('')
@@ -139,7 +168,8 @@ function PickPath({ state, api, schema, onChanged, onBack, presetProvider }: Det
   const conn = useConnTest(api)
   void conn
 
-  const brand = COMMON_PROVIDERS.find(b => b.id === provider)
+  const brand = choices.find(b => b.id === provider)
+  const lockedBrand = brandOfProvider(provider)
   const taken = state.rows.map(r => r.entry.provider)
   void taken
 
@@ -244,18 +274,31 @@ function PickPath({ state, api, schema, onChanged, onBack, presetProvider }: Det
           <div className={styles['fieldCol']}>
             <span className={styles['fieldLabel']}>供应商</span>
             <div className={styles['brandGrid']}>
-              {COMMON_PROVIDERS.map(b => (
+              {choices.filter(b => showAllProviders || isPinnedProvider(b.id)).map(b => (
                 <button
                   key={b.id}
                   type="button"
                   className={`${styles['brandCell']} ${b.id === provider ? styles['brandCellActive'] as string : ''}`}
-                  onClick={() => { setProvider(b.id) }}
+                  onClick={() => {
+                    const tpl = CUSTOM_TEMPLATES.find(t => t.id === b.id)
+                    if (tpl !== undefined) { onPickTemplate?.(tpl); return }
+                    setProvider(b.id)
+                  }}
                 >
                   <BrandLogo brand={b} size={20} />
-                  {b.name}
+                  {brandNameOf(b.name, activeLocale())}
                 </button>
               ))}
             </div>
+            {!showAllProviders && hiddenProviderCount > 0 && (
+              <button
+                type="button"
+                className={styles['inlineLink']}
+                onClick={() => { setShowAllProviders(true) }}
+              >
+                更多供应商（{hiddenProviderCount}）…
+              </button>
+            )}
           </div>
         ) : (
           /* 添加模型入口：供应商已锁定，只读显示，不再让重选。 */
@@ -263,7 +306,7 @@ function PickPath({ state, api, schema, onChanged, onBack, presetProvider }: Det
             <span className={styles['fieldLabel']}>供应商</span>
             <span className={styles['lockedProvider']}>
               <BrandLogo brand={brandOfProvider(provider)} size={22} />
-              <span className={styles['lockedProviderName']}>{brandOfProvider(provider)?.name ?? provider}</span>
+              <span className={styles['lockedProviderName']}>{lockedBrand === undefined ? provider : brandNameOf(lockedBrand.name, activeLocale())}</span>
             </span>
           </div>
         )}
@@ -319,12 +362,12 @@ function PickPath({ state, api, schema, onChanged, onBack, presetProvider }: Det
 
 /* ── 路径 B：自定义供应商 ── */
 
-function CustomPath({ state, api, schema, onChanged, onBack }: DetectProps): ReactNode {
-  const [protocol, setProtocol] = useState('openai-completions')
-  const [baseURL, setBaseURL] = useState('')
+function CustomPath({ state, api, schema, onChanged, onBack, activeLocale, template }: DetectProps): ReactNode {
+  const [protocol, setProtocol] = useState<string>(template?.api ?? 'openai-completions')
+  const [baseURL, setBaseURL] = useState(template?.baseUrl ?? '')
   const [apiKey, setApiKey] = useState('')
-  const [route, setRoute] = useState('')
-  const [displayName, setDisplayName] = useState('')
+  const [route, setRoute] = useState(template?.id ?? '')
+  const [displayName, setDisplayName] = useState(template === undefined ? '' : brandNameOf(template.name, activeLocale()))
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [customId, setCustomId] = useState('')
   const [saving, setSaving] = useState(false)

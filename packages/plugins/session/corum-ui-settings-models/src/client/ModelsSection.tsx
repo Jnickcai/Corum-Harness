@@ -35,6 +35,8 @@ export interface ModelsSectionInjected {
   api: ModelsWire
   schema: SettingsSchemaOperations
   t: (key: keyof typeof en) => string
+  /** Active locale id (e.g. `zh-CN`), read on render so names follow the language. */
+  activeLocale: () => string
 }
 
 type ModelsChildSlots = 'settings.models.provider-card' | 'settings.models.footer'
@@ -53,16 +55,16 @@ type View =
 
 /** The Models section content column (jump-page router). */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, schema, t, renderSlot } = props
+  const { controller, useSnapshot, api, schema, t, activeLocale, renderSlot } = props
   if (
     controller === undefined || useSnapshot === undefined || api === undefined
-    || schema === undefined || t === undefined
+    || schema === undefined || t === undefined || activeLocale === undefined
   ) return null
-  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} renderSlot={renderSlot} />
+  return <Loaded injected={{ controller, useSnapshot, api, schema, t, activeLocale }} renderSlot={renderSlot} />
 }
 
 function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
-  const { controller, api, schema, t } = injected
+  const { controller, api, schema, t, activeLocale } = injected
   const state = injected.useSnapshot(s => s)
   const [view, setView] = useState<View>({ kind: 'home' })
 
@@ -88,6 +90,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
         schema={schema}
         onBack={toHome}
         onChanged={reload}
+        activeLocale={activeLocale}
       />
     )
   }
