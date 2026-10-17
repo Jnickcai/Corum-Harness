@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../../..",
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "paths": {
+      "@deepseek-ai/dsh-tools": ["./src/index.ts"],
+      "@deepseek-ai/dsh-tools/invariant": ["./src/invariant.ts"],
+      "@deepseek-ai/dsh-tools/src/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "tests"]
+}

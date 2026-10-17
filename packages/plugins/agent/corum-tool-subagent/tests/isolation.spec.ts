@@ -290,7 +290,9 @@ describe('corumMarkSettled — fork（corum）subagent/end settle 联动', () =>
   })
 
   it('runId 未命中时 childId 回退匹配唯一 active（continuable 登记的是 childId）', () => {
-    const entries = [entry({ runId: undefined })]
+    // 夹具语义 = 「没有绑定 runId」。exactOptionalPropertyTypes 下 `runId?: string` 不接受
+    // 显式 `undefined`，所以用「不传」表达同一现场（`corumMarkSettled` 按值比较，两者等价）。
+    const entries = [entry()]
     expect(corumMarkSettled(entries, { runId: 'run-unknown', childId: 'child-9' })).toBe(true)
     expect(entries[0].status).toBe('settled')
     expect(entries[0].runId).toBe('run-unknown')
@@ -308,7 +310,8 @@ describe('corumMarkSettled — fork（corum）subagent/end settle 联动', () =>
   })
 
   it('结算回退分支也写 childSessionId（否则浮层工作区行是死行，2026-09-12 真机实测）', () => {
-    const entries = [entry({ runId: undefined })]
+    // 同上：夹具语义 = 「没有绑定 runId」，exactOptionalPropertyTypes 下用「不传」表达。
+    const entries = [entry()]
     expect(corumMarkSettled(entries, { runId: 'run-fb', childId: 'child-fb' })).toBe(true)
     expect(entries[0].runId).toBe('run-fb')
     expect(entries[0].childSessionId).toBe('child-fb')
