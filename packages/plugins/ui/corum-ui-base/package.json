@@ -19,7 +19,7 @@
   },
   "scripts": {
     "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false",
     "test": "vitest run"
   },
   "dependencies": {
