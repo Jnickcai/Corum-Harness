@@ -1,5 +1,5 @@
 /**
- * IssueReporter — corum 的 Issue 提交入口（悬浮按钮 + 提交面板）。
+ * IssueReporter — corum 的 Issue 提交入口（悬浮按钮 + 三视图面板）。
  *
  * 形态照抄通知悬浮按钮（`packages/desktop/src/client/NotificationHost.tsx` 的
  * `drawer-tab`）：56×52、`position: fixed`、`z-index: 9999`、玻璃底 + 描边 + 外阴影、
@@ -9,10 +9,31 @@
  *   ③ 图标用品牌色 token（bell 用 `--dsw-alias-label-secondary`），并在有未提交草稿
  *      时右上角加一个 6px 品牌色圆点。
  *
- * 提交流程是**纯手工**的：不调用任何模型、不发任何网络请求——只把用户填的内容
- * 组装成 GitHub 的 `issues/new` 预填 URL，把该提前搬进剪贴板的东西（正文 / 第一张
- * 截图 / 退化的链接）搬进系统剪贴板，然后交给系统浏览器（`openExternal`）打开。
- * 截图只存在内存（ObjectURL），**不落 localStorage**；落盘的只有草稿三项与环境勾选。
+ * ## 三个视图（`form` | `auth` | `result`）
+ *
+ * 状态机（事件 → 视图）：
+ *   - `form`：默认态。标题/描述/类型/环境信息/截图 chip 都在这里。
+ *   - 首次打开面板且 `authStatus()` 明确返回 `authorized:false` → `auth`；
+ *     点「提交 Issue」但尚未授权 → `auth`（**不提交**）；
+ *     上传阶段收到 `invalid-token` → `auth`（带「授权已失效」提示）；
+ *     `submitIssue` 收到 `invalid-token` → `auth`（本次提交的东西都没落库，
+ *     收回结果卡没有意义；用户从 auth 视图点「取消」会看到那张失败卡，里面有
+ *     「重新授权」按钮）。
+ *   - `auth` 授权成功 → 若从未同意截图托管且当前有截图 ⇒ 回 `form` 并亮出**托管同意卡**；
+ *     否则直接回 `form`。「取消」恒回 `form`。
+ *   - `result`：提交**结束**后由 `submitIssue`/`authStatus` 的返回值决定（成功卡 / 失败卡）。
+ *     关闭面板、「再报一个」、失败卡上的「返回修改」都把它清掉。
+ *
+ * ## 提交流程（`form` 视图的「提交 Issue」）
+ *
+ * ① 授权闸 → ② 托管闸（有截图但从未表态 ⇒ 先弹同意卡，本次不提交）→ ③ 逐张上传
+ * （每张 chip 独立进度，**一张失败不阻断其余**；上传前有 4 MB 体积闸与魔数校验）→
+ * ④ 组装正文（描述 + 环境块 + 只有真正上传成功的图的 `![]()` 行）→
+ * ⑤ `submitIssue(title, body, labels)`（label 由 host 过滤成仓库里真实存在的）。
+ *
+ * 全程不跳浏览器：唯一的外链面是 `window.corumDesktop.openExternal`（设备授权页、
+ * 成功卡上的 issue 页面）。截图只存在内存（ObjectURL），**不落 localStorage**；
+ * 落盘的只有草稿三项 + 环境勾选 + 「已同意截图托管」这一个标记。
  *
  * 为什么环境信息是「只读一行 + 一个勾」而不是可编辑文本框：它是**确定性读取**
  * （应用版本 / dsh 基座版本 / 平台），让用户能改就等于让报障信息可以失真。
@@ -23,9 +44,14 @@ import {
   useCallback, useEffect, useLayoutEffect, useRef, useState,
   type CSSProperties, type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent,
+  type ReactElement,
 } from 'react'
-import { Bug, CircleCheck, CircleX, Image as ImageIcon, X } from 'lucide-react'
+import {
+  Bug, Check, CircleCheck, CircleX, ExternalLink, Image as ImageIcon,
+  LoaderCircle, RefreshCw, ShieldCheck, TriangleAlert, X,
+} from 'lucide-react'
 import { readBridge } from './bridge.ts'
+import type { GithubClient } from './github.ts'
 import css from './IssueReporter.module.css'
 
 /** 贴边位置持久化键（纯 UI 偏好，不参与跨 bundle 共享状态）。 */
@@ -34,8 +60,17 @@ const TAB_KEY = 'corum.issueReporter.tab'
 /** 草稿持久化键（标题/描述/类型/环境勾选；**截图不落盘**）。 */
 const DRAFT_KEY = 'corum.issueReporter.draft'
 
-/** Issue 目标仓库（预填 URL 的 path 段）。 */
+/** 截图托管同意标记键（与草稿键同一命名风格；只写「已同意」这一种值）。 */
+const CONSENT_KEY = 'corum.issueReporter.consent'
+
+/** Issue 目标仓库（**只用于显示**：真正提交到哪由 host 半的 `TARGET_REPO` 决定）。 */
 const REPO_SLUG = 'kukucaiCndy/Corum-Harness'
+
+/** 资产仓库名前缀（与 host 半 `assetRepoName()` 同一份字面量；面板只做显示）。 */
+const ASSETS_REPO_PREFIX = 'corum-issue-assets-'
+
+/** GitHub 的设备授权页（`authStart` 的 `verificationUri` 为空时的兜底）。 */
+const DEVICE_PAGE_URL = 'https://github.com/login/device'
 
 /** 入口按钮宽高（与通知 bell 同规格；面板定位要用到，故提成常量）。 */
 const TAB_WIDTH = 56
@@ -62,8 +97,8 @@ const AXIS_MIN = 72
 /** 截图上限。满了之后粘贴/拖入**直接忽略**：不弹提示、不用警告色、不进通知栏。 */
 const MAX_SHOTS = 6
 
-/** GitHub 的 `issues/new` 预填 URL 长度上限：超过就把正文改走系统剪贴板。 */
-const URL_LIMIT = 8000
+/** 单张截图的上传体积闸（> 4 MB 一律不发上传请求，chip 直接标「过大」）。 */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
 /** 描述框的 placeholder（三行：发生了什么 / 空行 / 复现步骤 + 粘贴提示）。 */
 const DESC_PLACEHOLDER = '发生了什么？\n\n复现步骤 / 期望结果 · 截图直接 Ctrl+V 粘到这里'
@@ -84,7 +119,7 @@ const KIND_LABEL: Record<IssueKind, string> = {
   other: '其他',
 }
 
-/** 类型 → GitHub label（`issues/new?...&labels=`）。 */
+/** 类型 → GitHub label（host 会过滤成仓库里真实存在的标签）。 */
 const KIND_TAG: Record<IssueKind, string> = {
   bug: 'bug',
   feature: 'enhancement',
@@ -115,32 +150,68 @@ interface Shot {
   url: string
 }
 
-/** 剪贴板里现在装的是什么（决定成功态步骤①的文案；`none` = 什么都没搬，不编造）。 */
-type CopiedMode = 'shot-copied' | 'body-copied' | 'link-copied' | 'none'
+/** 授权闸的三态（`unknown` = 还没问过 GitHub，不能当成「未授权」）。 */
+type AuthGate = 'unknown' | 'authorized' | 'unauthorized'
 
-/** 成功态的浏览器打开结果（与剪贴板内容分开记，两条步骤各自如实）。 */
-type OpenOutcome = 'opened' | 'link-copied' | 'failed'
+/** 截图托管表态（`unasked` 只在本机从未同意过时出现；`skipped` 只在本次运行有效）。 */
+type ConsentChoice = 'unasked' | 'accepted' | 'skipped'
 
-/** 成功态。 */
-interface SubmitSuccess {
-  ok: true
-  mode: CopiedMode
-  outcome: OpenOutcome
-  /** 回显的标题。 */
-  title: string
-  /** 最终使用的 URL（退化后可能只带 title，故要留着给「打开 GitHub」再调一次）。 */
-  url: string
+/** 一张截图的上传状态（chip 徽标的 `data-state` 就是它）。 */
+type UploadState = 'idle' | 'uploading' | 'done' | 'failed' | 'toolarge' | 'notimage'
+
+/** 单张截图的上传记录（`done` 带 raw 链接，`failed` 带 host 原文）。 */
+interface ShotUpload {
+  readonly state: UploadState
+  readonly url?: string
+  readonly code?: string
+  readonly message?: string
 }
 
-/** 失败态（内容仍在草稿里，故要留着 URL 给「复制内容并打开」）。 */
-interface SubmitFailure {
-  ok: false
-  message: string
-  url: string
+/** 设备授权会话（`authStart` 的返回 + 本地起始时刻，用于算过期）。 */
+interface AuthSession {
+  readonly deviceCode: string
+  readonly userCode: string
+  readonly verificationUri: string
+  readonly expiresIn: number
+  readonly interval: number
+  readonly startedAt: number
 }
 
-/** 提交结果：`null` = 编辑态（面板显示表单）。 */
-type SubmitResult = SubmitSuccess | SubmitFailure
+/** auth 视图内部的阶段（与视图本身正交）。 */
+type AuthPhase = 'idle' | 'starting' | 'waiting' | 'failed'
+
+/** 失败卡要执行的动作（按 `code` 分档，不允许「只显示错误」）。 */
+type FailureAction = 'reauth' | 'retry' | 'edit' | 'none'
+
+/** 失败卡的内容。 */
+interface FailureView {
+  readonly code: string
+  readonly message: string
+  readonly detail?: string
+  /** 卡片标题（按 code 给的结论，如「授权已失效」）。 */
+  readonly title: string
+  /** 可执行动作。 */
+  readonly action: FailureAction
+  /** 补一句该怎么办（可缺省）。 */
+  readonly hint?: string
+}
+
+/** 成功卡的内容。 */
+interface SuccessView {
+  readonly number: number
+  readonly htmlUrl: string
+  readonly title: string
+  /** 真正进了正文的截图数（0 = 正文不含图片）。 */
+  readonly uploaded: number
+  /** 资产仓库（`已上传` 那句的落点）。 */
+  readonly assetsOwner: string
+  readonly assetsRepo: string
+  /** 正文是否带上了环境块（勾了才算）。 */
+  readonly envIncluded: boolean
+}
+
+/** 提交结果：`null` = 没结果（form 视图自己渲染）。 */
+type SubmitResult = { readonly kind: 'success'; readonly view: SuccessView } | { readonly kind: 'failure'; readonly view: FailureView }
 
 /** 读持久化的贴边位置（异常数据回退缺省值；同通知 bell 的 readBellPosition）。 */
 function readTab(): TabPosition {
@@ -176,6 +247,16 @@ function readDraft(): Draft {
     }
   } catch {
     return EMPTY_DRAFT
+  }
+}
+
+/** 读持久化的托管同意标记（只有「已同意」会落盘；其余一律回 `unasked`）。 */
+function readConsent(): ConsentChoice {
+  if (typeof localStorage === 'undefined') return 'unasked'
+  try {
+    return localStorage.getItem(CONSENT_KEY) === 'accepted' ? 'accepted' : 'unasked'
+  } catch {
+    return 'unasked'
   }
 }
 
@@ -237,10 +318,8 @@ function panelStyle(position: TabPosition, panelHeight: number, viewportHeight: 
 }
 
 /** 从 window 读剪贴板写入口（非 secure context / 老壳下不存在）。 */
-function readClipboard(): { writeText: (text: string) => Promise<void>; write: (items: ClipboardItem[]) => Promise<void> } | undefined {
-  return (navigator as unknown as {
-    clipboard?: { writeText: (text: string) => Promise<void>; write: (items: ClipboardItem[]) => Promise<void> }
-  }).clipboard
+function readClipboard(): { writeText: (text: string) => Promise<void> } | undefined {
+  return (navigator as unknown as { clipboard?: { writeText: (text: string) => Promise<void> } }).clipboard
 }
 
 /**
@@ -260,52 +339,166 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /**
- * 把一张截图写进系统剪贴板。
+ * 把一张截图的 base64 解出前 18 字节，判它是不是四种放行的图片格式之一。
  *
- * 走 `ClipboardItem({'image/png': blob})`：GitHub 的正文框能直接吃图片粘贴。
- * 整个调用用 try/catch 包住——剪贴板在非 secure context 下不可用、或宿主拒绝
- * 写入图片时，调用方要能**如实**降级成 body-copied，而不是假装复制过了。
- * @param blob - 截图原始数据。
- * @returns 是否真的写成功。
+ * 为什么在**上传前**做魔数校验：GitHub 的 Contents API 只认 base64，不会替我们
+ * 挡「其实不是图片」的字节；一张假图片传上去只会变成一个公开的垃圾文件。
+ * 放行集与 host 半的 `ASSET_EXTENSIONS` 对齐：PNG / JPEG / GIF / WEBP。
+ * @param base64 - **不带** `data:` 前缀的 base64。
+ * @returns 认出的格式，或 `null`（不认）。
  */
-async function copyImage(blob: Blob): Promise<boolean> {
-  const clipboard = readClipboard()
-  if (clipboard === undefined || typeof ClipboardItem === 'undefined') return false
+function sniffImageKind(base64: string): 'png' | 'jpeg' | 'gif' | 'webp' | null {
+  let head: Uint8Array
   try {
-    await clipboard.write([new ClipboardItem({ 'image/png': blob })])
-    return true
+    const binary = atob(base64.slice(0, 24)) // 24 个 base64 字符 = 18 字节，够判 WEBP
+    head = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) head[index] = binary.charCodeAt(index)
   } catch {
-    return false
+    return null
+  }
+  const at = (index: number): number => head[index] ?? -1
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return 'png'
+  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return 'jpeg'
+  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x38) return 'gif'
+  if (at(0) === 0x52 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x46 && at(8) === 0x57 && at(9) === 0x45 && at(10) === 0x42 && at(11) === 0x50) return 'webp'
+  return null
+}
+
+/**
+ * 把 Blob 读成**不带 `data:` 前缀**的 base64（host 的 `uploadAsset` 要的就是这个）。
+ * @param blob - 截图数据。
+ * @returns base64，或 `null`（读不出来）。
+ */
+async function readBase64(blob: Blob): Promise<string | null> {
+  return await new Promise<string | null>((resolve) => {
+    const reader = new FileReader()
+    reader.onerror = () => { resolve(null) }
+    reader.onload = () => {
+      const value = reader.result
+      if (typeof value !== 'string') {
+        resolve(null)
+        return
+      }
+      const comma = value.indexOf(',')
+      resolve(comma === -1 ? null : value.slice(comma + 1))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+/**
+ * 按失败码给出**可执行动作**（不允许只显示错误）。
+ *
+ * 分档事实源是 host 半的 `classifyApiFailure/classifyFetchError` 与
+ * `authStatus/authStart` 的失败码；这里只补「用户下一步做什么」，不改写 message。
+ * @param code - host 返回的失败码。
+ * @param message - host 的中文说明（原样显示）。
+ * @param detail - host 附的原文（有就原样显示）。
+ * @returns 失败卡的内容。
+ */
+function failureOf(code: string, message: string, detail?: string): FailureView {
+  const base = detail === undefined ? { code, message } : { code, message, detail }
+  switch (code) {
+    case 'invalid-token':
+      return { ...base, title: '授权已失效', action: 'reauth', hint: 'GitHub 授权已被撤销或过期；重新授权后内容还在草稿里，直接再提交即可。' }
+    case 'rate-limited':
+      return { ...base, title: 'GitHub 限流', action: 'retry', hint: '等上面那条重置时间过去，再点「重试」。' }
+    case 'validation-failed':
+      return { ...base, title: 'GitHub 校验失败', action: 'edit', hint: '上面是 GitHub 的原文；按它改完标题/描述再提交。' }
+    case 'payload-too-large':
+      return { ...base, title: '截图或正文过大', action: 'edit', hint: '删掉几张截图（单张请控制在 4 MB 以内）或精简正文后再提交。' }
+    case 'network-error':
+    case 'timeout':
+      return { ...base, title: '网络不可达', action: 'retry', hint: '检查网络/代理后点「重试」。' }
+    case 'no-client-id':
+    case 'unsupported':
+      return { ...base, title: '运行环境不支持', action: 'none', hint: '这是构建/环境问题（host 半边没启用，或 OAuth client_id 未配置），重试不会解决——请更新或重装应用。' }
+    case 'no-token':
+    case 'no-credentials':
+      return { ...base, title: '尚未授权', action: 'reauth', hint: '完成设备授权后即可继续。' }
+    case 'issues-disabled':
+      return { ...base, title: '目标仓库已关闭 Issues', action: 'none', hint: '这是仓库设置问题，应用内无法解决。' }
+    default:
+      return { ...base, title: '提交失败', action: 'retry' }
   }
 }
 
-/** 错误对象 → 可读文案（面板的失败态要显示等宽小字错误信息）。 */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+/** 签发徽标的文案与图标类型。 */
+function uploadLabel(state: UploadState): { text: string; icon: 'spinner' | 'check' | 'warn' | 'none' } {
+  switch (state) {
+    case 'uploading': return { text: '上传中…', icon: 'spinner' }
+    case 'done': return { text: '已上传', icon: 'check' }
+    case 'failed': return { text: '失败', icon: 'warn' }
+    case 'toolarge': return { text: '过大（>4 MB）', icon: 'warn' }
+    case 'notimage': return { text: '不是图片', icon: 'warn' }
+    default: return { text: '', icon: 'none' }
+  }
+}
+
+/** 面板的 prop：host 半边的 7 个方法（由 `apply` 建一次后传进来）。 */
+export interface IssueReporterProps {
+  /** `createGithubClient(connection)` 的产物（面板不自己造）。 */
+  readonly client: GithubClient
 }
 
 /**
  * 悬浮入口 + 提交面板。
+ * @param props - 注入的 GitHub 客户端（见 {@link IssueReporterProps}）。
  * @returns 入口按钮与（展开时的）面板。
  */
-export function IssueReporter() {
+export function IssueReporter({ client }: IssueReporterProps) {
   const [tab, setTab] = useState<TabPosition>(readTab)
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<Draft>(readDraft)
   const [shots, setShots] = useState<Shot[]>([])
   const [result, setResult] = useState<SubmitResult | null>(null)
+  const [view, setView] = useState<'form' | 'auth'>('form')
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
   /** 拖动中的临时位置（视口坐标；松手吸附后清空）。 */
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
-  /** 成功态里「已复制第 N 张」的标记（0 = 还没点过）。 */
-  const [copiedShot, setCopiedShot] = useState(0)
   /** 环境信息（确定性读取，取不到就显示 unknown，不编造）。 */
   const [env, setEnv] = useState({ appVersion: 'unknown', baseline: 'unknown', platform: 'unknown' })
   /** 面板实测高度（未展开/未测到 = 0；面板垂直夹紧要用它，见 `panelStyle`）。 */
   const [panelHeight, setPanelHeight] = useState(0)
   /** 当前视口高度（面板垂直夹紧的另一半输入；resize 时更新）。 */
   const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight))
+
+  // ── 授权/托管/上传状态 ────────────────────────────────────────────
+  /** 授权闸（unknown = 还没问过 GitHub）。 */
+  const [gate, setGate] = useState<AuthGate>('unknown')
+  /** 已授权的 GitHub 登录名（同意卡的仓库行、成功卡的托管落点都用它）。 */
+  const [login, setLogin] = useState<string | null>(null)
+  /** 托管表态（unasked/skipped 都不上传，区别只是有没有问过）。 */
+  const [consent, setConsent] = useState<ConsentChoice>(readConsent)
+  /** 是否正在展示同意卡（auth 成功后或提交时按需亮出）。 */
+  const [consentPrompt, setConsentPrompt] = useState(false)
+  /** 同意卡上的复选框（勾了才允许点「同意并创建仓库」）。 */
+  const [consentChecked, setConsentChecked] = useState(false)
+  /** 「同意并创建仓库」进行中。 */
+  const [consentBusy, setConsentBusy] = useState(false)
+  /** `ensureAssetsRepo` 的失败原文（要原样显示 code + message）。 */
+  const [consentError, setConsentError] = useState<{ code: string; message: string; detail?: string } | null>(null)
+  /** 设备授权会话。 */
+  const [session, setSession] = useState<AuthSession | null>(null)
+  /** auth 视图阶段。 */
+  const [authPhase, setAuthPhase] = useState<AuthPhase>('idle')
+  /** 轮询间隔（秒）：初始取 `authStart`，`slow_down` 时换成 host 给的新值。 */
+  const [intervalSec, setIntervalSec] = useState(5)
+  /** auth 流程的失败原文。 */
+  const [authError, setAuthError] = useState<{ code: string; message: string; detail?: string } | null>(null)
+  /** 「重新获取设备码」的重发序号（变化即重跑 authStart）。 */
+  const [authSeq, setAuthSeq] = useState(0)
+  /** 每轮轮询后 +1：让轮询 effect 重新排下一次定时器（pending 时状态不变）。 */
+  const [pollSeq, setPollSeq] = useState(0)
+  /** 设备码是否已过期（本地按 `expiresIn` 计时，不依赖 GitHub 回错）。 */
+  const [expired, setExpired] = useState(false)
+  /** auth 视图上的一句话提示（如「授权已失效，请重新授权」）。 */
+  const [authNotice, setAuthNotice] = useState<string | null>(null)
+  /** 「复制设备码」按钮的 1.5s 反馈。 */
+  const [copiedCode, setCopiedCode] = useState(false)
+  /** 每张截图的上传进度。 */
+  const [uploads, setUploads] = useState<Record<string, ShotUpload>>({})
 
   const tabRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -314,10 +507,22 @@ export function IssueReporter() {
   const draggedRef = useRef(false)
   /** 截图命名序号（只增不减：删掉一张再粘一张不会撞名）。 */
   const shotSeqRef = useRef(0)
-  /** 截图快照（卸载时按它逐个 revoke ObjectURL——state 在清理函数里读不到最新值）。 */
+  /** 截图快照（卸载清理、授权成功后的判断、上传结果落点都读它——**同步维护**）。 */
   const shotsRef = useRef<Shot[]>([])
+  /** 托管表态的同步镜像（异步回调里读不到最新 state）。 */
+  const consentRef = useRef<ConsentChoice>(consent)
+  /** 上传进度的同步镜像（逐张上传时下一张要读上一张的结果）。 */
+  const uploadsRef = useRef<Record<string, ShotUpload>>({})
+  /** 授权闸的同步镜像（提交时判断用）。 */
+  const gateRef = useRef<AuthGate>('unknown')
+  /** 最近一次提交用的完整正文（失败卡的「复制内容」要照搬它）。 */
+  const lastBodyRef = useRef('')
+  /** 「首次打开面板查一次授权」只做一次。 */
+  const authCheckedRef = useRef(false)
   /** 进行中的拖动监听清理器（组件在拖动中途卸载时不漏监听）。 */
   const dragCleanupRef = useRef<(() => void) | null>(null)
+  /** 「已复制」的复位定时器。 */
+  const copiedTimerRef = useRef<number | null>(null)
 
   // 面板高度实测 + 视口高度跟踪（垂直夹紧的输入）。
   // 用 useLayoutEffect：首帧就在 paint 前测出高度并同步修正 top，用户看不到抖动。
@@ -346,16 +551,16 @@ export function IssueReporter() {
   // 草稿持久化（截图不落盘）。
   useEffect(() => { writeStorage(DRAFT_KEY, draft) }, [draft])
 
-  // 截图快照：给卸载清理用。
-  useEffect(() => { shotsRef.current = shots }, [shots])
-
   // 卸载时 revoke 所有还活着的 ObjectURL（否则每张粘贴的图都留一份内存）。
   useEffect(() => () => {
     for (const shot of shotsRef.current) URL.revokeObjectURL(shot.url)
   }, [])
 
-  // 卸载时摘掉可能还在的拖动监听。
-  useEffect(() => () => { dragCleanupRef.current?.() }, [])
+  // 卸载时摘掉可能还在的拖动监听与「已复制」定时器（轮询的 timer 由 effect 清理负责）。
+  useEffect(() => () => {
+    dragCleanupRef.current?.()
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
+  }, [])
 
   // 环境信息（应用版本 / dsh 基座版本异步取一次；平台同步取）。
   useEffect(() => {
@@ -397,12 +602,142 @@ export function IssueReporter() {
     return () => { window.removeEventListener('resize', clamp) }
   }, [])
 
-  /** 收起面板：结果卡一并清掉（issue 已经建好了，重开面板该回到表单；草稿还在）。 */
+  // ── 视图与授权 ────────────────────────────────────────────────────
+
+  /** 收起面板：三视图回到 form，结果与授权会话一并清掉（草稿与托管表态保留）。 */
   const closePanel = useCallback((): void => {
     setOpen(false)
     setResult(null)
-    setCopiedShot(0)
+    setView('form')
+    setSession(null)
+    setAuthError(null)
+    setAuthPhase('idle')
+    setExpired(false)
+    setAuthNotice(null)
+    setCopiedCode(false)
+    setConsentPrompt(false)
+    setConsentError(null)
   }, [])
+
+  /**
+   * 进入 auth 视图并（重新）申请设备码。
+   * @param notice - 可选的一句话提示（如「授权已失效，请重新授权」）。
+   */
+  const startAuth = useCallback((notice?: string): void => {
+    setAuthNotice(notice ?? null)
+    setView('auth')
+    setSession(null)
+    setAuthError(null)
+    setAuthPhase('starting')
+    setExpired(false)
+    setCopiedCode(false)
+    setAuthSeq(seq => seq + 1)
+  }, [])
+
+  /** 从 auth 视图返回 form（轮询由 effect 的 cleanup 停掉）。 */
+  const cancelAuth = useCallback((): void => {
+    setView('form')
+    setSession(null)
+    setAuthError(null)
+    setAuthPhase('idle')
+    setExpired(false)
+    setAuthNotice(null)
+    setCopiedCode(false)
+  }, [])
+
+  /** 授权成功后的落点：记下 login，按「有没有截图 + 有没有同意过托管」决定下一步。 */
+  const onAuthorized = useCallback((authorizedLogin: string): void => {
+    setExpired(false)
+    setAuthError(null)
+    setAuthNotice(null)
+    setGate('authorized')
+    gateRef.current = 'authorized'
+    setLogin(authorizedLogin)
+    setView('form')
+    if (consentRef.current === 'unasked' && shotsRef.current.length > 0) {
+      setConsentChecked(false)
+      setConsentError(null)
+      setConsentPrompt(true)
+    }
+  }, [])
+
+  /** `invalid-token` 的统一出口：不提交、不回结果卡，直接进 auth 视图。 */
+  const reauthForInvalidToken = useCallback((): void => {
+    setGate('unauthorized')
+    gateRef.current = 'unauthorized'
+    startAuth('授权已失效，请重新授权')
+  }, [startAuth])
+
+  // auth 视图一进去就申请设备码（「重新获取设备码」= authSeq 变化再跑一次）。
+  useEffect(() => {
+    if (!open || view !== 'auth') return undefined
+    let cancelled = false
+    setAuthPhase('starting')
+    setSession(null)
+    setAuthError(null)
+    void (async () => {
+      const started = await client.authStart()
+      if (cancelled) return
+      if (!started.ok) {
+        setAuthError(started)
+        setAuthPhase('failed')
+        return
+      }
+      setSession({
+        deviceCode: started.deviceCode,
+        userCode: started.userCode,
+        verificationUri: started.verificationUri,
+        expiresIn: started.expiresIn,
+        interval: started.interval,
+        startedAt: Date.now(),
+      })
+      setIntervalSec(started.interval)
+      setAuthPhase('waiting')
+      setPollSeq(seq => seq + 1)
+    })()
+    return () => { cancelled = true }
+  }, [open, view, authSeq, client])
+
+  // 设备码过期：本地按 `expiresIn` 计时（到点就停轮询并显示「已过期」）。
+  useEffect(() => {
+    if (!open || view !== 'auth' || session === null || expired) return undefined
+    const deadline = session.startedAt + session.expiresIn * 1000
+    const tick = (): void => { if (Date.now() >= deadline) setExpired(true) }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => { window.clearInterval(timer) }
+  }, [open, view, session, expired])
+
+  // 轮询授权结果：每次只排一个 `setTimeout`，随 interval/pollSeq 重排。
+  // **面板关闭（open=false）或离开 auth 视图时 cleanup 一定清掉定时器**——
+  // 组件卸载也一样走 cleanup，所以没有任何路径能让轮询在后台继续跑。
+  useEffect(() => {
+    if (!open || view !== 'auth' || session === null || authPhase !== 'waiting' || expired) return undefined
+    const deviceCode = session.deviceCode
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const polled = await client.authPoll(deviceCode)
+        if (cancelled) return
+        if (polled.ok) {
+          if (polled.status === 'authorized') {
+            onAuthorized(polled.login)
+            return
+          }
+          if (polled.status === 'slow_down') setIntervalSec(polled.interval)
+          setPollSeq(seq => seq + 1) // pending / slow_down 都继续排下一次
+          return
+        }
+        // 失败码（expired_token / access_denied / …）：就地显示原因 + 「重新获取设备码」。
+        setAuthError(polled)
+        setAuthPhase('failed')
+      })()
+    }, Math.max(1, intervalSec) * 1000)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [open, view, session, authPhase, intervalSec, pollSeq, expired, client, onAuthorized])
 
   // 面板打开期间：Esc 收起 + 点面板外收起。
   useEffect(() => {
@@ -426,10 +761,36 @@ export function IssueReporter() {
     }
   }, [open, closePanel])
 
-  // 打开后焦点落在标题输入框（键盘用户不必再 Tab 一轮）。
+  // 打开后焦点落在标题输入框（键盘用户不必再 Tab 一轮）；auth 视图没有标题框。
   useEffect(() => {
-    if (open) titleRef.current?.focus()
-  }, [open])
+    if (open && view === 'form' && result === null && !consentPrompt) titleRef.current?.focus()
+  }, [open, view, result, consentPrompt])
+
+  // 首次打开面板：问一次 `authStatus()`。**只有明确「未授权」才进 auth 视图**；
+  // 查询本身失败（网络/不支持）不当成未授权——那时进 auth 反而会把用户引错方向。
+  useEffect(() => {
+    if (!open || authCheckedRef.current) return undefined
+    authCheckedRef.current = true
+    let cancelled = false
+    void (async () => {
+      const status = await client.authStatus()
+      if (cancelled) return
+      if (status.ok && status.authorized) {
+        setGate('authorized')
+        gateRef.current = 'authorized'
+        setLogin(status.login)
+        return
+      }
+      if (status.ok && !status.authorized) {
+        setGate('unauthorized')
+        gateRef.current = 'unauthorized'
+        startAuth()
+      }
+    })()
+    return () => { cancelled = true }
+  }, [open, client, startAuth])
+
+  // ── 拖动 / 截图 ───────────────────────────────────────────────────
 
   /**
    * 拖动入口按钮：pointer 捕获 + 6px 阈值（阈值内视为点击 → 开合面板）。
@@ -489,12 +850,25 @@ export function IssueReporter() {
     else setOpen(true)
   }, [open, closePanel])
 
+  /** 写截图列表（state + 同步镜像一起更新：异步流程要立刻读到最新值）。 */
+  const applyShots = useCallback((next: Shot[]): void => {
+    shotsRef.current = next
+    setShots(next)
+  }, [])
+
+  /** 写某张截图的上传状态（同样带同步镜像）。 */
+  const applyUpload = useCallback((id: string, value: ShotUpload): void => {
+    const next = { ...uploadsRef.current, [id]: value }
+    uploadsRef.current = next
+    setUploads(next)
+  }, [])
+
   /**
    * 收下一批图片文件：超出上限的部分**直接丢弃**（不提示、不警告色、不进通知栏）。
    * @param files - 来自粘贴或拖入的图片文件。
    */
-  const addShots = (files: readonly File[]): void => {
-    const room = MAX_SHOTS - shots.length
+  const addShots = useCallback((files: readonly File[]): void => {
+    const room = MAX_SHOTS - shotsRef.current.length
     if (room <= 0) return
     const next = files.slice(0, room).map((file) => {
       shotSeqRef.current += 1
@@ -506,8 +880,8 @@ export function IssueReporter() {
         url: URL.createObjectURL(file),
       }
     })
-    setShots(prev => [...prev, ...next])
-  }
+    applyShots([...shotsRef.current, ...next])
+  }, [applyShots])
 
   /** 描述框粘贴：只拦图片（纯文本粘贴照旧，不能被这里吃掉）。 */
   const onPaste = (event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
@@ -536,69 +910,212 @@ export function IssueReporter() {
     event.preventDefault()
   }
 
-  /** 删掉一张截图：立刻 revoke 它的 ObjectURL，并腾出名额（删一张就能再粘一张）。 */
+  /** 删掉一张截图：立刻 revoke 它的 ObjectURL、腾出名额（删一张就能再粘一张），并清掉它的上传记录。 */
   const removeShot = (id: string): void => {
-    const target = shots.find(shot => shot.id === id)
+    const target = shotsRef.current.find(shot => shot.id === id)
     if (target !== undefined) URL.revokeObjectURL(target.url)
-    setShots(prev => prev.filter(shot => shot.id !== id))
+    applyShots(shotsRef.current.filter(shot => shot.id !== id))
+    const { [id]: removed, ...rest } = uploadsRef.current
+    void removed
+    uploadsRef.current = rest
+    setUploads(rest)
   }
+
+  // ── 授权闸 / 托管 / 上传 ──────────────────────────────────────────
+
+  /**
+   * 提交前的授权闸：只有**确认已授权**才放行。
+   *
+   * 三种结果：
+   *   - 已知已授权 ⇒ 直接放行（不再打一次 `/user`）；
+   *   - 明确未授权 ⇒ 进 auth 视图，**不提交**；
+   *   - `authStatus()` 本身失败（网络/不支持）⇒ 走失败卡（那时把用户推进 auth 视图
+   *     反而会引导错方向）。
+   * @returns 是否放行提交。
+   */
+  const ensureAuthorized = async (): Promise<boolean> => {
+    if (gateRef.current === 'authorized') return true
+    const status = await client.authStatus()
+    if (status.ok && status.authorized) {
+      setGate('authorized')
+      gateRef.current = 'authorized'
+      setLogin(status.login)
+      return true
+    }
+    if (status.ok) {
+      setGate('unauthorized')
+      gateRef.current = 'unauthorized'
+      startAuth()
+      return false
+    }
+    setResult({ kind: 'failure', view: failureOf(status.code, status.message, status.detail) })
+    return false
+  }
+
+  /** 「同意并创建仓库」：调 `ensureAssetsRepo()`，成功才落盘标记并进 form。 */
+  const acceptConsent = async (): Promise<void> => {
+    setConsentBusy(true)
+    setConsentError(null)
+    const created = await client.ensureAssetsRepo()
+    setConsentBusy(false)
+    if (!created.ok) {
+      setConsentError(created.detail === undefined
+        ? { code: created.code, message: created.message }
+        : { code: created.code, message: created.message, detail: created.detail })
+      return
+    }
+    setConsent('accepted')
+    consentRef.current = 'accepted'
+    try {
+      localStorage.setItem(CONSENT_KEY, 'accepted')
+    } catch {
+      // 落盘失败不影响本次运行（内存里已经是 accepted）。
+    }
+    setConsentPrompt(false)
+  }
+
+  /** 「暂不托管」：本次运行跳过上传（不落盘，下次运行还会再问一次）。 */
+  const skipConsent = (): void => {
+    setConsent('skipped')
+    consentRef.current = 'skipped'
+    setConsentPrompt(false)
+  }
+
+  /**
+   * 上传一张截图（体积闸 → 魔数校验 → RPC）。**不抛**：所有失败都落进 chip 状态。
+   * @param shot - 目标截图。
+   * @returns `true` 表示这次失败是 `invalid-token`（调用方要转投 auth 视图）。
+   */
+  const uploadOne = async (shot: Shot): Promise<boolean> => {
+    if (shot.blob.size > MAX_UPLOAD_BYTES) {
+      // 体积闸在**发请求之前**：Contents API 的上限未从一手文档确认，4 MB 是保守闸。
+      applyUpload(shot.id, { state: 'toolarge' })
+      return false
+    }
+    applyUpload(shot.id, { state: 'uploading' })
+    const base64 = await readBase64(shot.blob)
+    if (base64 === null) {
+      applyUpload(shot.id, { state: 'failed', code: 'read-error', message: '读不出这张截图的字节' })
+      return false
+    }
+    if (sniffImageKind(base64) === null) {
+      applyUpload(shot.id, { state: 'notimage' })
+      return false
+    }
+    const uploaded = await client.uploadAsset(shot.name, base64)
+    if (uploaded.ok) {
+      applyUpload(shot.id, { state: 'done', url: uploaded.url })
+      return false
+    }
+    if (uploaded.code === 'invalid-token') return true
+    applyUpload(shot.id, { state: 'failed', code: uploaded.code, message: uploaded.message })
+    return false
+  }
+
+  /** 失败 chip 上的「重试这一张」（只重传这一张，不动别的）。 */
+  const retryShot = async (id: string): Promise<void> => {
+    const shot = shotsRef.current.find(item => item.id === id)
+    if (shot === undefined) return
+    const invalid = await uploadOne(shot)
+    if (invalid) reauthForInvalidToken()
+  }
+
+  // ── 正文 / 提交 ───────────────────────────────────────────────────
 
   /** 环境信息行（确定性读取的三段；取不到的那段显示 unknown）。 */
   const envLine = `Corum v${env.appVersion} · dsh ${env.baseline} · ${env.platform}`
 
-  /** 组装正文（环境块只在勾选时拼入）。 */
-  const buildBody = (): string => draft.includeEnv
-    ? `${draft.body}\n\n---\n\n### 环境\n- ${envLine}`
-    : draft.body
+  /**
+   * 组装正文：描述 + （勾选时）环境块 + （有成功上传的图时）每张一行 `![]()`。
+   * **只带真正上传成功的图**——没上传的截图绝不出现在正文里。
+   * @param imageLines - 已拼好的图片行。
+   * @returns 提交用的完整正文。
+   */
+  const buildBody = (imageLines: readonly string[]): string => {
+    const parts = [draft.body]
+    if (draft.includeEnv) parts.push(`---\n\n### 环境\n- ${envLine}`)
+    if (imageLines.length > 0) parts.push(imageLines.join('\n'))
+    return parts.join('\n\n')
+  }
 
-  /** 预填 URL（`labels=` 一起带上）。 */
-  const buildUrl = (title: string, body: string): string =>
-    `https://github.com/${REPO_SLUG}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}&labels=${encodeURIComponent(KIND_TAG[draft.kind])}`
+  /** 资产仓库名（`corum-issue-assets-<login>`，与 host 的 `assetRepoName()` 同构）。 */
+  const assetsRepo = login === null ? `${ASSETS_REPO_PREFIX}…` : `${ASSETS_REPO_PREFIX}${login}`
+
+  /** 「复制内容」用：把当前可见的正文搬进剪贴板（不依赖任何桥）。 */
+  const copyCurrentBody = async (): Promise<void> => {
+    // 优先用**那次提交实际发出去的**正文（lastBodyRef）；没有就按当前状态重拼一遍
+    // （只算真正上传成功的图，与提交时的规则同一份）。
+    const imageLines = shotsRef.current
+      .filter(shot => uploadsRef.current[shot.id]?.state === 'done')
+      .map(shot => `![${shot.name.replace(/\.[a-z0-9]+$/i, '')}](${uploadsRef.current[shot.id]?.url ?? ''})`)
+    await copyText(lastBodyRef.current !== '' ? lastBodyRef.current : buildBody(imageLines))
+  }
 
   /**
-   * 提交流程（纯手工：不调模型、不发网络请求）。
+   * 提交流程（授权闸 → 托管闸 → 逐张上传 → 组装正文 → `submitIssue`）。
    *
-   * 打开方式**必须依次判断**（顺序即优先级）：
-   *   ① URL 超长 ⇒ 正文改走系统剪贴板，URL 退化为只带 title；
-   *   ② 有截图 ⇒ 把**第一张**写进系统剪贴板（失败则降级为 body-copied 并如实标记）；
-   *   ③ 交给系统浏览器 `openExternal`。
-   * 桥缺席（旧 host）时不能走 `window.open`（壳会拦），只能把链接写进剪贴板。
-   * @returns 结果卡要渲染的状态。
+   * 全程留在 form 视图（chip 上能看到逐张进度），只有**结束**（成功/失败）或
+   * 需要重新授权时才切视图。
    */
-  const runSubmit = async (): Promise<SubmitResult> => {
-    const title = draft.title.trim()
-    const body = buildBody()
-    const bridge = readBridge()
-    let url = buildUrl(title, body)
+  const runSubmit = async (): Promise<void> => {
+    // ① 授权闸：未授权不提交，直接进 auth 视图。
+    if (!(await ensureAuthorized())) return
 
-    // ① 长度超限：GitHub 也读不了那么长的 query，正文退化为剪贴板搬运。
-    const tooLong = url.length > URL_LIMIT
-    if (tooLong) url = `https://github.com/${REPO_SLUG}/issues/new?title=${encodeURIComponent(title)}&labels=${encodeURIComponent(KIND_TAG[draft.kind])}`
-
-    // ③′ 桥缺席：直接进成功态，但第②步换成「链接已复制到剪贴板，请在浏览器打开」。
-    if (bridge?.openExternal === undefined) {
-      const copied = await copyText(url)
-      return { ok: true, mode: copied ? 'link-copied' : 'none', outcome: 'link-copied', title, url }
+    // ② 托管闸：有截图但从未表态 ⇒ 先亮同意卡（本次不提交，选完再点提交）。
+    if (shotsRef.current.length > 0 && consentRef.current === 'unasked') {
+      setConsentChecked(false)
+      setConsentError(null)
+      setConsentPrompt(true)
+      return
     }
 
-    // ①② 决定剪贴板里装什么（决定成功态步骤①的文案）。
-    let mode: CopiedMode = 'none'
-    if (tooLong) {
-      mode = await copyText(body) ? 'body-copied' : 'none'
-    } else if (shots.length > 0) {
-      mode = await copyImage(shots[0]!.blob) ? 'shot-copied' : 'none'
-      // 图片写不进去（非 secure context 等）⇒ 降级为正文，并如实标记成 body-copied。
-      if (mode === 'none') mode = await copyText(body) ? 'body-copied' : 'none'
+    // ③ 逐张上传（只有「已同意托管」才传；一张失败不阻断其余）。
+    if (consentRef.current === 'accepted') {
+      for (const shot of shotsRef.current) {
+        if (uploadsRef.current[shot.id]?.state === 'done') continue // 已经传过的（含重试）不重复传
+        const invalid = await uploadOne(shot)
+        if (invalid) {
+          reauthForInvalidToken()
+          return
+        }
+      }
     }
 
-    // ③ 系统浏览器打开；`ok:false` 与抛错都是失败态（不假装成功）。
-    try {
-      const opened = await bridge.openExternal(url)
-      if (opened.ok) return { ok: true, mode, outcome: 'opened', title, url }
-      return { ok: false, message: opened.error ?? 'openExternal 返回 ok:false', url }
-    } catch (error) {
-      return { ok: false, message: errorMessage(error), url }
+    // ④ 正文：只带真正上传成功的图。
+    const imageLines: string[] = []
+    for (const shot of shotsRef.current) {
+      const upload = uploadsRef.current[shot.id]
+      if (upload?.state !== 'done' || upload.url === undefined) continue
+      imageLines.push(`![${shot.name.replace(/\.[a-z0-9]+$/i, '')}](${upload.url})`)
     }
+    const body = buildBody(imageLines)
+    lastBodyRef.current = body
+
+    // ⑤ 提交（labels 给类型对应的标签名，host 会过滤成仓库里真实存在的）。
+    const submitted = await client.submitIssue(draft.title.trim(), body, [KIND_TAG[draft.kind]])
+    if (submitted.ok) {
+      setResult({
+        kind: 'success',
+        view: {
+          number: submitted.number,
+          htmlUrl: submitted.htmlUrl,
+          title: draft.title.trim(),
+          uploaded: imageLines.length,
+          assetsOwner: login ?? '',
+          assetsRepo,
+          envIncluded: draft.includeEnv,
+        },
+      })
+      return
+    }
+    if (submitted.code === 'invalid-token') {
+      // 授权在这条链路上失效：不回结果卡（issue 没建，卡片没有信息量），转投 auth；
+      // 用户从 auth 点「取消」会看到已经落好的失败卡。
+      setResult({ kind: 'failure', view: failureOf(submitted.code, submitted.message, submitted.detail) })
+      reauthForInvalidToken()
+      return
+    }
+    setResult({ kind: 'failure', view: failureOf(submitted.code, submitted.message, submitted.detail) })
   }
 
   /** 提交按钮：禁用规则由 `disabled` 表达（标题为空即禁用），不是点击后才报错。 */
@@ -606,59 +1123,54 @@ export function IssueReporter() {
     if (busy || draft.title.trim() === '') return
     setBusy(true)
     try {
-      setResult(await runSubmit())
+      await runSubmit()
     } finally {
       setBusy(false)
     }
   }
 
-  /** 失败态「复制内容并打开」：先复制正文（不依赖桥），再试着打开一次。 */
-  const copyAndOpen = async (url: string): Promise<void> => {
-    const copied = await copyText(buildBody())
-    const bridge = readBridge()
-    let outcome: OpenOutcome = copied ? 'failed' : 'link-copied'
-    if (bridge?.openExternal !== undefined) {
-      try {
-        outcome = (await bridge.openExternal(url)).ok ? 'opened' : 'failed'
-      } catch {
-        outcome = 'failed'
-      }
-    } else if (!copied) {
-      // 桥缺席**且**剪贴板也不可用：连链接都递不出去，不能假装成功。
-      setResult({ ok: false, message: '剪贴板与系统浏览器均不可用', url })
-      return
-    } else {
-      // 桥缺席时正文已经在剪贴板里，链接无处可放——如实标成 link-copied 会让文案说谎，
-      // 故这里重写一次剪贴板为「正文 + 链接」，两步都能落到用户手里。
-      outcome = await copyText(`${buildBody()}\n\nIssue 页面：${url}`) ? 'failed' : 'link-copied'
-    }
-    setResult({ ok: true, mode: copied ? 'body-copied' : 'none', outcome, title: draft.title.trim(), url })
+  /** 成功卡「再报一个」：清标题/描述/截图与结果，保留类型与环境勾选。 */
+  const reportAgain = (): void => {
+    setDraft(prev => ({ ...EMPTY_DRAFT, kind: prev.kind, includeEnv: prev.includeEnv }))
+    for (const shot of shotsRef.current) URL.revokeObjectURL(shot.url)
+    applyShots([])
+    uploadsRef.current = {}
+    setUploads({})
+    lastBodyRef.current = ''
+    setResult(null)
   }
 
-  /** 成功态「复制正文」。 */
-  const copyBodyAgain = async (): Promise<void> => {
-    await copyText(buildBody())
-  }
-
-  /** 成功态「复制第 N 张截图」（逐张；点了显示「已复制第 N 张」，失败则不谎报）。 */
-  const copyShotAt = async (index: number): Promise<void> => {
-    const shot = shots[index]
-    if (shot === undefined) return
-    setCopiedShot(await copyImage(shot.blob) ? index + 1 : 0)
-  }
-
-  /** 成功态/失败态的「打开 GitHub」：再调一次 openExternal（依然不依赖 window.open）。 */
-  const reopen = async (url: string): Promise<void> => {
+  /** 成功卡「打开 issue」/ 失败卡兜底：经窄化桥开外链，桥不可用就退回复制链接。 */
+  const openExternal = async (url: string): Promise<void> => {
     const bridge = readBridge()
     if (bridge?.openExternal === undefined) {
       await copyText(url)
       return
     }
     try {
-      await bridge.openExternal(url)
+      const opened = await bridge.openExternal(url)
+      if (!opened.ok) await copyText(url)
     } catch {
-      // 再打开失败不改状态：URL 已经显示在结果卡里，用户可手动复制。
+      await copyText(url)
     }
+  }
+
+  /** auth 视图「打开授权页」。 */
+  const openDevicePage = async (): Promise<void> => {
+    const url = session !== null && session.verificationUri !== '' ? session.verificationUri : DEVICE_PAGE_URL
+    await openExternal(url)
+  }
+
+  /** auth 视图「复制设备码」（1.5 秒内显示「已复制」；写不进去就什么都不说）。 */
+  const copyDeviceCode = async (): Promise<void> => {
+    if (session === null) return
+    if (!(await copyText(session.userCode))) return
+    setCopiedCode(true)
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
+    copiedTimerRef.current = window.setTimeout(() => {
+      setCopiedCode(false)
+      copiedTimerRef.current = null
+    }, 1500)
   }
 
   const dirty = draft.title.trim() !== '' || draft.body.trim() !== ''
@@ -667,20 +1179,43 @@ export function IssueReporter() {
     ? undefined
     : { left: dragPos.x, top: dragPos.y, right: 'auto' }
 
-  /** 成功态的三步说明（哪一步为真就说哪一步，不说没发生的事）。 */
-  const successSteps = (success: SubmitSuccess): string[] => {
+  /** 成功卡的三步（哪一步为真就说哪一步，不说没发生的事）。 */
+  const successSteps = (done: SuccessView): string[] => {
     const steps: string[] = []
-    if (success.outcome !== 'link-copied') {
-      if (success.mode === 'shot-copied') steps.push(`${shots.length} 张截图已复制到剪贴板（第 1 张）`)
-      else if (success.mode === 'body-copied') steps.push('正文已复制到剪贴板')
-    }
-    if (success.outcome === 'opened') steps.push('已用系统浏览器打开 issue 页面')
-    else if (success.outcome === 'link-copied') steps.push('链接已复制到剪贴板，请在浏览器打开')
-    else steps.push('未能打开浏览器，请复制下方链接手动打开')
-    steps.push(success.mode === 'shot-copied'
-      ? '在正文框按 Ctrl+V 上传截图'
-      : '在打开的页面里确认正文后提交')
+    steps.push(done.uploaded > 0
+      ? `${done.uploaded} 张截图已上传到 ${done.assetsOwner}/${done.assetsRepo}`
+      : '截图未上传（正文不含图片）')
+    steps.push('issue 已通过 GitHub API 创建（全程无浏览器）')
+    const envText = done.envIncluded ? '正文已带上环境信息' : '正文未包含环境信息（你取消了勾选）'
+    steps.push(done.uploaded > 0 ? `${envText}与 ${done.uploaded} 张截图链接` : envText)
     return steps
+  }
+
+  /** 失败卡的按钮（按 `action` 给可执行动作，不留「只显示错误」的死胡同）。 */
+  const failureButtons = (failure: FailureView): ReactElement[] => {
+    const buttons: ReactElement[] = []
+    if (failure.action === 'reauth') {
+      buttons.push(
+        <button key="reauth" type="button" className={css.btnPrimary} disabled={busy} onClick={() => { startAuth() }}>
+          重新授权
+        </button>,
+      )
+    }
+    if (failure.action === 'retry') {
+      buttons.push(
+        <button key="retry" type="button" className={css.btnPrimary} disabled={busy} onClick={() => { void submit() }}>
+          {busy ? '提交中…' : '重试'}
+        </button>,
+      )
+    }
+    if (failure.action === 'edit') {
+      buttons.push(
+        <button key="edit" type="button" className={css.btnPrimary} onClick={() => { setResult(null) }}>
+          返回修改
+        </button>,
+      )
+    }
+    return buttons
   }
 
   return (
@@ -704,7 +1239,155 @@ export function IssueReporter() {
 
       {open && (
         <div ref={panelRef} className={css.panel} data-testid="issue-reporter-panel" style={panelStyle(tab, panelHeight, viewportHeight)} role="dialog" aria-label="提交 Issue">
-          {result === null ? (
+          {view === 'auth' ? (
+            <>
+              <div className={css.head}>
+                <ShieldCheck size={14} strokeWidth={2} className={css.headIcon} />
+                <span className={css.headTitle}>授权 GitHub</span>
+                <span className={css.repoPill}>{REPO_SLUG}</span>
+                <span className={css.headSpacer} />
+                <button type="button" className={css.closeBtn} aria-label="关闭面板" onClick={closePanel}>
+                  <X size={12} strokeWidth={2} />
+                </button>
+              </div>
+
+              <div className={css.divider} />
+
+              <div className={css.auth} data-testid="issue-reporter-auth">
+                {authNotice !== null && <span className={css.authNotice}>{authNotice}</span>}
+
+                {authPhase === 'starting' && (
+                  <div className={css.authPoll}>
+                    <LoaderCircle size={12} strokeWidth={2} className={css.spinner} />
+                    <span>正在获取设备码…</span>
+                  </div>
+                )}
+
+                {authPhase === 'failed' && authError !== null && (
+                  <div className={css.authBlock}>
+                    <div className={css.authErrRow}>
+                      <TriangleAlert size={13} strokeWidth={2} className={css.errIcon} />
+                      <span className={css.authErrCode}>{authError.code}</span>
+                    </div>
+                    <span className={css.errMsg}>{authError.message}</span>
+                    {authError.detail !== undefined && <span className={css.errDetail}>{authError.detail}</span>}
+                    <div className={css.actions}>
+                      <span className={css.actionsSpacer} />
+                      <button type="button" className={css.btnPrimary} onClick={() => { startAuth() }}>
+                        <RefreshCw size={12} strokeWidth={2} /> 重新获取设备码
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {expired && (
+                  <div className={css.authBlock}>
+                    <div className={css.authErrRow}>
+                      <TriangleAlert size={13} strokeWidth={2} className={css.errIcon} />
+                      <span className={css.authErrCode}>设备码已过期</span>
+                    </div>
+                    <span className={css.authNote}>设备码有效期已过，GitHub 不再接受这次授权。</span>
+                    <div className={css.actions}>
+                      <span className={css.actionsSpacer} />
+                      <button type="button" className={css.btnPrimary} onClick={() => { startAuth() }}>
+                        <RefreshCw size={12} strokeWidth={2} /> 重新获取设备码
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {authPhase === 'waiting' && session !== null && !expired && (
+                  <>
+                    <div className={css.authCodeRow}>
+                      <span className={css.authCode} data-testid="issue-reporter-auth-code">{session.userCode}</span>
+                      <button
+                        type="button"
+                        className={css.authCopy}
+                        data-testid="issue-reporter-auth-copy"
+                        onClick={() => { void copyDeviceCode() }}
+                      >
+                        {copiedCode ? <Check size={11} strokeWidth={2} /> : null}
+                        {copiedCode ? '已复制' : '复制设备码'}
+                      </button>
+                    </div>
+
+                    <button type="button" className={css.authOpen} data-testid="issue-reporter-auth-open" onClick={() => { void openDevicePage() }}>
+                      <ExternalLink size={12} strokeWidth={2} /> 打开授权页
+                    </button>
+
+                    <div className={css.authPoll} data-testid="issue-reporter-auth-poll">
+                      <LoaderCircle size={12} strokeWidth={2} className={css.spinner} />
+                      <span>等待授权… 每 {intervalSec} 秒自动查询一次</span>
+                    </div>
+
+                    <span className={css.authNote}>
+                      在打开的页面里输入上面的设备码并确认；本面板会自动完成授权，不需要回到浏览器复制任何东西。
+                    </span>
+                  </>
+                )}
+
+                <div className={css.actions}>
+                  <button type="button" className={css.btnGhost} onClick={cancelAuth}>取消</button>
+                </div>
+              </div>
+            </>
+          ) : result !== null ? (
+            result.kind === 'success' ? (
+              <>
+                <div className={css.resultHead} data-testid="issue-reporter-success">
+                  <CircleCheck size={16} strokeWidth={2} className={css.okIcon} />
+                  <span className={css.resultTitle}>Issue 已创建</span>
+                  <span className={css.headSpacer} />
+                  <button type="button" className={css.closeBtn} aria-label="关闭面板" onClick={closePanel}>
+                    <X size={12} strokeWidth={2} />
+                  </button>
+                </div>
+
+                <div className={css.resultBody}>
+                  <span className={css.resultNumber}>#{result.view.number}</span>
+                  <span className={css.resultEcho}>{result.view.title}</span>
+                  <span className={css.resultMeta}>{REPO_SLUG}</span>
+                  <ol className={css.steps}>
+                    {successSteps(result.view).map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}
+                  </ol>
+                </div>
+
+                <div className={css.actions}>
+                  <button type="button" className={css.btnGhost} onClick={() => { void copyText(result.view.htmlUrl) }}>复制链接</button>
+                  <button type="button" className={css.btnGhost} onClick={reportAgain}>再报一个</button>
+                  <span className={css.actionsSpacer} />
+                  <button type="button" className={css.btnPrimary} onClick={() => { void openExternal(result.view.htmlUrl) }}>
+                    <ExternalLink size={12} strokeWidth={2} /> 打开 issue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={css.resultHead} data-testid="issue-reporter-failure">
+                  <CircleX size={16} strokeWidth={2} className={css.errIcon} />
+                  <span className={css.resultTitle}>{result.view.title}</span>
+                  <span className={css.headSpacer} />
+                  <button type="button" className={css.closeBtn} aria-label="关闭面板" onClick={closePanel}>
+                    <X size={12} strokeWidth={2} />
+                  </button>
+                </div>
+
+                <div className={css.resultBody}>
+                  <span className={css.errMsg} data-testid="issue-reporter-submit-error">{result.view.code}</span>
+                  <span className={css.resultNote}>{result.view.message}</span>
+                  {result.view.detail !== undefined && <span className={css.errDetail}>{result.view.detail}</span>}
+                  {result.view.hint !== undefined && <span className={css.resultNote}>{result.view.hint}</span>}
+                  <span className={css.resultNote}>你的内容还在草稿里。</span>
+                </div>
+
+                <div className={css.actions}>
+                  <button type="button" className={css.btnGhost} onClick={() => { void copyCurrentBody() }}>复制内容</button>
+                  <span className={css.actionsSpacer} />
+                  {failureButtons(result.view)}
+                </div>
+              </>
+            )
+          ) : (
             <>
               <div className={css.head}>
                 <Bug size={14} strokeWidth={2} className={css.headIcon} />
@@ -718,154 +1401,171 @@ export function IssueReporter() {
 
               <div className={css.divider} />
 
-              <div className={css.kinds} role="group" aria-label="Issue 类型">
-                {KIND_ORDER.map(kind => (
-                  <button
-                    key={kind}
-                    type="button"
-                    className={css.kind}
-                    data-testid="issue-reporter-kind"
-                    data-kind={kind}
-                    data-active={draft.kind === kind || undefined}
-                    aria-pressed={draft.kind === kind}
-                    onClick={() => { setDraft(prev => ({ ...prev, kind })) }}
-                  >
-                    {KIND_LABEL[kind]}
-                  </button>
-                ))}
-              </div>
-
-              <label className={css.field}>
-                <span className={css.labelRow}>
-                  <span className={css.label}>标题</span>
-                  <span className={css.required}>必填</span>
-                </span>
-                <input
-                  ref={titleRef}
-                  className={css.input}
-                  data-testid="issue-reporter-title"
-                  value={draft.title}
-                  placeholder="一句话说明问题，如：切换模型后会话卡死"
-                  onChange={(event) => { setDraft(prev => ({ ...prev, title: event.target.value })) }}
-                />
-              </label>
-
-              <div className={css.field}>
-                <span className={css.labelRow}>
-                  <span className={css.label}>详细描述</span>
-                  <span className={css.hintText}>支持 Markdown</span>
-                </span>
-                <div className={css.descBox} data-testid="issue-reporter-desc" onDragOver={onDragOver} onDrop={onDrop}>
-                  {shots.length > 0 && (
-                    <div className={css.shotRow}>
-                      {shots.map((shot, index) => (
-                        <div key={shot.id} className={css.shot} data-testid="issue-reporter-chip" data-shot-index={index + 1}>
-                          <ImageIcon size={16} strokeWidth={2} className={css.shotIcon} />
-                          <span className={css.shotName}>{shot.name}</span>
-                          <button
-                            type="button"
-                            className={css.shotRemove}
-                            data-testid="issue-reporter-chip-remove"
-                            aria-label={`移除第 ${index + 1} 张截图`}
-                            onClick={() => { removeShot(shot.id) }}
-                          >
-                            <X size={10} strokeWidth={2} />
-                          </button>
-                        </div>
-                      ))}
+              {consentPrompt ? (
+                <div className={css.consent} data-testid="issue-reporter-consent">
+                  <div className={css.consentHead}>
+                    <ShieldCheck size={14} strokeWidth={2} className={css.consentIcon} />
+                    <span className={css.consentTitle}>截图托管</span>
+                  </div>
+                  <p className={css.consentText}>
+                    GitHub 的 API 不能把图片作为附件放进 issue 正文（正文是 Markdown，图片只能是 URL）。
+                    截图会上传到<strong>你账号下的公开仓库</strong>，正文只引用它的 raw 链接。
+                  </p>
+                  <span className={css.consentRepo}>{assetsRepo}（公开）</span>
+                  <label className={css.consentCheck}>
+                    <input
+                      type="checkbox"
+                      data-testid="issue-reporter-consent-check"
+                      checked={consentChecked}
+                      onChange={(event) => { setConsentChecked(event.target.checked) }}
+                    />
+                    <span>我了解这些截图会作为公开文件存在这个仓库里</span>
+                  </label>
+                  {consentError !== null && (
+                    <div className={css.consentErr}>
+                      <span className={css.authErrCode}>{consentError.code}</span>
+                      <span className={css.errMsg}>{consentError.message}</span>
+                      {consentError.detail !== undefined && <span className={css.errDetail}>{consentError.detail}</span>}
+                      <div className={css.actions}>
+                        <span className={css.actionsSpacer} />
+                        <button type="button" className={css.btnGhost} disabled={consentBusy} onClick={() => { void acceptConsent() }}>重试</button>
+                      </div>
                     </div>
                   )}
-                  <textarea
-                    className={css.textarea}
-                    data-testid="issue-reporter-desc-input"
-                    value={draft.body}
-                    placeholder={DESC_PLACEHOLDER}
-                    onChange={(event) => { setDraft(prev => ({ ...prev, body: event.target.value })) }}
-                    onPaste={onPaste}
-                  />
+                  <div className={css.actions}>
+                    <span className={css.actionsSpacer} />
+                    <button type="button" className={css.btnGhost} data-testid="issue-reporter-consent-skip" onClick={skipConsent}>
+                      暂不托管
+                    </button>
+                    <button
+                      type="button"
+                      className={css.btnPrimary}
+                      data-testid="issue-reporter-consent-accept"
+                      disabled={!consentChecked || consentBusy}
+                      onClick={() => { void acceptConsent() }}
+                    >
+                      {consentBusy ? '创建中…' : '同意并创建仓库'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className={css.kinds} role="group" aria-label="Issue 类型">
+                    {KIND_ORDER.map(kind => (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={css.kind}
+                        data-testid="issue-reporter-kind"
+                        data-kind={kind}
+                        data-active={draft.kind === kind || undefined}
+                        aria-pressed={draft.kind === kind}
+                        onClick={() => { setDraft(prev => ({ ...prev, kind })) }}
+                      >
+                        {KIND_LABEL[kind]}
+                      </button>
+                    ))}
+                  </div>
 
-              <div className={css.envCard}>
-                <label className={css.envCheck}>
-                  <input
-                    type="checkbox"
-                    data-testid="issue-reporter-env"
-                    checked={draft.includeEnv}
-                    onChange={(event) => { setDraft(prev => ({ ...prev, includeEnv: event.target.checked })) }}
-                  />
-                  <span>附带环境信息（自动附加，可取消）</span>
-                </label>
-                <span className={css.envLine}>{envLine}</span>
-              </div>
+                  <label className={css.field}>
+                    <span className={css.labelRow}>
+                      <span className={css.label}>标题</span>
+                      <span className={css.required}>必填</span>
+                    </span>
+                    <input
+                      ref={titleRef}
+                      className={css.input}
+                      data-testid="issue-reporter-title"
+                      value={draft.title}
+                      placeholder="一句话说明问题，如：切换模型后会话卡死"
+                      onChange={(event) => { setDraft(prev => ({ ...prev, title: event.target.value })) }}
+                    />
+                  </label>
 
-              <div className={css.actions}>
-                <button type="button" className={css.btnGhost} onClick={closePanel}>取消</button>
-                <span className={css.actionsSpacer} />
-                <button type="button" className={css.btnPrimary} data-testid="issue-reporter-submit" disabled={!canSubmit} onClick={() => { void submit() }}>
-                  {busy ? '提交中…' : '提交 Issue'}
-                </button>
-              </div>
-            </>
-          ) : result.ok ? (
-            <>
-              <div className={css.resultHead} data-testid="issue-reporter-success">
-                <CircleCheck size={16} strokeWidth={2} className={css.okIcon} />
-                <span className={css.resultTitle}>Issue 已创建</span>
-                <span className={css.headSpacer} />
-                <button type="button" className={css.closeBtn} aria-label="关闭面板" onClick={closePanel}>
-                  <X size={12} strokeWidth={2} />
-                </button>
-              </div>
+                  <div className={css.field}>
+                    <span className={css.labelRow}>
+                      <span className={css.label}>详细描述</span>
+                      <span className={css.hintText}>支持 Markdown</span>
+                    </span>
+                    <div className={css.descBox} data-testid="issue-reporter-desc" onDragOver={onDragOver} onDrop={onDrop}>
+                      {shots.length > 0 && (
+                        <div className={css.shotRow}>
+                          {shots.map((shot, index) => {
+                            const upload: ShotUpload | undefined = uploads[shot.id]
+                            const state: UploadState = upload?.state ?? 'idle'
+                            const badge = uploadLabel(state)
+                            return (
+                              <div key={shot.id} className={css.shot} data-testid="issue-reporter-chip" data-shot-index={index + 1} data-state={state}>
+                                <ImageIcon size={16} strokeWidth={2} className={css.shotIcon} />
+                                <span className={css.shotName}>{shot.name}</span>
+                                {badge.icon !== 'none' && (
+                                  <span className={css.chipState} data-testid="issue-reporter-chip-state" data-state={state}>
+                                    {badge.icon === 'spinner' && <LoaderCircle size={9} strokeWidth={2} className={css.spinner} />}
+                                    {badge.icon === 'check' && <Check size={9} strokeWidth={2} />}
+                                    {badge.text}
+                                  </span>
+                                )}
+                                {state === 'failed' && (
+                                  <button type="button" className={css.chipRetry} onClick={() => { void retryShot(shot.id) }}>
+                                    重试这一张
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className={css.shotRemove}
+                                  data-testid="issue-reporter-chip-remove"
+                                  aria-label={`移除第 ${index + 1} 张截图`}
+                                  onClick={() => { removeShot(shot.id) }}
+                                >
+                                  <X size={10} strokeWidth={2} />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                      <textarea
+                        className={css.textarea}
+                        data-testid="issue-reporter-desc-input"
+                        value={draft.body}
+                        placeholder={DESC_PLACEHOLDER}
+                        onChange={(event) => { setDraft(prev => ({ ...prev, body: event.target.value })) }}
+                        onPaste={onPaste}
+                      />
+                    </div>
+                  </div>
 
-              <div className={css.resultBody}>
-                <span className={css.resultMeta}>GitHub 新建页</span>
-                <span className={css.resultEcho}>{result.title}</span>
-                <ol className={css.steps}>
-                  {successSteps(result).map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}
-                </ol>
-                {result.outcome !== 'opened' && <span className={css.resultUrl}>{result.url}</span>}
-              </div>
+                  <div className={css.envCard}>
+                    <label className={css.envCheck}>
+                      <input
+                        type="checkbox"
+                        data-testid="issue-reporter-env"
+                        checked={draft.includeEnv}
+                        onChange={(event) => { setDraft(prev => ({ ...prev, includeEnv: event.target.checked })) }}
+                      />
+                      <span>附带环境信息（自动附加，可取消）</span>
+                    </label>
+                    <span className={css.envLine}>{envLine}</span>
+                    {shots.length > 0 && (
+                      <span className={css.envLine}>
+                        {consent === 'accepted'
+                          ? `截图将上传到 ${assetsRepo} 并作为图片链接写进正文`
+                          : shots.length > 0 && consent === 'skipped'
+                            ? '本次运行不托管截图：正文不含图片'
+                            : '尚未决定截图托管：提交时会先问一次'}
+                      </span>
+                    )}
+                  </div>
 
-              <div className={css.actions}>
-                <button type="button" className={css.btnGhost} onClick={() => { void copyBodyAgain() }}>复制正文</button>
-                {shots.map((shot, index) => (
-                  <button
-                    key={shot.id}
-                    type="button"
-                    className={css.btnGhost}
-                    onClick={() => { void copyShotAt(index) }}
-                  >
-                    {copiedShot === index + 1 ? `已复制第 ${index + 1} 张` : `复制第 ${index + 1} 张截图`}
-                  </button>
-                ))}
-                <span className={css.actionsSpacer} />
-                <button type="button" className={css.btnPrimary} onClick={() => { void reopen(result.url) }}>打开 GitHub</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={css.resultHead} data-testid="issue-reporter-failure">
-                <CircleX size={16} strokeWidth={2} className={css.errIcon} />
-                <span className={css.resultTitle}>提交失败</span>
-                <span className={css.headSpacer} />
-                <button type="button" className={css.closeBtn} aria-label="关闭面板" onClick={closePanel}>
-                  <X size={12} strokeWidth={2} />
-                </button>
-              </div>
-
-              <div className={css.resultBody}>
-                <span className={css.errMsg}>{result.message}</span>
-                <span className={css.resultNote}>你的内容还在草稿里</span>
-              </div>
-
-              <div className={css.actions}>
-                <span className={css.actionsSpacer} />
-                <button type="button" className={css.btnGhost} onClick={() => { void copyAndOpen(result.url) }}>复制内容并打开</button>
-                <button type="button" className={css.btnPrimary} disabled={busy} onClick={() => { void submit() }}>
-                  {busy ? '提交中…' : '重试'}
-                </button>
-              </div>
+                  <div className={css.actions}>
+                    <button type="button" className={css.btnGhost} onClick={closePanel}>取消</button>
+                    <span className={css.actionsSpacer} />
+                    <button type="button" className={css.btnPrimary} data-testid="issue-reporter-submit" disabled={!canSubmit} onClick={() => { void submit() }}>
+                      {busy ? '提交中…' : '提交 Issue'}
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

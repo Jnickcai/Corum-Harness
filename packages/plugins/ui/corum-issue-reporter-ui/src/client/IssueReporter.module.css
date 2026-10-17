@@ -234,7 +234,11 @@
   position: relative;
   box-sizing: border-box;
   width: 104px;
-  height: 68px;
+  /* 68 是**没有状态徽标**时的高度（设计稿值）；带上传状态/重试按钮时允许长高，
+     内容高度自撑——否则徽标会被 overflow:hidden 裁掉。 */
+  min-height: 68px;
+  height: auto;
+  padding: 6px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -273,6 +277,39 @@
   cursor: pointer;
 }
 .shotRemove:hover { color: var(--dsw-alias-state-error-primary); }
+
+/* 上传状态徽标（`data-testid="issue-reporter-chip-state"`）：五态各自的颜色都取既有
+   token；文案与图标由 `uploadLabel()` 给，这里只管视觉。 */
+.chipState {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 96px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--corum-glass-2);
+  font-size: 8.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+.chipState[data-state='uploading'] { color: var(--dsw-alias-brand-primary); }
+.chipState[data-state='done'] { color: var(--dsw-alias-state-success-primary); }
+.chipState[data-state='failed'] { color: var(--dsw-alias-state-error-primary); }
+.chipState[data-state='toolarge'],
+.chipState[data-state='notimage'] { color: var(--dsw-alias-state-warn-primary); }
+
+/* 失败 chip 上的「重试这一张」（只重传这一张，不打断其余）。 */
+.chipRetry {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-brand-primary);
+  font-family: inherit;
+  font-size: 8.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 /* 环境信息卡片（确定性读取，用户只能勾/不勾）。 */
 .envCard {
@@ -388,8 +425,169 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* ── C. 授权视图（device flow）─────────────────────────────────────── */
+
+.auth {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* 设备码：等宽、22px、加字距（形如 WDJB-MJHT），可选中复制。 */
+.authCodeRow { display: flex; align-items: center; gap: 10px; }
+.authCode {
+  flex: 1;
+  min-width: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--dsw-alias-label-primary);
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.authCopy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.authCopy:hover { color: var(--dsw-alias-label-primary); background: var(--corum-glass-3); }
+
+/* 「打开授权页」：与主按钮同形，但撑满一行（它是这一屏的主行动）。 */
+.authOpen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary);
+  color: var(--corum-label-on-brand);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.authOpen:hover { filter: brightness(1.1); }
+
+/* 状态行（轮询提示）：spinner + 一句话。 */
+.authPoll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.spinner { flex: none; color: var(--dsw-alias-brand-primary); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.authNotice { font-size: 11.5px; color: var(--dsw-alias-state-warn-primary); }
+.authNote { font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); }
+.authBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--corum-glass-2);
+}
+.authErrRow { display: flex; align-items: center; gap: 6px; }
+.authErrCode {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+/* ── D. 截图托管同意卡（只出现一次；文案把边界说清）───────────────── */
+
+.consent {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--corum-glass-border-active);
+  border-radius: 12px;
+  background: var(--corum-glass-2);
+}
+.consentHead { display: flex; align-items: center; gap: 8px; }
+.consentIcon { flex: none; color: var(--dsw-alias-brand-primary); }
+.consentTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.consentText {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-secondary);
+}
+.consentRepo {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+.consentCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.consentCheck input { flex: none; margin-top: 2px; accent-color: var(--dsw-alias-brand-primary); }
+.consentErr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--corum-glass-3);
+}
+
+/* ── E. 结果卡补充（成功卡的编号 / 失败卡的 detail 原文）───────────── */
+
+.resultNumber {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  user-select: text;
+}
+/* GitHub 的 errors[]/message 原文：等宽小字 + 限高滚动（不撑爆面板）。 */
+.errDetail {
+  max-height: 120px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--corum-glass-2);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
 /* 动效降级。 */
 @media (prefers-reduced-motion: reduce) {
   .panel { animation: none; }
   .hint { transition: none; }
+  .spinner { animation: none; }
 }
