@@ -103,6 +103,28 @@ const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 /** 描述框的 placeholder（三行：发生了什么 / 空行 / 复现步骤 + 粘贴提示）。 */
 const DESC_PLACEHOLDER = '发生了什么？\n\n复现步骤 / 期望结果 · 截图直接 Ctrl+V 粘到这里'
 
+/** 瞬时失败退避的上限秒数（再失败也按这个间隔重试，不无限拉长）。 */
+const POLL_BACKOFF_CAP_SEC = 10
+
+/**
+ * `authPoll` 里属于**瞬时**（信道抖动）的失败码。
+ *
+ * 这些码**绝不能结束授权会话**：一旦结束，这一枚 `device_code` 就永久失去续轮询
+ * 的能力，用户只能重新拿码（实测一次网络抖动连废四枚码）。其余失败码
+ * （`expired_token` / `access_denied` / `unsupported` / …）才是真结束。
+ */
+const TRANSIENT_POLL_CODES: readonly string[] = ['network-error', 'timeout', 'rpc-error']
+
+/**
+ * 瞬时失败后的下一次轮询延迟。
+ * @param retries - 已经连续失败了几次（从 1 开始计数）。
+ * @returns 下一次轮询该等多少秒（2 → 4 → 8，之后按 {@link POLL_BACKOFF_CAP_SEC} 封顶）。
+ */
+function pollBackoffSec(retries: number): number {
+  if (retries <= 0) return 2
+  return Math.min(POLL_BACKOFF_CAP_SEC, 2 ** Math.min(retries, 4))
+}
+
 /** 贴边位置：只认左右两条边（面板贴在按钮内侧，上下边会让面板压住按钮）。 */
 interface TabPosition {
   edge: 'left' | 'right'
@@ -491,6 +513,8 @@ export function IssueReporter({ client }: IssueReporterProps) {
   const [authSeq, setAuthSeq] = useState(0)
   /** 每轮轮询后 +1：让轮询 effect 重新排下一次定时器（pending 时状态不变）。 */
   const [pollSeq, setPollSeq] = useState(0)
+  /** 连续瞬时失败次数（>0 = 正在退避重试；收到任意成功响应即归零）。 */
+  const [pollRetries, setPollRetries] = useState(0)
   /** 设备码是否已过期（本地按 `expiresIn` 计时，不依赖 GitHub 回错）。 */
   const [expired, setExpired] = useState(false)
   /** auth 视图上的一句话提示（如「授权已失效，请重新授权」）。 */
@@ -519,6 +543,8 @@ export function IssueReporter({ client }: IssueReporterProps) {
   const lastBodyRef = useRef('')
   /** 「首次打开面板查一次授权」只做一次。 */
   const authCheckedRef = useRef(false)
+  /** 退避档位的同步镜像（effect 排 timer 时要读到最新值，state 在闭包里可能是旧值）。 */
+  const pollRetryRef = useRef(0)
   /** 进行中的拖动监听清理器（组件在拖动中途卸载时不漏监听）。 */
   const dragCleanupRef = useRef<(() => void) | null>(null)
   /** 「已复制」的复位定时器。 */
@@ -604,7 +630,12 @@ export function IssueReporter({ client }: IssueReporterProps) {
 
   // ── 视图与授权 ────────────────────────────────────────────────────
 
-  /** 收起面板：三视图回到 form，结果与授权会话一并清掉（草稿与托管表态保留）。 */
+  /**
+   * 收起面板：三视图回到 form，结果与授权会话一并清掉（草稿与托管表态保留）。
+   *
+   * 结果态**必须**在这里复位：关掉再打开要落在 form（上一张成功卡/失败卡都不常驻），
+   * 失败时草稿照旧保留（面板没提交成功，内容不能跟着结果卡一起消失）。
+   */
   const closePanel = useCallback((): void => {
     setOpen(false)
     setResult(null)
@@ -617,6 +648,8 @@ export function IssueReporter({ client }: IssueReporterProps) {
     setCopiedCode(false)
     setConsentPrompt(false)
     setConsentError(null)
+    pollRetryRef.current = 0
+    setPollRetries(0)
   }, [])
 
   /**
@@ -631,6 +664,9 @@ export function IssueReporter({ client }: IssueReporterProps) {
     setAuthPhase('starting')
     setExpired(false)
     setCopiedCode(false)
+    // 新的一枚设备码 ⇒ 退避档位从零开始（不能继承上一枚码的连续失败计数）。
+    pollRetryRef.current = 0
+    setPollRetries(0)
     setAuthSeq(seq => seq + 1)
   }, [])
 
@@ -643,6 +679,8 @@ export function IssueReporter({ client }: IssueReporterProps) {
     setExpired(false)
     setAuthNotice(null)
     setCopiedCode(false)
+    pollRetryRef.current = 0
+    setPollRetries(0)
   }, [])
 
   /** 授权成功后的落点：记下 login，按「有没有截图 + 有没有同意过托管」决定下一步。 */
@@ -711,15 +749,25 @@ export function IssueReporter({ client }: IssueReporterProps) {
   // 轮询授权结果：每次只排一个 `setTimeout`，随 interval/pollSeq 重排。
   // **面板关闭（open=false）或离开 auth 视图时 cleanup 一定清掉定时器**——
   // 组件卸载也一样走 cleanup，所以没有任何路径能让轮询在后台继续跑。
+  //
+  // 瞬时失败（`network-error` / `timeout` / `rpc-error`）**不结束会话**：沿用同一枚
+  // `deviceCode` 温和退避重试（2s → 4s → 8s → 10s 封顶），`authPhase` 保持 waiting
+  // ⇒ 设备码继续渲染；收到任意成功响应即把退避档位归零。只有 GitHub 明确回
+  // `expired_token` / `access_denied`（或本地 `expiresIn` 到期、用户点取消）才收摊。
   useEffect(() => {
     if (!open || view !== 'auth' || session === null || authPhase !== 'waiting' || expired) return undefined
     const deviceCode = session.deviceCode
+    // 排这一轮定时器时就定下延迟：正在退避 ⇒ 按失败次数退避，否则按 host 给的 interval。
+    const delaySec = pollRetryRef.current > 0 ? pollBackoffSec(pollRetryRef.current) : Math.max(1, intervalSec)
     let cancelled = false
     const timer = window.setTimeout(() => {
       void (async () => {
         const polled = await client.authPoll(deviceCode)
         if (cancelled) return
         if (polled.ok) {
+          // 收到任意成功响应 ⇒ 信道恢复，退避档位归零，回到正常 interval。
+          pollRetryRef.current = 0
+          setPollRetries(0)
           if (polled.status === 'authorized') {
             onAuthorized(polled.login)
             return
@@ -728,11 +776,21 @@ export function IssueReporter({ client }: IssueReporterProps) {
           setPollSeq(seq => seq + 1) // pending / slow_down 都继续排下一次
           return
         }
-        // 失败码（expired_token / access_denied / …）：就地显示原因 + 「重新获取设备码」。
+        if (TRANSIENT_POLL_CODES.includes(polled.code)) {
+          // 瞬时失败：同一枚 deviceCode 继续轮询，只把状态行换成非致命提示并退避。
+          pollRetryRef.current += 1
+          setPollRetries(pollRetryRef.current)
+          setPollSeq(seq => seq + 1)
+          return
+        }
+        // 真正结束授权会话（expired_token / access_denied / unsupported / …）：
+        // 就地显示原因 + 「重新获取设备码」。
+        pollRetryRef.current = 0
+        setPollRetries(0)
         setAuthError(polled)
         setAuthPhase('failed')
       })()
-    }, Math.max(1, intervalSec) * 1000)
+    }, delaySec * 1000)
     return () => {
       cancelled = true
       window.clearTimeout(timer)
@@ -921,6 +979,26 @@ export function IssueReporter({ client }: IssueReporterProps) {
     setUploads(rest)
   }
 
+  /**
+   * 清空「本次提交掉的内容」：标题、描述、全部截图 chip（含 ObjectURL 回收）。
+   *
+   * **只在 `submitIssue` 成功之后调用**（失败一律原样保留：那份内容要能原样重试，
+   * 见 `runSubmit` 的两条分支）。类型选择与环境信息勾选**保留**——它们是下一条
+   * issue 大概率还要用的同一套表态，不属于「这条 issue 的内容」。
+   *
+   * 草稿 state 一变，`DRAFT_KEY` 那条 effect 就把它落盘，所以持久化的草稿跟着变空
+   * （否则会出现「界面空了、关掉重开又回来」）。成功卡上的标题回显与 `#编号`
+   * 取自 `result` 快照，不读 `draft`，因此清空不会把卡片变空白。
+   */
+  const clearSubmittedContent = useCallback((): void => {
+    setDraft(prev => ({ ...EMPTY_DRAFT, kind: prev.kind, includeEnv: prev.includeEnv }))
+    for (const shot of shotsRef.current) URL.revokeObjectURL(shot.url)
+    applyShots([])
+    uploadsRef.current = {}
+    setUploads({})
+    lastBodyRef.current = ''
+  }, [applyShots])
+
   // ── 授权闸 / 托管 / 上传 ──────────────────────────────────────────
 
   /**
@@ -1094,6 +1172,8 @@ export function IssueReporter({ client }: IssueReporterProps) {
     // ⑤ 提交（labels 给类型对应的标签名，host 会过滤成仓库里真实存在的）。
     const submitted = await client.submitIssue(draft.title.trim(), body, [KIND_TAG[draft.kind]])
     if (submitted.ok) {
+      // 成功卡的内容全部来自 result 快照（标题回显 + #编号），不读 draft —— 所以下面
+      // 清草稿不会把卡片清空。
       setResult({
         kind: 'success',
         view: {
@@ -1106,6 +1186,9 @@ export function IssueReporter({ client }: IssueReporterProps) {
           envIncluded: draft.includeEnv,
         },
       })
+      // 成功 ⇒ 清空标题/描述/截图与持久化草稿，用户可以直接报下一条（保留类型与环境勾选）。
+      // **失败路径绝不清空**：内容必须原样留在输入框里可重试。
+      clearSubmittedContent()
       return
     }
     if (submitted.code === 'invalid-token') {
@@ -1129,14 +1212,9 @@ export function IssueReporter({ client }: IssueReporterProps) {
     }
   }
 
-  /** 成功卡「再报一个」：清标题/描述/截图与结果，保留类型与环境勾选。 */
+  /** 成功卡「再报一个」：内容在提交成功时已经清空，这里只退掉结果卡（幂等）。 */
   const reportAgain = (): void => {
-    setDraft(prev => ({ ...EMPTY_DRAFT, kind: prev.kind, includeEnv: prev.includeEnv }))
-    for (const shot of shotsRef.current) URL.revokeObjectURL(shot.url)
-    applyShots([])
-    uploadsRef.current = {}
-    setUploads({})
-    lastBodyRef.current = ''
+    clearSubmittedContent()
     setResult(null)
   }
 
@@ -1315,9 +1393,13 @@ export function IssueReporter({ client }: IssueReporterProps) {
                       <ExternalLink size={12} strokeWidth={2} /> 打开授权页
                     </button>
 
-                    <div className={css.authPoll} data-testid="issue-reporter-auth-poll">
+                    <div className={css.authPoll} data-testid="issue-reporter-auth-poll" data-retrying={pollRetries > 0 || undefined}>
                       <LoaderCircle size={12} strokeWidth={2} className={css.spinner} />
-                      <span>等待授权… 每 {intervalSec} 秒自动查询一次</span>
+                      <span>
+                        {pollRetries > 0
+                          ? `网络抖动，重试中…（第 ${pollRetries} 次，设备码仍然有效）`
+                          : `等待授权… 每 ${intervalSec} 秒自动查询一次`}
+                      </span>
                     </div>
 
                     <span className={css.authNote}>
