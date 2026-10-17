@@ -34,4 +34,7 @@ export type { MosaicWallProps, MosaicTileBodyProps, MosaicTileProps, MosaicTint,
 // 平台相关路径工具（P2：渲染层路径拼接的唯一共享面；经 preload
 // window.corumDesktop.getPlatform() 取实际运行平台的分隔符，绝不硬编码 `/`）。
 export { pathSep, joinPath, basenameOf, shortenPath } from './platform-paths.ts'
+// web 搜索 provider 的凭据引用规则（唯一家；两个 surface 共用，见文件头注释）。
+export { webSearchCredentialRef, DEFAULT_WEB_SEARCH_API_KEY_REF } from './web-search-credential.ts'
+export type { WebSearchCredentialSection } from './web-search-credential.ts'
 import './base-theme.css'
