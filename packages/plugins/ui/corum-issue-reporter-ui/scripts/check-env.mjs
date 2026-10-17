@@ -7,9 +7,11 @@
  *
  * 断言四件事（＝本轮验收点）：
  *   ① 12 行都在（行数与行序都固定，表头/分隔行形态也固定）；
- *   ② 缺项写 `unknown` 而不是整行消失；
+ *   ② 缺项写 `unknown` 而不是整行消失；`unknown` 不会被重复拼两遍；
  *   ③ 值里的 `|` 不会把 markdown 表格切坏（被换成全角 `／`）；
  *   ④ 产出里不含 home 路径 / 用户名模式的字符串（隐私红线）。
+ * 另加 ②b：「操作系统」行必须是**平台事实在前、人类可读细节在后**
+ * （`win32 · Windows 11 Pro · Windows_NT 10.0.26200 (x64)`），且缺平台时细节仍在。
  *
  * 用法（**构建之后**跑）：`node scripts/check-env.mjs`
  */
@@ -109,6 +111,7 @@ function splitRow(line) {
 const FULL_LOCAL = {
   appVersion: '0.5.0',
   baseline: 'unknown',
+  platform: 'win32',
   electron: '43.4.1',
   chromium: '155.0.7629.0',
   windowSize: '1602×1078',
@@ -158,6 +161,41 @@ console.log('=== ② 缺项写 unknown，不消失 ===')
     JSON.stringify(values),
   )
   check('窗口形态仍可判定（缺项不影响非读取项）', values[11] === '主窗', values[11])
+}
+
+/**
+ * 取某个项的值单元格。
+ * @param {readonly {key: string, value: string}[]} rows - {@link mergeEnv} 的产物。
+ * @param {string} key - 项名（如 `操作系统`）。
+ * @returns 值；找不到 → 空串。
+ */
+function valueOf(rows, key) {
+  return rows.find(row => row.key === key)?.value ?? ''
+}
+
+console.log('=== ②b 操作系统行：平台事实在前，缺平台仍保留 os 细节 ===')
+{
+  const withPlatform = valueOf(mergeEnv(FULL_LOCAL, FULL_HOST), '操作系统')
+  check('有 platform 时行里含 win32', withPlatform.includes('win32'), withPlatform)
+  check(
+    '形态固定 = `平台 · 版本名 · type release (arch)`',
+    withPlatform === 'win32 · Windows 11 Pro · Windows_NT 10.0.26200 (x64)',
+    withPlatform,
+  )
+  const noPlatform = valueOf(mergeEnv({ ...FULL_LOCAL, platform: 'unknown' }, FULL_HOST), '操作系统')
+  check(
+    '无 platform 时仍保留 os 细节',
+    noPlatform === 'Windows 11 Pro · Windows_NT 10.0.26200 (x64)',
+    noPlatform,
+  )
+  check('无 platform 时不是整行 unknown', noPlatform !== 'unknown', noPlatform)
+  const bare = valueOf(mergeEnv(UNKNOWN_LOCAL_ENV, null), '操作系统')
+  check('两处全缺时只有一个 unknown（不重复拼）', bare === 'unknown', bare)
+  const hostNoOs = valueOf(mergeEnv(FULL_LOCAL, { ...FULL_HOST, os: undefined }), '操作系统')
+  check('host os 整段缺席时平台事实仍出现（整行不省）', hostNoOs === 'win32', hostNoOs)
+  for (const [label, value] of [['有 platform', withPlatform], ['无 platform', noPlatform], ['两处全缺', bare], ['host os 缺席', hostNoOs]]) {
+    check(`${label}：行内无两个连续 unknown`, !/unknown[^\w]*unknown/i.test(value), value)
+  }
 }
 
 console.log('=== ③ 值里的 `|` 被替换（不切坏表格）===')
@@ -218,6 +256,9 @@ console.log('=== ⑤ 真机实跑（node 里没有 DOM：渲染层独有字段�
   const rows = mergeEnv(local, host)
   console.log(envTableMarkdown(rows))
   check('真机实跑也是 12 行', rows.length === 12, `实际 ${rows.length}`)
+  const osRow = valueOf(rows, '操作系统')
+  check('真机操作系统行不是整行 unknown（node 下 platform=unknown，os 细节仍在）', osRow !== 'unknown', osRow)
+  check('真机操作系统行无两个连续 unknown', !/unknown[^\w]*unknown/i.test(osRow), osRow)
 }
 
 console.log('')

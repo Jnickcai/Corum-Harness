@@ -15,7 +15,7 @@
  * | Corum | `window.corumDesktop.getAppVersion()`（桥） |
  * | dsh 基座 | host `envInfo`（`@deepseek-ai/dsh-base` 清单；退路见 host 半边） |
  * | 运行形态 | host `process.env.CORUM_DESKTOP_MODE` + `CORUM_DEBUG_PORT` |
- * | 操作系统 | host `os.type()` / `os.release()` / `os.version()` / `process.arch` |
+ * | 操作系统 | 平台事实 `window.corumDesktop.getPlatform()` + host `os.type()` / `os.release()` / `os.version()` / `process.arch` |
  * | Electron / Chromium | `navigator.userAgent` |
  * | Node / V8 | host `process.versions` |
  * | 窗口 / 屏幕 | `window.innerWidth/innerHeight` / `devicePixelRatio` / `screen.*` |
@@ -59,6 +59,14 @@ export interface LocalEnv {
   readonly appVersion: string
   /** preload 给的基座版本（host `envInfo` 缺席时的退路）。 */
   readonly baseline: string
+  /**
+   * 项目认可的平台事实（`getPlatform()` = `process.platform`）。
+   *
+   * **这是行为决策与断言唯一认的平台值**（`win32` / `darwin` / `linux`）；
+   * host 那半边的 `os.type()`（`Windows_NT` / `Darwin` / `Linux`）只是人类可读细节，
+   * 两者拼在同一行里、平台事实在前。
+   */
+  readonly platform: string
   /** UA 里的 `Electron/(\S+)`。 */
   readonly electron: string
   /** UA 里的 `Chrome/(\S+)`（Chromium 版本）。 */
@@ -85,6 +93,7 @@ export interface LocalEnv {
 export const UNKNOWN_LOCAL_ENV: LocalEnv = {
   appVersion: UNKNOWN,
   baseline: UNKNOWN,
+  platform: UNKNOWN,
   electron: UNKNOWN,
   chromium: UNKNOWN,
   windowSize: UNKNOWN,
@@ -163,6 +172,22 @@ async function bridgeString(read: () => Promise<string | null | undefined> | und
 }
 
 /**
+ * 读桥上的一个**同步**字符串方法（异常/缺席的桥不把整个侦测带崩）。
+ *
+ * `getPlatform` 是同步桥面（平台是启动期常量，preload 写一次只读），这里单独一个
+ * 读取点：它给的是**项目认可的平台事实**，不能因为它缺席就退化成 host 的 `os.type()`。
+ * @param read - 取值函数。
+ * @returns 值或 `unknown`。
+ */
+function bridgeSyncString(read: () => string | null | undefined): string {
+  try {
+    return known(read())
+  } catch {
+    return UNKNOWN
+  }
+}
+
+/**
  * 当前是否浮窗（与 `src/client/index.ts`、`window-role.ts` 同一 URL 契约）。
  * @returns 带 `floating` 参数即 true。
  */
@@ -222,6 +247,7 @@ export async function detectEnvLocal(): Promise<LocalEnv> {
   return {
     appVersion,
     baseline,
+    platform: bridgeSyncString(() => bridge?.getPlatform?.()),
     electron: uaToken(ua, /Electron\/(\S+)/),
     chromium: uaToken(ua, /Chrome\/(\S+)/),
     windowSize,
@@ -236,16 +262,23 @@ export async function detectEnvLocal(): Promise<LocalEnv> {
 }
 
 /**
- * 操作系统单元格：`Windows_NT 10.0.26200 (x64)`；Windows 再附加版本名（`· Windows 11 Pro`）。
+ * 操作系统单元格：`win32 · Windows 11 Pro · Windows_NT 10.0.26200 (x64)`。
+ *
+ * **两处综合，平台事实在前、人类可读细节在后**：
+ * - 平台事实 = `getPlatform()`（`process.platform`，行为决策唯一认的值）；
+ * - 细节 = host 的版本名（`os.version()`）+ `os.type() os.release() (arch)`。
+ *
+ * 缺项写 `unknown` 但**整行不省**（维护者要能看出「没取到」而不是「不存在」）；
+ * 分段仍走 {@link joinKnown}，全缺时只留一个 `unknown`，**不会拼出两个连续 `unknown`**。
  * @param os - host 上报的操作系统段（缺席时 undefined）。
+ * @param platform - {@link LocalEnv.platform}（桥缺席时 `unknown`）。
  * @returns 单元格值。
  */
-function osOf(os: HostEnvInfo['os'] | undefined): string {
-  if (os === undefined) return UNKNOWN
-  const name = joinKnown([known(os.type), known(os.release)], ' ')
-  const base = name === UNKNOWN ? UNKNOWN : `${name} (${known(os.arch)})`
-  const version = known(os.version)
-  return version === UNKNOWN ? base : joinKnown([base, version], ' · ')
+function osOf(os: HostEnvInfo['os'] | undefined, platform: string): string {
+  const name = joinKnown([known(os?.type), known(os?.release)], ' ')
+  const arch = known(os?.arch)
+  const detail = name === UNKNOWN && arch === UNKNOWN ? UNKNOWN : `${name} (${arch})`
+  return joinKnown([known(platform), known(os?.version), detail], ' · ')
 }
 
 /**
@@ -296,7 +329,7 @@ export function mergeEnv(local: LocalEnv, host: HostEnvInfo | null): MergedEnv {
       value: known(host?.dshVersion) === UNKNOWN ? known(local.baseline) : known(host?.dshVersion),
     },
     { key: '运行形态', value: modeOf(host) },
-    { key: '操作系统', value: osOf(host?.os) },
+    { key: '操作系统', value: osOf(host?.os, local.platform) },
     { key: 'Electron / Chromium', value: pairOf(known(local.electron), known(local.chromium)) },
     { key: 'Node / V8', value: pairOf(known(host?.node), known(host?.v8)) },
     {
