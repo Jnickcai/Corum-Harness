@@ -139,6 +139,78 @@ export function messageOf(error: unknown): string {
 }
 
 /**
+ * fork（corum）：本机 Ollama 的模型列表**读取器**（返回已拉取模型名，取不到 → null）。
+ *
+ * ## 为什么不再是渲染层 fetch
+ *
+ * 旧实现直接在渲染层 `fetch('http://127.0.0.1:11434/api/tags')`。`catch` 是静默的，
+ * 但**浏览器网络层**仍会为失败的请求记一条 `net::ERR_CONNECTION_REFUSED`（JS 无法抑制）：
+ * 大多数用户没装/没跑 Ollama，于是每次进「模型」页都往应用 Log 里写一条错误。
+ * 现在改由 host 探测（`@corum/corum-ollama` 的 `LocalLlmService.status()` = `probeRunning()`
+ * + `listPulledModels()`，两者都是 host 侧 fetch），渲染层只收结果、不发请求。
+ */
+export type LocalLlmModels = () => Promise<readonly string[] | null>
+
+/** host `localLlm` 服务名（`@corum/corum-ollama` 的 `super(ctx, 'localLlm')`）。 */
+const LOCAL_LLM_SERVICE = 'localLlm'
+
+/** `/api` 通道（Typert 网关的唯一 HTTP 通道）。 */
+const API_CHANNEL = '/api'
+
+/** RPC 返回信封（只声明本层读得到的那几个字段）。 */
+interface LocalLlmRpcOutcome {
+  readonly ok: boolean
+  readonly value?: unknown
+  readonly error?: { readonly code?: string; readonly message?: string }
+}
+
+/**
+ * 本层需要的 connection 面 —— **本地窄化能力接口**（红线 3：跨 bundle 类型面不对齐时
+ * 收窄，不耦合官方实现包；形态与 corum-ollama / corum-issue-reporter 的写法一致）。
+ */
+export interface LocalLlmConnection {
+  readonly rpc: {
+    call(
+      channel: string,
+      endpoint: string,
+      payload: { readonly args: Record<string, unknown> },
+    ): Promise<LocalLlmRpcOutcome>
+  }
+}
+
+/** `localLlm/status` 的返回里本层读得到的部分（`LocalEngineStatus` 的只读子集）。 */
+interface LocalLlmStatusView {
+  readonly running?: boolean
+  readonly models?: readonly { readonly name?: string }[]
+}
+
+/**
+ * 造「本机 Ollama 模型名」读取器：一次 host RPC，**绝不**在渲染层发请求。
+ *
+ * 永不抛：没连接、旧 host（网关不认识 `localLlm/status`）、引擎没跑、返回形态不对，
+ * 一律 `null`（= 列不出模型，与旧逻辑「Ollama 没跑就没卡片」同一结果）。
+ * @param connection - `ctx.get('connection')`（缺席 = 旧壳/无连接）。
+ * @returns 读取器。
+ */
+export function createLocalLlmModels(connection: LocalLlmConnection | undefined | null): LocalLlmModels {
+  return async function listLocalLlmModels(): Promise<readonly string[] | null> {
+    if (connection === undefined || connection === null) return null
+    let outcome: LocalLlmRpcOutcome
+    try {
+      outcome = await connection.rpc.call(API_CHANNEL, `${LOCAL_LLM_SERVICE}/status`, { args: {} })
+    } catch {
+      return null
+    }
+    if (!outcome.ok) return null
+    const status = outcome.value as LocalLlmStatusView | undefined
+    if (status === undefined || status === null || status.running !== true) return null
+    const models = status.models
+    if (!Array.isArray(models)) return null
+    return models.map(model => (typeof model.name === 'string' ? model.name : '')).filter(name => name !== '')
+  }
+}
+
+/**
  * Derive the conventional credential reference for a provider route: the v1
  * page never asks for an environment-variable name, so a typed key stores
  * under this derived reference and the profile records it as `apiKeyEnv`.
@@ -216,11 +288,15 @@ export class ModelsSettingsStore {
   /**
    * @param api - the page's credentials Remote and LLM wire faces.
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
+   * @param localLlmModels - fork（corum）：本机 Ollama 模型名读取器（host
+   *   `localLlm/status`）。缺省 = 列不出本机模型（旧行为是渲染层 fetch，
+   *   现已在渲染层彻底移除，见 {@link createLocalLlmModels}）。
    */
   constructor(
     private readonly api: Pick<ModelsWire, 'credentials' | 'llm'>,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
+    private readonly localLlmModels: LocalLlmModels | undefined = undefined,
   ) {}
 
   /**
@@ -292,31 +368,26 @@ export class ModelsSettingsStore {
         credentialError = messageOf(error)
       }
     }
-    // fork（corum）：对无 settingsNs 的 route provider（如 Ollama），
-    // 直接调 provider 的本地 API（Ollama /api/tags）拉取模型列表。
+    // fork（corum）：对无 settingsNs 的 route provider（如 Ollama），模型列表走
+    // **host RPC**（`localLlm/status`），不在渲染层 fetch 127.0.0.1:11434 —— 那次
+    // fetch 失败会在浏览器网络层留一条 `net::ERR_CONNECTION_REFUSED` 日志
+    // （JS 无法抑制），而 Ollama 没跑是大多数用户的默认状态。
     const routeProviderIds = providers.filter(p => p.settingsNs === '' && p.active).map(p => p.provider)
     const routeModels = new Map<string, ModelCard[]>()
-    if (routeProviderIds.length > 0) {
-      await Promise.all(routeProviderIds.map(async (providerId) => {
-        try {
-          if (providerId === 'ollama') {
-            const r = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(2500) })
-            if (!r.ok) return
-            const j = (await r.json()) as { models?: Array<{ name?: string }> }
-            const models = (j.models ?? []).map(m => m.name ?? '').filter(n => n !== '')
-            routeModels.set(providerId, models.map(id => ({
-              provider: providerId,
-              modelId: id,
-              brand: { name: 'Ollama', mark: '🦙', color: '#22C55E' },
-              providerName: 'Ollama（本地）',
-              imageInput: false,
-              settingsNs: '',
-              settingsPath: [],
-              family: undefined,
-            })))
-          }
-        } catch { /* 静默 */ }
-      }))
+    if (routeProviderIds.includes('ollama') && this.localLlmModels !== undefined) {
+      const models = await this.localLlmModels()
+      if (models !== null) {
+        routeModels.set('ollama', models.map(id => ({
+          provider: 'ollama',
+          modelId: id,
+          brand: { name: 'Ollama', mark: '🦙', color: '#22C55E' },
+          providerName: 'Ollama（本地）',
+          imageInput: false,
+          settingsNs: '',
+          settingsPath: [],
+          family: undefined,
+        })))
+      }
     }
     if (generation !== this.generation) return
     this.store.update((s) => {

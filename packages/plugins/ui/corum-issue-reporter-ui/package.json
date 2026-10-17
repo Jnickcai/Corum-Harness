@@ -1,0 +1,49 @@
+{
+  "name": "@corum/corum-issue-reporter-ui",
+  "version": "0.1.0",
+  "description": "corum Issue 提交插件：贴边悬浮 bug 入口（可拖动吸附）+ 提交面板（类型/标题/描述/环境信息/剪贴板截图 chip），纯手工组装 GitHub issue/new URL，经 window.corumDesktop.openExternal 交给系统浏览器。",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "immediately": false
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
+    "lucide-react": "^0.460.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@tsdown/css": "^0.22.14",
+    "@types/react": "~18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  }
+}
