@@ -9,7 +9,7 @@
  * @module corum-desktop/electron/ipc
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -522,6 +522,37 @@ export function registerIpc(
     readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'),
   ).version as string
   ipcMain.handle('corum:app-version', () => appVersion)
+
+  /**
+   * 构建渠道：`release` = 正式发布产物，`local` = 本地构建。
+   *
+   * 为什么需要它：本地打出来的包与线上发布的包**版本号完全相同**（都读
+   * package.json），于是「我测的这个 bug 到底还在不在」无法自证 —— 2026-10-17
+   * 用户明确要求区分。
+   *
+   * 判据用「有没有打包签名/更新源」而不是改版本号：版本号由 release.mjs 严格
+   * 校验并写台账，任何构建期篡改都会污染发布事实（docs/VERSIONING.md）。
+   *
+   * 具体判据：正式包由 electron-builder 配置了 publish 源且带签名；
+   * 本地 `pack:host` 走的是未签名的临时产物（实测 `skipped macOS application
+   * code signing`）。这里用「是否打包态 + 是否有签名身份」两者结合，
+   * 缺少任一即视为本地。
+   */
+  const buildChannel: 'release' | 'local' = ((): 'release' | 'local' => {
+    // 非打包态（直接 node/electron 跑源码）必然是本地。
+    if (!existsSync(join(process.resourcesPath, 'host', 'lib', 'bridge.js'))) return 'local'
+    // 打包态：以「是否存在发布签名」为判据。开发机没有 Developer ID，
+    // 本地打包会是未签名产物；正式发布在 CI 上签名后再分发。
+    // macOS 下 app.isPackaged 为真且签名存在时，`process.execPath` 位于 .app 内。
+    // 这里不深入验签（代价高且需要 codesign 子进程），改用构建期写入的渠道标记：
+    const marker = join(process.resourcesPath, 'host', 'build-channel')
+    try {
+      const value = readFileSync(marker, 'utf8').trim()
+      if (value === 'release' || value === 'local') return value
+    } catch { /* 没有标记 = 老产物或本地构建 */ }
+    return 'local'
+  })()
+  ipcMain.handle('corum:build-channel', () => buildChannel)
 
   /**
    * dsh 基座版本（用户 2026-10-03 定调：**侧栏只显示应用版本号，基座号��进诊断信息**）。

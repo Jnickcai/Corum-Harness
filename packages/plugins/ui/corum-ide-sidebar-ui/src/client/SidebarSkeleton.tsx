@@ -52,6 +52,8 @@ const FLIP_TOTAL_MS = 240
 interface AppVersionFace {
   getAppVersion?: () => Promise<string>
   getDshBaselineVersion?: () => Promise<string | undefined>
+  /** `release` = 正式发布产物，`local` = 本地构建（版本号相同，只能靠它区分）。 */
+  getBuildChannel?: () => Promise<'release' | 'local'>
 }
 
 /** 诊断信息里的平台标签：UA-CH 优先，回落已废弃但仍普遍可用的 navigator.platform。 */
@@ -83,6 +85,12 @@ export function SidebarSkeleton({ wide, renderSlot, useProjectOccupied, useSideb
    * 取不到就省略那一段（不编造）。
    */
   const [dshVersion, setDshVersion] = useState<string | null>(null)
+  /**
+   * 构建渠道：本地包与线上包版本号完全相同，不标出来就分不清手上测的是哪一个
+   * （用户 2026-10-17 要求）。`null` = 还没取到或老壳没有该桥，此时不渲染后缀，
+   * 避免出现「v0.5.0 · 」这种半截文案。
+   */
+  const [buildChannel, setBuildChannel] = useState<'release' | 'local' | null>(null)
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -98,6 +106,12 @@ export function SidebarSkeleton({ wide, renderSlot, useProjectOccupied, useSideb
         if (!cancelled && dsh !== undefined && dsh !== '') setDshVersion(dsh)
       } catch (error) {
         console.warn('[sidebar] 读取 dsh 基座版本号失败', error)
+      }
+      try {
+        const channel = await bridge?.getBuildChannel?.()
+        if (!cancelled && (channel === 'release' || channel === 'local')) setBuildChannel(channel)
+      } catch (error) {
+        console.warn('[sidebar] 读取构建渠道失败', error)
       }
     })()
     return () => { cancelled = true }
@@ -115,7 +129,14 @@ export function SidebarSkeleton({ wide, renderSlot, useProjectOccupied, useSideb
    * 会让「社区版」在同一行出现两次（用户 2026-10-02 报障）。版本号异步到位，
    * 未到位时留空 —— 避免出现「v · 社区版」这种半截文案。
    */
-  const versionLabel = appVersion !== null ? `v${appVersion}` : ''
+  // 本地构建加 `-local` 后缀；正式发布不加（正式包是常态）。
+  //
+  // 用短后缀而不是「· 本地构建」：侧栏锁 220px，版本行可用宽只有 ~110px，
+  // `v0.5.0 · 本地构建` 必然被省略号截断，反而看不出区别。`v0.5.0-local`
+  // 在同等宽度内能完整显示，且与 semver 的预发布段形态一致（一眼能认）。
+  const versionLabel = appVersion !== null
+    ? `v${appVersion}${buildChannel === 'local' ? '-local' : ''}`
+    : ''
 
   /** 复制诊断信息（版本 + 平台）到系统剪贴板；剪贴板不可用时只记日志，不打断用户。 */
   const copyDiagnostics = (): void => {
@@ -126,7 +147,7 @@ export function SidebarSkeleton({ wide, renderSlot, useProjectOccupied, useSideb
     if (clipboard === undefined) return
     // 诊断串 = 应用版 + dsh 基座版 + 平台（基座号无处展示，只有这里能看到）。
     const baseline = dshVersion !== null ? ` · dsh ${dshVersion}` : ''
-    void clipboard.writeText(`Corum v${appVersion ?? 'unknown'}${baseline} · ${platformLabel()}`).catch((error: unknown) => {
+    void clipboard.writeText(`Corum v${appVersion ?? 'unknown'}${buildChannel === 'local' ? ' (local build)' : ''}${baseline} · ${platformLabel()}`).catch((error: unknown) => {
       console.warn('[sidebar] 复制诊断信息失败', error)
     })
   }

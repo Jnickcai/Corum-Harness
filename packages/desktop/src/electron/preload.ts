@@ -71,6 +71,13 @@ export interface CorumDesktopBridge {
   getBakedTargetPlatform: () => 'darwin' | 'linux' | 'win32' | undefined
   /** 应用版本号（读 `packages/desktop/package.json`）：品牌行的版本小字用。 */
   getAppVersion: () => Promise<string>
+  /**
+   * 构建渠道：`release` = 正式发布产物，`local` = 本地构建。
+   *
+   * 本地包与线上包的**版本号完全相同**（都读 package.json），没有这个标识就无法
+   * 分辨手上的是哪一个。判据由打包期写入 Resources/host/build-channel。
+   */
+  getBuildChannel: () => Promise<'release' | 'local'>
   /** dsh 基座版本号（实际安装的官方锚点包）：只进「复制诊断信息」，不在界面单独展示。 */
   getDshBaselineVersion: () => Promise<string | undefined>
   /** 重启安装已下载的更新（spawn 安装脚本 → quit → 替换 → 重启）。 */
@@ -182,6 +189,9 @@ contextBridge.exposeInMainWorld('corumDesktop', {
    */
   getAppVersion: (): Promise<string> =>
     ipcRenderer.invoke('corum:app-version'),
+
+  getBuildChannel: (): Promise<'release' | 'local'> =>
+    ipcRenderer.invoke('corum:build-channel'),
 
   getDshBaselineVersion: (): Promise<string | undefined> =>
     ipcRenderer.invoke('corum:dsh-baseline-version'),
