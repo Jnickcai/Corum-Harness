@@ -238,7 +238,17 @@ function cleanArtifacts(packages) {
   for (const pkg of packages) removeDir(join(pkg.dir, 'lib'))
 
   // desktop 壳自己的产物。
-  for (const sub of ['lib', 'build/host', 'build/dist', 'build/node', 'dist/mac-arm64',
+  //
+  // ⚠️ 刻意**不删** `build/node`：它不是「本仓库编译出来的东西」，而是
+  // `fetch-node.mjs` 从 nodejs.org 物化并解压的运行时。删掉它之后必须重跑
+  // `pack:node` 才能补回，而 `corum-instance.sh update` 的流程是
+  // 「编译 → pack-macos → 重启」，**不含 pack:node** ⇒ 打出的包缺
+  // `Contents/Resources/node/bin/node`，启动时报
+  //   「启动失败：spawn …/Resources/node/bin/node ENOENT」
+  // （2026-10-17 实测踩到，把能跑的包打成了跑不起来的包）。
+  // 它的内容只随 package.json 里锁定的 Node 版本变化，与源码无关，不构成
+  // 「陈旧产物混入」的风险。
+  for (const sub of ['lib', 'build/host', 'build/dist', 'dist/mac-arm64',
     'dist/linux-unpacked', 'dist/win-unpacked']) {
     removeDir(join(ROOT, 'packages', 'desktop', sub))
   }
