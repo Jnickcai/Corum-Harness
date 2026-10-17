@@ -7,7 +7,11 @@
 - `html/` 是可以直接使用的 HTML 示例，包含一个 3 秒动画。
 - `video/` 是视频模板，先把自己的视频放入 `content/`，并按需修改 `entry`。
 - `theme.schema.json` 可用于编辑器的 JSON Schema 校验。
-- 当前内置的琥珀终端动画位于 `../assets/startup-terminal.html`，可以复制到 HTML 模板的 `content/index.html` 制作完整主题。将原 `embedlink:startup-holding`、`embedlink:startup-complete` 消息前缀改为 `corum:`。
+
+内置启动动画是**分段视频**（`../assets/startup-segments/`，见 `../startup-theme-remotion/`）。
+Corum 不再自带 HTML 动画，但 `type: 'html'` 仍是受支持的导入格式——从 `html/` 模板
+起步即可（模板里已接好 `corum:` 消息前缀）。若要参考完整实现，可以看旧版动画的历史
+版本：`git show 84f289f3^:packages/desktop/assets/startup-terminal.html`。
 
 可以手动压缩目录内文件。项目已经安装依赖并构建 desktop 后，也可以在本目录执行：
 

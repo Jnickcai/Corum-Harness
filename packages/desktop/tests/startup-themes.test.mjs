@@ -90,9 +90,9 @@ test('视频可以安装，删除当前主题回退内置，内置主题不能�
   await selectStartupTheme('sample', assets, home)
   await deleteStartupTheme('sample', home)
   assert.equal(readStartupThemeId(home), 'corum-terminal')
-  // Two builtins ship: the default segmented video and the legacy HTML animation.
-  assert.equal((await listStartupThemes(assets, home)).themes.length, 2)
-  for (const id of ['corum-terminal', 'corum-terminal-html']) await assert.rejects(deleteStartupTheme(id, home), /内置/)
+  // The segmented video is the only builtin — the legacy HTML animation is retired.
+  assert.equal((await listStartupThemes(assets, home)).themes.length, 1)
+  await assert.rejects(deleteStartupTheme('corum-terminal', home), /内置/)
 }))
 
 test('分段视频主题可导入安装，segment 文件解析到子目录', () => fixture(async home => {
@@ -131,7 +131,7 @@ test('主题损坏或缺失时回退，目录内未完成安装不显示', () =>
   await mkdir(join(home, 'startup-themes/broken'), { recursive: true })
   await writeFile(join(home, 'startup-themes/broken/manifest.json'), '{}')
   assert.equal((await resolveStartupTheme(assets, 'missing', home)).info.id, 'corum-terminal')
-  assert.equal((await listStartupThemes(assets, home)).themes.length, 2)
+  assert.equal((await listStartupThemes(assets, home)).themes.length, 1)
   await assert.rejects(selectStartupTheme('broken', assets, home))
 }))
 
