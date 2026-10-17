@@ -28,15 +28,25 @@
  *
  * ## 用法
  *
- *   node scripts/build-all.mjs              # 全量：所有包
+ *   node scripts/build-all.mjs               # 全量：所有包
+ *   node scripts/build-all.mjs --clean       # **先删光全部中间产物**再全量重建（出包默认）
  *   node scripts/build-all.mjs --changed     # 只建自上次打包后有改动的包（含依赖者）
  *   node scripts/build-all.mjs --verify      # 只做就绪断言，不构建（给 CI/打包前用）
+ *
+ * ## 为什么出包必须 --clean（用户 2026-10-17 定调）
+ *
+ * 增量构建（`tsc -b` + `tsbuildinfo`）会让「源码回退了但时间戳更新」这类情况被
+ * 跳过，也可能把上一次构建的残留文件留在 `lib/` 里。产物一旦混入陈旧文件，
+ * 打出来的包就无法与源码一一对应 —— 而这样的包要发给用户。
+ *
+ * 所以出包路径（`corum-instance.sh update`）一律带 `--clean`：
+ * 删干净 → 从零建 → 断言 → 打包。日常开发仍可用 `--changed` 省时间。
  *
  * @module scripts/build-all
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -56,35 +66,48 @@ function targetPlatform() {
 const PLATFORM = targetPlatform()
 const VERIFY_ONLY = process.argv.includes('--verify')
 const CHANGED_ONLY = process.argv.includes('--changed')
+const CLEAN_FIRST = process.argv.includes('--clean')
 
 /** 人类可读的一行日志（不加时间戳，CI 日志里由 runner 提供）。 */
 function log(message) {
   process.stdout.write(`${message}\n`)
 }
 
-/** 一个 workspace 包的最小事实集。 */
+/**
+ * 一个 workspace 包的最小事实集。
+ *
+ * **桌面壳本身也在内**：它有 `build` 脚本（`tsc -b` 两份 tsconfig + tsdown），
+ * `--clean` 又会删它的 `lib/`。把它漏在外面会得到一个「编译全绿、打包却
+ * ENOENT … /packages/desktop/lib」的死局 —— 2026-10-17 实测踩到过。
+ */
 function readPackages() {
   const out = []
-  const groups = ['ui', 'session', 'agent']
-  for (const group of groups) {
-    const dir = join(PLUGINS_DIR, group)
-    if (!existsSync(dir)) continue
-    for (const name of readdirSync(dir)) {
-      const pkgDir = join(dir, name)
-      const manifest = join(pkgDir, 'package.json')
-      if (!existsSync(manifest)) continue
-      let pkg
-      try { pkg = JSON.parse(readFileSync(manifest, 'utf8')) } catch { continue }
-      out.push({
-        dir: pkgDir,
-        name: pkg.name ?? name,
-        rel: relative(ROOT, pkgDir),
-        scripts: pkg.scripts ?? {},
-        deps: { ...pkg.dependencies, ...pkg.devDependencies },
-        /** client 插件必须产出 lib/client.js（打包断言判据）。 */
-        isClient: pkg.dsh?.client !== undefined,
-      })
-    }
+  const dirs = [join(ROOT, 'packages', 'desktop')]
+  for (const group of ['ui', 'session', 'agent']) {
+    const groupDir = join(PLUGINS_DIR, group)
+    if (!existsSync(groupDir)) continue
+    for (const name of readdirSync(groupDir)) dirs.push(join(groupDir, name))
+  }
+  for (const pkgDir of dirs) {
+    const manifest = join(pkgDir, 'package.json')
+    if (!existsSync(manifest)) continue
+    let pkg
+    try { pkg = JSON.parse(readFileSync(manifest, 'utf8')) } catch { continue }
+    out.push({
+      dir: pkgDir,
+      name: pkg.name ?? pkgDir,
+      rel: relative(ROOT, pkgDir),
+      scripts: pkg.scripts ?? {},
+      deps: { ...pkg.dependencies, ...pkg.devDependencies },
+      /**
+       * client 插件必须产出 lib/client.js（打包断言判据）。
+       *
+       * 排除桌面壳自身：它的 `dsh.client` 描述的是壳的 web client 入口，
+       * 产物是 `lib/client.js` 但语义不同（不属于「插件」清单）。把它算进来会让
+       * 就绪计数虚高一位，也会让断言去检查一个不该按插件口径衡量的包。
+       */
+      isClient: pkg.dsh?.client !== undefined && pkgDir !== join(ROOT, 'packages', 'desktop'),
+    })
   }
   return out
 }
@@ -166,6 +189,88 @@ function notReady(packages) {
   return bad
 }
 
+/**
+ * 删光全部**构建中间产物**（`--clean`）。
+ *
+ * 刻意不删的东西，以及为什么：
+ *
+ * - `packages/desktop/dist/*.dmg|zip|exe` —— 历史发布包，删了就再也拿不回来
+ *   （当前 dist/ 有 19 个历史安装包、共 9.2G）。只删 `dist/mac-arm64` 这类
+ *   **本次构建的输出目录**。
+ * - `packages/desktop/build/node-*.tar.gz` —— Node 运行时下载缓存。删了会在
+ *   下一轮触发 200MB+ 重新下载，而它不是产物、只是解压源。
+ * - 任何 `node_modules/` —— 依赖，不是产物。
+ *
+ * @returns 被删掉的路径条数与释放的字节数。
+ */
+function cleanArtifacts(packages) {
+  let count = 0
+  let bytes = 0
+
+  /** 递归求目录字节数（用于报告释放了多少空间）。 */
+  const sizeOf = (path) => {
+    let total = 0
+    const stack = [path]
+    while (stack.length > 0) {
+      const current = stack.pop()
+      let info
+      try { info = statSync(current) } catch { continue }
+      if (info.isDirectory()) {
+        for (const entry of readdirSync(current)) stack.push(join(current, entry))
+      } else {
+        total += info.size
+      }
+    }
+    return total
+  }
+
+  const removeDir = (path) => {
+    if (!existsSync(path)) return
+    bytes += sizeOf(path)
+    rmSync(path, { recursive: true, force: true })
+    count++
+    log(`    删 ${relative(ROOT, path)}`)
+  }
+
+  log('  清理中…')
+  // 每个 workspace 包的整个 lib/（含 tsconfig.tsbuildinfo 增量缓存 —— 两者同目录，
+  // 这正是「删 lib 就够」的原因：不会留下让 tsc -b 误判为最新的缓存）。
+  for (const pkg of packages) removeDir(join(pkg.dir, 'lib'))
+
+  // desktop 壳自己的产物。
+  //
+  // ⚠️ 刻意**不删** `build/node`：它不是「本仓库编译出来的东西」，而是
+  // `fetch-node.mjs` 从 nodejs.org 物化并解压的运行时。删掉它之后必须重跑
+  // `pack:node` 才能补回，而 `corum-instance.sh update` 的流程是
+  // 「编译 → pack-macos → 重启」，**不含 pack:node** ⇒ 打出的包缺
+  // `Contents/Resources/node/bin/node`，启动时报
+  //   「启动失败：spawn …/Resources/node/bin/node ENOENT」
+  // （2026-10-17 实测踩到，把能跑的包打成了跑不起来的包）。
+  // 它的内容只随 package.json 里锁定的 Node 版本变化，与源码无关，不构成
+  // 「陈旧产物混入」的风险。
+  for (const sub of ['lib', 'build/host', 'build/dist', 'dist/mac-arm64',
+    'dist/linux-unpacked', 'dist/win-unpacked']) {
+    removeDir(join(ROOT, 'packages', 'desktop', sub))
+  }
+
+  // 本次版本号的安装包（历史版本的留在 dist/ 里）。
+  const distDir = join(ROOT, 'packages', 'desktop', 'dist')
+  if (existsSync(distDir)) {
+    for (const name of readdirSync(distDir)) {
+      if (!/^Corum-\d+\.\d+\.\d+-.*\.(dmg|zip|blockmap)$/.test(name)) continue
+      const version = JSON.parse(readFileSync(join(ROOT, 'packages', 'desktop', 'package.json'), 'utf8')).version
+      if (!name.includes(`-${version}-`)) continue
+      const path = join(distDir, name)
+      bytes += statSync(path).size
+      rmSync(path, { force: true })
+      count++
+      log(`    删 dist/${name}`)
+    }
+  }
+
+  log(`  清理完成：${count} 项，释放 ${(bytes / 1024 / 1024).toFixed(0)} MB`)
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────────
 
 const packages = readPackages()
@@ -183,6 +288,11 @@ if (VERIFY_ONLY) {
   process.exit(1)
 }
 
+if (CLEAN_FIRST && CHANGED_ONLY) {
+  log('✗ --clean 与 --changed 互斥：清空产物后不存在「增量」可言。出包请用 --clean。')
+  process.exit(2)
+}
+
 // 变更集：从上次打包产物推算，或退回「与 origin/main 比」。
 let touched = null
 if (CHANGED_ONLY) {
@@ -190,6 +300,11 @@ if (CHANGED_ONLY) {
   touched = changedPaths(base)
   if (touched === null) log(`⚠ 无法取得改动集（git diff ${base} 失败），退回全量`)
   else log(`→ 只构建自 ${base} 起有改动的包（${touched.size} 个文件）`)
+}
+
+if (CLEAN_FIRST) {
+  log('→ --clean：先删光全部构建中间产物，从零重建')
+  cleanArtifacts(packages)
 }
 
 // 被改动的包 + 所有依赖它们的包（下游必须重建：上游产物变了）。
@@ -209,7 +324,7 @@ if (touched !== null) {
 // targets 为空有两种含义，必须区分：
 //   - 没开启 --changed：全量构建
 //   - 开启了但没有任何包被改动：什么都不建（而不是误当全量）
-const plan = topoSort(packages).filter(p => (touched === null ? true : targets.has(p)))
+const plan = topoSort(packages).filter(p => (CLEAN_FIRST || touched === null ? true : targets.has(p)))
 
 log(`→ 目标平台 ${PLATFORM}；待构建 ${plan.length} / ${packages.length} 个 workspace 包`)
 
