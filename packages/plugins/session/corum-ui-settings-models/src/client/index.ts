@@ -22,8 +22,8 @@ import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
 import { WelcomeNotice } from './WelcomeNotice.tsx'
 import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { decodeWelcomeSection, WelcomeNoticeStore } from './welcome-store.ts'
-import { ModelsSettingsStore } from './store.ts'
-import type { ModelsWire } from './store.ts'
+import { ModelsSettingsStore, createLocalLlmModels } from './store.ts'
+import type { LocalLlmConnection, ModelsWire } from './store.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
 import { WELCOME_NOTICE_SETTINGS_NAMESPACE } from '../onboarding-copy.ts'
@@ -42,7 +42,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.models'
 export type {
-  ModelsCredentials, ModelsLlm, ModelsSettingsState, ModelsWire, ProviderDirectoryEntry, ProviderRow,
+  LocalLlmConnection, LocalLlmModels, ModelsCredentials, ModelsLlm, ModelsSettingsState, ModelsWire,
+  ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
 
 /**
@@ -63,6 +64,10 @@ export function refreshIfLoaded(controller: ModelsSettingsStore): void {
 export const inject = [
   'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings',
   'settingsScope', 'settingsSchema',
+  // fork（corum）：本机 Ollama 模型列表改走 host RPC（`localLlm/status`），
+  // `connection.rpc.call('/api', …)` 是唯一入口 ⇒ 必须声明服务依赖（红线 4：
+  // 声明式注入，不用 `ctx.get` 摸未装配的服务）。
+  'connection',
 ]
 
 /**
@@ -81,7 +86,15 @@ export function apply(ctx: ClientContext): void {
     llm: ctx.remote.llm,
     settings: ctx.remote.settings,
   }
-  const controller = new ModelsSettingsStore(wire, schema, ctx.settingsScope.describe())
+  const controller = new ModelsSettingsStore(
+    wire,
+    schema,
+    ctx.settingsScope.describe(),
+    // fork（corum）：本机 Ollama 模型列表的唯一读取点。渲染层不再向
+    // 127.0.0.1:11434 发请求（失败的 fetch 会在浏览器网络层留
+    // `net::ERR_CONNECTION_REFUSED`，JS 抑制不了）。
+    createLocalLlmModels(ctx.get('connection') as LocalLlmConnection | undefined),
+  )
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
