@@ -76,8 +76,9 @@ const ALL_STAGES: readonly StartupThemeStage[] = ['env', 'spawn', 'plugins', 'mo
  * takes the segment path. `id` keeps the historical `corum-terminal` so existing
  * preference files and the "cannot delete builtin" rule stay valid.
  *
- * The HTML animation it replaces (`startup-terminal.html`) is still shipped and
- * still listed as an installable entry in the catalog, so it can be selected.
+ * This is the *only* builtin. The HTML animation it replaced has been retired
+ * outright — HTML themes remain supported as an importable format (`type: 'html'`),
+ * but Corum no longer ships one of its own.
  */
 const BUILTIN: StartupThemeInfo = {
   formatVersion: 1,
@@ -88,21 +89,6 @@ const BUILTIN: StartupThemeInfo = {
   background: '#0A0612',
   builtin: true,
   segments: ALL_STAGES.map(stage => ({ stage, file: `startup-segments/segments/${stage}.mp4` })),
-}
-
-/**
- * The legacy single-file HTML animation, kept as a selectable (but non-default)
- * entry so nobody loses the old look by upgrading.
- */
-const LEGACY_HTML: StartupThemeInfo = {
-  formatVersion: 1,
-  id: 'corum-terminal-html',
-  name: '代码汇聚（旧版）',
-  version: '1.1.0',
-  type: 'html',
-  entry: 'startup-terminal.html',
-  background: '#0A0612',
-  builtin: true,
 }
 
 function validateId(id: string): void {
@@ -176,12 +162,9 @@ export async function resolveThemeFile(root: string, name: string): Promise<stri
   return file
 }
 
-/** Every builtin theme, in catalog order (default first). */
-const BUILTINS: readonly StartupThemeInfo[] = [BUILTIN, LEGACY_HTML]
-
-/** Look up a builtin by id, or undefined. */
-function builtinById(id: string): StartupThemeInfo | undefined {
-  return BUILTINS.find(theme => theme.id === id)
+/** Whether `id` names the builtin theme (which therefore cannot be installed or deleted). */
+function isBuiltin(id: string): boolean {
+  return id === BUILTIN.id
 }
 
 async function readInstalled(id: string, home: string): Promise<ResolvedStartupTheme> {
@@ -189,7 +172,7 @@ async function readInstalled(id: string, home: string): Promise<ResolvedStartupT
   const root = join(home, 'startup-themes', id)
   if ((await lstat(root)).isSymbolicLink()) throw new Error('主题目录不能是链接')
   const info = validateStartupThemeManifest(JSON.parse(await readFile(await resolveThemeFile(root, 'manifest.json'), 'utf8')))
-  if (info.id !== id || builtinById(id) !== undefined) throw new Error('主题 ID 与安装目录不一致')
+  if (info.id !== id || isBuiltin(id)) throw new Error('主题 ID 与安装目录不一致')
   if (info.entry) await resolveThemeFile(root, info.entry)
   if (info.segments) for (const seg of info.segments) await resolveThemeFile(root, seg.file)
   if (info.preview) await resolveThemeFile(root, info.preview)
@@ -198,14 +181,13 @@ async function readInstalled(id: string, home: string): Promise<ResolvedStartupT
 
 export async function resolveStartupTheme(assetsDir: string, id?: string, home = settingsHome()): Promise<ResolvedStartupTheme> {
   const selected = id ?? readStartupThemeId(home)
-  const builtin = builtinById(selected)
-  if (builtin !== undefined) return { info: { ...builtin }, root: assetsDir }
+  if (isBuiltin(selected)) return { info: { ...BUILTIN }, root: assetsDir }
   try { return await readInstalled(selected, home) } catch { /* 缺失或损坏时保留可启动性。 */ }
   return { info: { ...BUILTIN }, root: assetsDir }
 }
 
 export async function listStartupThemes(assetsDir: string, home = settingsHome()): Promise<StartupThemeCatalog> {
-  const themes: StartupThemeInfo[] = BUILTINS.map(theme => ({ ...theme }))
+  const themes: StartupThemeInfo[] = [{ ...BUILTIN }]
   for (const dir of await readdir(join(home, 'startup-themes'), { withFileTypes: true }).catch(() => [])) {
     if (!dir.isDirectory() || dir.name.startsWith('.')) continue
     try { themes.push((await readInstalled(dir.name, home)).info) } catch { /* 未完成或损坏的安装不进入列表。 */ }
@@ -219,7 +201,7 @@ export async function importStartupTheme(zipPath: string, home = settingsHome())
   const raw = files.get('manifest.json')
   if (!raw) throw new Error('ZIP 根目录缺少 manifest.json')
   const manifest = validateStartupThemeManifest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)))
-  if (builtinById(manifest.id) !== undefined) throw new Error('不能替换内置主题')
+  if (isBuiltin(manifest.id)) throw new Error('不能替换内置主题')
   if (manifest.entry && !files.has(manifest.entry)) throw new Error('主题入口文件不存在')
   if (manifest.segments) for (const seg of manifest.segments) if (!files.has(seg.file)) throw new Error(`分段视频不存在：${seg.file}`)
   if (manifest.preview && !files.has(manifest.preview)) throw new Error('主题预览图不存在')
@@ -247,12 +229,12 @@ export async function importStartupTheme(zipPath: string, home = settingsHome())
 export async function selectStartupTheme(id: string, assetsDir: string, home = settingsHome()): Promise<void> {
   // A builtin needs no disk check; an installed theme must still resolve, so a
   // broken package cannot be selected and then fail at boot.
-  if (builtinById(id) === undefined) await readInstalled(id, home)
+  if (!isBuiltin(id)) await readInstalled(id, home)
   writeStartupThemeId(id, home)
 }
 
 export async function deleteStartupTheme(id: string, home = settingsHome()): Promise<void> {
-  if (builtinById(id) !== undefined) throw new Error('内置主题不能删除')
+  if (isBuiltin(id)) throw new Error('内置主题不能删除')
   validateId(id)
   const root = join(home, 'startup-themes', id)
   if ((await lstat(root)).isSymbolicLink()) throw new Error('主题目录不能是链接')

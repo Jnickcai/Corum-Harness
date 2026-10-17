@@ -13,7 +13,7 @@ description: Use when making a Corum startup theme (the animated splash shown wh
 CSP `packages/desktop/src/electron/startup-theme-resource.ts`、
 导入校验 `packages/desktop/src/electron/startup-themes.ts`、
 SDK `packages/desktop/assets/corum-startup-sdk.js`、
-内置主题 `packages/desktop/assets/startup-terminal.html`。
+内置主题 `packages/desktop/assets/startup-segments/`（分段视频）。
 代码变了以代码为准，回来修本技能。
 
 ## 1. 一句话
@@ -233,11 +233,16 @@ frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';
 
 ## 9. 内置主题与 Remotion 参考
 
-### 9.1 内置 HTML 主题：corum-terminal
+### 9.1 内置主题：corum-terminal（分段视频）
 
-`packages/desktop/assets/startup-terminal.html` —— 代码粒子星际穿梭 → 汇聚成「Corum Harness」
-文字，3D 透视投影 + Web Audio 升调琶音。**最完整的 HTML 主题参考实现**，照它的结构改即可。
-它直接用 `window.corumDesktop`（兼容旧写法）；新主题建议改用 `CorumStartup` SDK。
+`packages/desktop/assets/startup-segments/segments/*.mp4` —— 每个启动阶段一段：
+`env/spawn/plugins/mounting` 在阶段内无缝循环，`ready` 一次播完汇聚 + 发光扫描。
+描述符在 `startup-themes.ts` 的 `BUILTIN`，**这是唯一的内置主题**。
+
+旧的内置 HTML 动画（`startup-terminal.html`）**已下线**，Corum 不再自带 HTML 主题；
+但 `type: 'html'` 仍是受支持的导入格式，写 HTML 主题请从
+`packages/desktop/startup-theme-kit/html/` 模板起步。若要参考旧实现，历史版本仍在：
+`git show 84f289f3^:packages/desktop/assets/startup-terminal.html`。
 
 ### 9.2 Remotion 项目（程序化视频主题）
 
