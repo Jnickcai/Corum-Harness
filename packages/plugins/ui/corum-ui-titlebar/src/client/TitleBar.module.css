@@ -170,13 +170,13 @@
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--dsh-alias-label-primary, #1c2333);
+  color: var(--dsw-alias-label-primary, #1c2333);
   cursor: pointer;
   transition: background 0.08s ease;
 }
 
 .winBtn:hover {
-  background: var(--dsh-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
 }
 
 .winBtnClose:hover {
