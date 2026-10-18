@@ -15,7 +15,15 @@
 
 .panel {
   position: relative;
-  width: 380px;
+  /* 宽度由 hero 图的宽高比决定，而不是拍一个「看着差不多」的固定值。
+   *
+   * 这张品牌图是 4320×960（4.5:1），标题「Corum Harness」与副标题都在图里，
+   * 且偏右侧。原先面板 380px、hero 高 130px（比例 2.92:1），`cover` 必然横向
+   * 裁掉约 35% ⇒ 标题右端被切（2026-10-17 用户报障）。
+   *
+   * 取 520px：hero 高按 4.5:1 算约 116px，接近原 130px 的视觉分量，而宽度足够
+   * 装下整张图。同时它比旧面板宽 140px，正文与按钮也不再局促。 */
+  width: 520px;
   max-width: 100%;
   max-height: calc(100vh - 40px);
   flex-shrink: 0;
@@ -34,7 +42,12 @@
 
 .hero {
   width: 100%;
-  height: 130px;
+  /* 高度用 `aspect-ratio` 跟随图片本身（4320×960 = 4.5），而不是写死 130px。
+   * 写死高度会在面板变宽后把图重新拉成别的比例，仍要靠 `cover` 裁切。 */
+  aspect-ratio: 4320 / 960;
+  /* 兜底：`aspect-ratio` 不可用时靠固定高度撑开（520/4.5 ≈ 116px）。
+   * 用 min-height 而不是 height，避免 aspect-ratio 生效时把高度锁死。 */
+  min-height: 116px;
   background-size: cover;
   background-position: center;
   position: relative;
@@ -60,33 +73,34 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 18px 18px;
+  gap: 12px;
+  /* 面板加宽到 520px 后，内边距同步放大，避免正文贴着边缘显得局促。 */
+  padding: 18px 22px 20px;
 }
 
 .title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--dsw-alias-label-primary, #fff);
   margin: 0;
 }
 
 .verLine {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dsw-alias-label-tertiary, rgba(255,255,255,0.5));
   margin: 0;
 }
 
 .notesLabel {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--dsw-alias-label-secondary, rgba(255,255,255,0.7));
   margin: 0;
 }
 
 .notes {
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--dsw-alias-label-tertiary, rgba(255,255,255,0.5));
   margin: 0;
   white-space: pre-wrap;
