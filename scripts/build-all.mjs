@@ -257,7 +257,10 @@ function cleanArtifacts(packages) {
   const distDir = join(ROOT, 'packages', 'desktop', 'dist')
   if (existsSync(distDir)) {
     for (const name of readdirSync(distDir)) {
-      if (!/^Corum-\d+\.\d+\.\d+-.*\.(dmg|zip|blockmap)$/.test(name)) continue
+      // 覆盖三平台的本版本产物：dmg / zip / blockmap / exe / AppImage / deb。
+      // electron-builder 仍会在本地生成 blockmap（它没有关闭开关），
+      // 只是不再作为 Release 资产上传 —— 本地清理它仍然是对的。
+      if (!/^(Corum-\d+\.\d+\.\d+(-.*)?\.(dmg|zip|blockmap|exe|AppImage)|corum-desktop_.*\.deb)$/.test(name)) continue
       const version = JSON.parse(readFileSync(join(ROOT, 'packages', 'desktop', 'package.json'), 'utf8')).version
       if (!name.includes(`-${version}-`)) continue
       const path = join(distDir, name)
