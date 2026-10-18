@@ -83,7 +83,6 @@ jobs:
             packages/desktop/dist/*.AppImage
             packages/desktop/dist/*.deb
             packages/desktop/dist/*.exe
-            packages/desktop/dist/*.blockmap
           if-no-files-found: error # 发布必须出齐产物，缺即失败
 
   publish:
