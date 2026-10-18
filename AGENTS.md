@@ -52,6 +52,15 @@
      If you want to skip disabled config I/O, do it inside cordis (don't resolve
      the config), never by dropping the row from the caller. Evidence:
      `docs/LESSONS.md` §1.17 (2026-10-15); PR #55 reverted #54's filter.
+   - **Before calling electron-builder, `dependencies` is emptied on purpose**
+     (`pack-macos.mjs`'s `buildApp()` does it and restores it afterwards; PR #57).
+     The app shell only imports Electron APIs — the host runtime lives in
+     `build/host/` as extraResources — so `dependencies` is not needed to stage
+     the app. Leaving it non-empty makes electron-builder walk the `node_modules`
+     symlink of every dependency; a pnpm `link:` override pointing at workspace
+     source (`dsh-tools`, `dsh-fs-local`) then fails with "must be under
+     `.pnpm/`". `electron` sits in `devDependencies`, so electron detection is
+     unaffected. Evidence: `docs/LESSONS.md` §1.18 (2026-10-15).
 6. **UI-plugin builds are three steps, all required** — `tsc -b && tsdown &&
    node scripts/inline-css.mjs`. Running `tsdown` alone extracts CSS to an
    external `lib/style.css` that the dev runtime cannot load (404), so all
