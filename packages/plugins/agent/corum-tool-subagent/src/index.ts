@@ -1274,10 +1274,17 @@ function providerWording(inheritsConversation: boolean): { description: string; 
  * @param options.backgroundEnabled - 是否启用后台调度。
  * @param options.continuable - 是否为 continuable 后台模式。
  * @param options.readonlyResearch - 是否为只读研究实例。
+ * @param options.pseudoForeground - 是否启用伪前台（issue #75）：前台子 Agent 不阻塞，
+ *   报告经 followup 通知送达（不在工具结果里）。
  * @returns 接在 `wording.description` 后面的调度描述句（开头保留一个空格）。
  */
-export function corumSchedulingDescription(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean }): string {
+export function corumSchedulingDescription(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean; readonly pseudoForeground?: boolean }): string {
   if (options.readonlyResearch) {
+    // fork（corum）2026-10-18（issue #75）：伪前台开启时，research 报告经 followup 通知送达，
+    // 不在工具结果里（工具立即返回 foreground-pending + concludeTurn）。
+    if (options.pseudoForeground === true) {
+      return ' This read-only research tool runs in the FOREGROUND but does NOT block you: the call returns immediately as `foreground-pending` and you continue other work; the child\'s report arrives as a followup notice when it settles — so do NOT expect the findings in this tool result. Do NOT pass `run_in_background: true` (it is rejected). You may fan out several research calls in one message; each settles independently and delivers its own notice.'
+    }
     return ' This read-only research tool ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline. Do NOT pass `run_in_background: true` (it is rejected).'
   }
   if (!options.backgroundEnabled) {
@@ -1301,8 +1308,12 @@ export function corumSchedulingDescription(options: { readonly backgroundEnabled
  * @param ptcPrefix - PTC 模式前缀（非 PTC 为空串）。
  * @returns 机制段文本（`ptcPrefix` + 调度句）。
  */
-export function corumSchedulingSectionText(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean }, toolName: string, ptcPrefix: string): string {
+export function corumSchedulingSectionText(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean; readonly pseudoForeground?: boolean }, toolName: string, ptcPrefix: string): string {
   if (options.readonlyResearch) {
+    // fork（corum）2026-10-18（issue #75）：伪前台开启时，research 报告经 followup 通知送达。
+    if (options.pseudoForeground === true) {
+      return ptcPrefix + 'This read-only research tool runs in the FOREGROUND but does NOT block you: the call returns immediately as `foreground-pending` and you continue other work; the child\'s report arrives as a followup notice when it settles — so do NOT expect the findings in this tool result. Do NOT pass `run_in_background: true` (it is rejected). It has a shell for read-only commands (`git log`, `ls`, reading PID/log files, a verify script\'s `status`) but its sandbox is pinned to `read-only` and write/edit are denied, so it can never modify the repo. Fan out several research calls in ONE message when you need answers from different angles — each settles independently and delivers its own notice.'
+    }
     return ptcPrefix + 'This read-only research tool ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline. Do NOT pass `run_in_background: true` (it is rejected) — a backgrounded investigation leaves you guessing or repeating work. It has a shell for read-only commands (`git log`, `ls`, reading PID/log files, a verify script\'s `status`) but its sandbox is pinned to `read-only` and write/edit are denied, so it can never modify the repo. Fan out several research calls in ONE message when you need answers from different angles.'
   }
   return ptcPrefix + `Use ${toolName} in the background by default.`
@@ -2410,7 +2421,9 @@ export function apply(ctx: Context, config: Config): void {
         ? { runInBackground: false }
         : resolveDelegationRun(args, { backgroundEnabled, continuable })
       if (effReadonlyResearch && args.run_in_background === true) {
-        throw new Error('run_in_background is not supported for read-only research: the report IS the deliverable, so a research child always runs in the foreground and its report returns in this tool result.')
+        throw new Error(pseudoForegroundEnabled
+          ? 'run_in_background is not supported for read-only research: the report IS the deliverable, so a research child always runs in the foreground and its report arrives as a followup notice (it does not block you — you get foreground-pending and continue).'
+          : 'run_in_background is not supported for read-only research: the report IS the deliverable, so a research child always runs in the foreground and its report returns in this tool result.')
       }
       const corumSessionId = parent.session.id
       const corumConcurrent = (args.fanoutCount ?? 1) > 1
@@ -2915,7 +2928,10 @@ export function apply(ctx: Context, config: Config): void {
             const run = await startRun()
             emitStarted(run)
             const childId = String(run.id)
-            foregroundGate.track(parent.id, childId)
+            // fork（corum）5.6 问题 1（停止必须有效）：gate 持有 run 引用——
+            // 父 Agent dispose / 停止时，gate.disposeAllFor 直接 run.dispose() 杀掉子 Agent。
+            // 这是中断一次性 run 的唯一有效路径（cancel 在 idle 时 no-op、interrupt 对 one-shot 静默 no-op）。
+            foregroundGate.track(parent.id, childId, run)
             // 异步 waiter：等 run.result settle → 释放门禁 → followup 通知 → dispose。
             corumPseudoForegroundWait(run, parent, childId, args.label, foregroundGate, runtimeCtx.logger)
             // fork（corum）5.6 问题 3：必须 concludeTurn()，否则父 Agent 在同一 turn 内继续干活、
@@ -3082,7 +3098,7 @@ export function apply(ctx: Context, config: Config): void {
         description: (corumReadonlyResearch
           ? 'This tool delegates a READ-ONLY research task: the child can read files, search, and run read-only shell commands, but it cannot write — there is no worktree, no branch, and nothing to merge. **It also has no MCP tools**: never route MCP work through it (the call would fail in the child). It returns what it found, not where a change landed. '
           : 'A write-capable delegation is ISOLATED by default: it gets its own git worktree + branch, so its edits reach your tree only through integration (`subagent { integrate: true }` or an `orchestrate` `merge` declaration). Pass `isolation: "main"` when the child must work in your REAL tree instead — builds/installs, `git push`, merging, another repository, or any path outside this one: a default (isolated) child is hard-denied those and no approval card will appear. Cost dimension: isolation exists to keep CONCURRENT writers apart and protect an in-progress parent tree. For a SINGLE delegation with a clean tree and no parallel work it buys nothing and costs you (the worktree has no node_modules — no build/install/typecheck — and the edits stay invisible until you integrate): prefer `isolation: "main"` there; the moment a second concurrent writer exists (parallel children, background subagents, uncommitted work in your tree) the default isolated route is what you want. A read-only research delegation is not isolated (it writes nothing). A FOREGROUND result tells you which route ran, so you never have to guess whether a branch carries the work; a backgrounded run reports through its settlement notice instead, so do not expect the boundary marker there. ')
-          + wording.description + corumSchedulingDescription({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch })
+          + wording.description + corumSchedulingDescription({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch, pseudoForeground: pseudoForegroundEnabled })
           // fork（corum）：决策点分工（2026-09-14 委派正确性轮）——工具描述是模型
           // 选工具时唯一**贴着选择点**读到的文本，因此分工必须写在这里，而不是只
           // 写在机制段里。只读调研走 `subagent_research`（无修改 → 不召唤写能力
@@ -3818,7 +3834,7 @@ export function apply(ctx: Context, config: Config): void {
         order: runtimeCtx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
         text: context => mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined
           ? ''
-          : corumSchedulingSectionText({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch }, toolName, corumPtcPrefix(context.scope)),
+          : corumSchedulingSectionText({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch, pseudoForeground: pseudoForegroundEnabled }, toolName, corumPtcPrefix(context.scope)),
       })
     }
 
@@ -3857,9 +3873,13 @@ export function apply(ctx: Context, config: Config): void {
           // 三条并列在最前（只读 → 写 → 执行型验收）。只读是**条件**条目（research 实例缺席时
           // 不能提它），故用 push 逐条拼装而不是静态数组字面量。
           if (hasResearch) {
+            // fork（corum）2026-10-18（issue #75）：伪前台开启时 research 报告经 followup 送达。
+            const researchReportLine = pseudoForegroundEnabled
+              ? '  - It runs in the FOREGROUND but does NOT block you: the call returns `foreground-pending` and the report arrives as a followup notice — do NOT expect the findings in this tool result.'
+              : '  - It ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline.'
             lines.push(
               '- READ-ONLY work (research, search, fact-finding, summarization, JUDGING BY READING — checking an implementation against a spec, comparing output against expected values, or running read-only commands like `git log` / `ls`) → `subagent_research`.',
-              '  - It ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline.',
+              researchReportLine,
               '  - It cannot be backgrounded: `run_in_background: true` is rejected.',
               '  - Its sandbox is pinned to `read-only` and write/edit are denied, so it can investigate freely and can never modify the repo.',
               '  - One or two questions: call it directly. Several angles: send them in ONE message.',
@@ -4050,6 +4070,14 @@ export function apply(ctx: Context, config: Config): void {
     installScoped(created)
   })
   ctx.on('agent/disposed', ({ agent: disposed }) => { removeScoped(disposed) })
+  // fork（corum）2026-10-18（issue #75 #5/#14）：父 Agent dispose 时清理其全部前台子 Agent。
+  // 伪前台下父 Agent idle 时 cancel 是 no-op、interrupt 对一次性 run 静默 no-op（5.6 问题 1），
+  // 故 gate 持有 run 引用；父 Agent 被 dispose 时 gate.disposeAllFor 直接杀掉所有在飞前台子 Agent。
+  ctx.on('agent/disposed', ({ agent: disposed }) => {
+    if (foregroundGate.isBlocking(disposed.id)) {
+      foregroundGate.disposeAllFor(disposed.id)
+    }
+  })
   // Reparenting an Agent between standing presets changes its inherited tool
   // set and emits `tools/change`; reconcile the Agent-owned override with the
   // new ancestry. Other registry changes are idempotent no-ops here.

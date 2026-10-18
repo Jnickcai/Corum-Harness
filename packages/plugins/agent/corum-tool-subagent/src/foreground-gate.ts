@@ -46,6 +46,15 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 export class CorumForegroundGate extends Service {
   /** key = 父 Agent id（SessionId 字符串），value = 未 settle 的 childId 集合。 */
   private readonly pending = new Map<string, Set<string>>()
+  /**
+   * fork（corum）2026-10-18（issue #75 #5）：持有的前台 run 引用（key = childId）。
+   *
+   * 伪前台**不立即 dispose run**（5.4：否则 `localAgent` 不可达）。但停止必须有效
+   * （5.6 问题 1：父 Agent idle 时 cancel 是 no-op、interrupt 对一次性 run 静默 no-op）。
+   * 故 gate 持有 run 引用：父 Agent 被 dispose / 停止时，`disposeRun(childId)` 直接
+   * `run.dispose()` 杀掉子 Agent——这是唯一能真正中断一次性 run 的路径。
+   */
+  private readonly runs = new Map<string, { dispose(): Promise<void> }>()
 
   constructor(ctx: Context) {
     super(ctx, 'corumForegroundGate')
@@ -54,9 +63,12 @@ export class CorumForegroundGate extends Service {
   /**
    * 登记一次前台委派：父 Agent 正在等这个 childId settle。
    *
+   * @param run - 持有的前台子 Agent run 引用（供停止路径直接 dispose，5.6 问题 1）。
+   *   伪前台不立即 dispose（5.4），但 `disposeRun(childId)` 可在停止时杀掉它。
+   *   传 `undefined` 则不持有 run（向后兼容最小验证）。
    * 幂等：重复 track 同一 childId 无副作用（Set 天然去重）。
    */
-  track(parentAgentId: SessionId | string, childId: string): void {
+  track(parentAgentId: SessionId | string, childId: string, run?: { dispose(): Promise<void> }): void {
     const key = String(parentAgentId)
     let set = this.pending.get(key)
     if (set === undefined) {
@@ -64,10 +76,13 @@ export class CorumForegroundGate extends Service {
       this.pending.set(key, set)
     }
     set.add(childId)
+    if (run !== undefined) this.runs.set(childId, run)
   }
 
   /**
    * 一个前台子 Agent settle：从父 Agent 的等待集合里移除。
+   *
+   * 同时丢弃持有的 run 引用（子 Agent 已 settle，dispose 由调用方负责）。
    *
    * @returns 移除后该父 Agent 是否还有未 settle 的前台子 Agent（true = 仍在等）。
    */
@@ -76,11 +91,53 @@ export class CorumForegroundGate extends Service {
     const set = this.pending.get(key)
     if (set === undefined) return false
     set.delete(childId)
+    this.runs.delete(childId)
     if (set.size === 0) {
       this.pending.delete(key)
       return false
     }
     return true
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #5）：直接 dispose 一个前台子 Agent 的 run。
+   *
+   * 这是停止一次性 run 的唯一有效路径——`cancel()` 在 idle 时是 no-op、`interrupt()`
+   * 对一次性 run 静默 no-op（5.6 问题 1）。拿到 run 引用直接 `dispose()` 才能杀掉它。
+   *
+   * @returns 是否找到了该 childId 的 run 并发起了 dispose（false = 无引用，可能已 settle）。
+   */
+  async disposeRun(childId: string): Promise<boolean> {
+    const run = this.runs.get(childId)
+    if (run === undefined) return false
+    this.runs.delete(childId)
+    try {
+      await run.dispose()
+    } catch {
+      // dispose 是幂等的；失败只记静默（run 可能已自行结束）。
+    }
+    return true
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #5/#14）：父 Agent dispose 时清理其全部前台子 Agent。
+   *
+   * 杀掉所有持有的 run、清空 pending 集合。每个 run 的 dispose 是 fire-and-forget
+   * （不阻塞 dispose 流程）。
+   */
+  disposeAllFor(parentAgentId: SessionId | string): void {
+    const key = String(parentAgentId)
+    const set = this.pending.get(key)
+    if (set !== undefined) {
+      for (const childId of set) {
+        const run = this.runs.get(childId)
+        if (run !== undefined) {
+          this.runs.delete(childId)
+          void run.dispose().catch(() => {})
+        }
+      }
+      this.pending.delete(key)
+    }
   }
 
   /** 父 Agent 是否还有未 settle 的前台子 Agent（门禁是否阻塞）。 */
@@ -95,9 +152,9 @@ export class CorumForegroundGate extends Service {
     return set === undefined ? [] : [...set]
   }
 
-  /** 清空某父 Agent 的全部前台等待（dispose/取消兜底）。 */
+  /** 清空某父 Agent 的全部前台等待 + 杀掉其全部持有的 run（dispose/取消兜底）。 */
   clear(parentAgentId: SessionId | string): void {
-    this.pending.delete(String(parentAgentId))
+    this.disposeAllFor(parentAgentId)
   }
 }
 
