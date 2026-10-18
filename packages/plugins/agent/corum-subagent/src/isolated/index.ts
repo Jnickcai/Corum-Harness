@@ -37,6 +37,12 @@ import type {
 } from '../index.ts'
 import { corumDirectWriteNotice, corumIsGitRepo, corumIsolationNotice } from '@corum/corum-orchestration'
 import { startInProcessRun } from '../driver/index.ts'
+import {
+  applyMechanismRoute,
+  resolveScriptChildModel,
+  type OrchestrationModelOverrideFace,
+  type SettingsDescribeFace,
+} from './script-model-resolution.ts'
 
 export const name = 'corum-subagent-isolated-in-process'
 export const inject = ['subagents']
@@ -74,8 +80,11 @@ export const Config: z<Config> = z.object({
 /**
  * `CorumOrchestration` 的最小能力面（红线 3：跨包类型用局部能力接口收窄，不耦合实现包）。
  * 由 `@corum/corum-orchestration` 在根上下文 provide。
+ *
+ * fork（corum）2026-10-19：补 `modelOverrideOf`——脚本模式子 Agent 模型解析需要读
+ * 会话级覆盖（见 `script-model-resolution.ts`）。
  */
-interface CorumOrchestrationFace {
+interface CorumOrchestrationFace extends OrchestrationModelOverrideFace {
   createWorktreeChild: (
     sessionId: string,
     parentCwd: string,
@@ -224,10 +233,36 @@ class IsolatedInProcessProvider implements SubagentProvider {
     if (mode !== this.config.mode) {
       this.ctx.logger.warn(`corum-isolated: workspace "${parentCwd}" is not a git repository; degrading isolation mode "${this.config.mode}" → "track"`)
     }
+    // fork（corum）2026-10-19：**脚本模式子 Agent 模型路由解析**。
+    //
+    // 用户报障「编排工作流的子 Agent 模型不是全局设置的 glm-5.3-flash 而是
+    // DeepSeek-v4-flash」——根因是 SCRIPT 模式经引擎的 `agent()` **不经过 corum 工具层**
+    // （`spawnOne`），而子 Agent 模型三档解析只写在 `spawnOne` 里，于是脚本子 Agent
+    // 落到 driver 的 `resolveChildAgentOptions(parent, undefined, ...)` ⇒ **继承父路由**
+    // （= 主 Agent 的 `deepseek-v4-flash`），而非全局子 Agent 设置。
+    //
+    // 修法：在调 `startInProcessRun` 之前解析机制路由并注入 `agentOptions` +
+    // `agentOptionsOwnedByMechanism: true`（driver P1 剥离只剥未标记的选项，故机制路由
+    // 不会被剥）。三档解析（会话覆盖 → 全局兜底 → 跟随主 Agent）见 `script-model-resolution.ts`。
+    const orchestration = this.ctx.root.get('corumOrchestration', false) as CorumOrchestrationFace | undefined
+    const settings = this.ctx.root.get('settings', false) as SettingsDescribeFace | undefined
+    const resolved = resolveScriptChildModel(
+      orchestration,
+      settings,
+      String(request.parent.session.id),
+    )
+    const routedRequest = applyMechanismRoute(request, resolved.route)
+    if (resolved.tier !== 'follow-main') {
+      this.ctx.logger.info(
+        `corum-isolated: script child model resolved to ${resolved.tier} `
+        + `(${resolved.route?.provider ?? '(follow-main)'}/${resolved.route?.model ?? '(follow-main)'}), `
+        + `parent session ${String(request.parent.session.id)}`,
+      )
+    }
     // `off` 分支已于 2026-09-16 移除（隔离恒定生效）：只剩 always（建 worktree）与
     // track（顺序迭代的独立模式，不建 worktree 但登记计数）。
     if (mode === 'track') {
-      const tracked = prepareTrackedChild(this.ctx, request)
+      const tracked = prepareTrackedChild(this.ctx, routedRequest)
       try {
         const run = await startInProcessRun(tracked.request, {})
         void run.result.then(tracked.release, tracked.release)
@@ -237,7 +272,7 @@ class IsolatedInProcessProvider implements SubagentProvider {
         throw error
       }
     }
-    const prepared = prepareIsolatedChild(this.ctx, request, this.config)
+    const prepared = prepareIsolatedChild(this.ctx, routedRequest, this.config)
     try {
       const run = await startInProcessRun(prepared.request, {})
       prepared.bind(String(run.id))
