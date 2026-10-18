@@ -113,7 +113,7 @@ MCP 默认连 `127.0.0.1:9222`，隧道建好后直接用 `list_pages` / `take_s
 **方式 B：ui-verify.mjs 声明式规格（断言门禁）**
 
 ```bash
-SK_CDP="/Users/kukucai/.agents/skills/corum-cdp-verify"
+SK_CDP="${CORUM_HOME:-$HOME/.corum}/skills/corum-cdp-verify"
 # spec.json 里 "port": 9222
 # ⚠️ ui-verify.mjs 默认拒绝打 9222（认为是本地主实例）。经隧道连远程时设：
 CORUM_ALLOW_MAIN=1 node "$SK_CDP/scripts/ui-verify.mjs" /tmp/spec.json

@@ -25,7 +25,7 @@ description: Use when upgrading this repo (corum Agent OS / kkc-desktop) to a ne
    统计覆盖率；**只有 100% 覆盖的版本才能当目标**。实测：`0.1.5-alpha.1→rc.3` 全部覆盖 189/189 ✓，
    `0.1.7-rc.2` 只覆盖 185/190 ✗。
 2. **确认基线标签**：官方包**随 npm 只发 `lib/`**（**没有 `src/`**）⇒ 逐字节比对与合并的基线
-   **只能取自 dsh 检出的标签**（`git -C /Users/kukucai/dsh archive <tag> <path>`），
+   **只能取自 dsh 检出的标签**（`git -C $HOME/dsh archive <tag> <path>`），
    **不能用检出工作区**（HEAD 会前进，实测已到 0.1.7-rc.2）。
 3. **停掉所有实例**：改 override 会**重建整个 `node_modules`** ⇒ 必须先停 9333 + 9222
    （`./scripts/corum-instance.sh stop --home=verify` + 打包实例）。
@@ -42,7 +42,7 @@ pnpm -r typecheck                            # 全仓（这一步不能省）
 pnpm -r build                                # ⚠️ build 才会暴露"缺导出"类问题（tsc 发现不了）
 
 # fork 守卫（**必须带基线标签**，否则拿 HEAD 当基线长期假红）
-DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 ./scripts/verify-fork-drift.sh
+DSH_CHECKOUT=$HOME/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 ./scripts/verify-fork-drift.sh
 ```
 
 **已付学费的四个命令级坑**：
@@ -169,8 +169,8 @@ DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 ./scripts/verif
 4. **反过来也成立**：一个包即使名字像 fork，也要先核"同名文件数"再决定用哪种比对方法。
 
 **子 Agent 的任务书必须自包含**（它看不到本会话）——至少给全：
-① 包名 + 仓库目录 + 官方对照包名 + 官方检出路径（`/Users/kukucai/dsh`）；
-② **基线标签**（`git -C /Users/kukucai/dsh tag` 里选与工作区一致的那个；当前 = `dsh-v0.1.5-rc.3`）；
+① 包名 + 仓库目录 + 官方对照包名 + 官方检出路径（`$HOME/dsh`）；
+② **基线标签**（`git -C $HOME/dsh tag` 里选与工作区一致的那个；当前 = `dsh-v0.1.5-rc.3`）；
 ③ 官方 `src/` **只能**用 `git archive <tag> <path>` 取（官方包只发 `lib/`）；
 ④ **环境陷阱**：判差异用 `cmp`，**不要用 `diff`**（本机 PATH 上的 `diff` 是 HarmonyOS SDK 的，会静默漏报）；人读用 `/usr/bin/diff`；`sort`/`comm` 统一 `LC_ALL=C`；
 ⑤ **必须逐文件递归比对整包 `src/`**（含子目录，别只挑"看起来相关"的文件）；
@@ -190,7 +190,7 @@ DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 ./scripts/verif
 pnpm --filter @corum/<pkg> run typecheck && pnpm -r typecheck
 
 # ③ 行为面守卫（**必须带基线标签**，否则拿检出 HEAD 当基线会长期假红）
-DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=<tag> ./scripts/verify-fork-drift.sh
+DSH_CHECKOUT=$HOME/dsh DSH_BASELINE_TAG=<tag> ./scripts/verify-fork-drift.sh
 ```
 
 之后：更新 `docs/UPGRADE-0.1.5-rc3.md` 与台账 + 提交。
@@ -349,7 +349,7 @@ grep -rl '"@deepseek-ai/dsh-<名>"' packages --include=package.json | grep -vE '
 | **PATH 上的 `diff` 是 HarmonyOS SDK 的** | 对内容不同的文件**输出 0 行、退出 0** ⇒ 任何用 `diff` 判差异的脚本**静默漏报** | 判差异用 **`cmp -s`**；人读差异用 **`/usr/bin/diff`** |
 | `sort`/`comm` 的 locale | 两侧不同 collation 时，同一路径会**同时出现在两个"独有"列表** | 统一 `LC_ALL=C` |
 | `wc -l` 于无换行结尾 | 计数偏差 | 必要时用 `grep -c .` |
-| 官方包无 `src/` | 仓库内 `packages/core/...` 是**路径错误**而非空结果 | 一律 `git -C /Users/kukucai/dsh archive <tag> <path>` |
+| 官方包无 `src/` | 仓库内 `packages/core/...` 是**路径错误**而非空结果 | 一律 `git -C $HOME/dsh archive <tag> <path>` |
 | tar 的 `--strip-components` | 层级数猜错会解出**空目录**（本场错 4 次）| 解完先 `find ... -type d -name src` 定位，再对比 |
 
 ## 8. 收尾纪律
