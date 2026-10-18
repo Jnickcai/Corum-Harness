@@ -33,6 +33,8 @@ import { createStartupScreen } from './startup-screen.ts'
 import { readStartupAnimationEnabled } from './startup-settings.ts'
 import { resolveStartupTheme } from './startup-themes.ts'
 import { resolveDesktopHome } from '../host/home.ts'
+import { performInstallUpdate } from './update-install.ts'
+import { judgePendingUpdate } from './startup-update.ts'
 
 /**
  * Whether this launch runs from a packaged bundle: the bundled host runtime
@@ -192,6 +194,26 @@ let bridge: HostBridgeClient | null = null
 /** 当前协议集（只服务 combo 壳页 + shell 静态资源；dsh 页走官方 webserver）。 */
 let protocols: ReturnType<typeof registerProtocols> | null = null
 let startupScreen: ReturnType<typeof createStartupScreen> | null = null
+
+/**
+ * 应用版本号：读本包 `package.json`。
+ *
+ * **不能用 `app.getVersion()`**：dev 态主进程由 `spawn(electronPath, [main.js])`
+ * 拉起（入口是 .js 文件而非 app 目录），Electron 没有 app 包可读，会回落成
+ * **Electron 自身的 bundle 版本**（实测 dev 显示 v43.x 而非 v0.x）。与
+ * `ipc.ts` 的 `corum:app-version` 保持同一事实源。
+ *
+ * @returns 版本号；读取失败返回 'unknown'。
+ */
+function readAppVersion(): string {
+  try {
+    return JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'),
+    ).version as string
+  } catch {
+    return 'unknown'
+  }
+}
 
 function createWindow(): void {
   // 窗口最小尺寸（2026-08-27 用户定调 + col-nav 调整 + 主窗口边距改 0 后重算）：
@@ -409,15 +431,7 @@ function buildHostEnv(combo: Combo | null): Record<string, string> {
   // @corum/corum-update-checker 的 getUpdateState / checkForUpdates 读它做
   // semver 比较与下载落盘。版本号读本包 package.json（与 ipc.ts 的
   // corum:app-version 同一事实源）；更新目录 = desktop home 下的 updates/。
-  const appVersionForHost: string = (() => {
-    try {
-      return JSON.parse(
-        readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'),
-      ).version as string
-    } catch {
-      return 'unknown'
-    }
-  })()
+  const appVersionForHost: string = readAppVersion()
   if (appVersionForHost.length > 0) env.CORUM_APP_VERSION = appVersionForHost
   env.CORUM_UPDATES_DIR = join(resolveDesktopHome(), 'updates')
   // 便携版 Git 注入 PATH：打包态自带 PortableGit（Windows），host 侧 spawn('git')
@@ -684,6 +698,39 @@ async function main(): Promise<void> {
   // 壳层 IPC 一次性注册：bridge 通过 getter 解析（combo 切换换实例）；托盘同理
   // 走 getter（托盘在 createWindow 之后才建，但 IPC 可能更早被调用）。
   registerIpc(() => bridge, () => mainWindow, { launchCombo, getTray: () => tray, getDock: () => dock, getStartupScreen: () => startupScreen, startupAssetsDir: shellAssetsPath() })
+
+  // ── 启动期自动安装待应用更新（强制更新，用户 2026-10-17 要求）──────────
+  //
+  // 时机：**建窗之前**。这样用户下次打开应用时，要么直接进入新版，要么（判断
+  // 不成立时）正常启动旧版；不会出现「用了一会儿突然被替换」。
+  //
+  // 与既有机制的关系（两者并存，互不冲突）：
+  //   - 后台自动查询/下载 + 提醒：不变（host 插件负责，用户使用中完成）。
+  //   - 本次新增：把「已下载完成」的那次更新在下次启动时**自动装掉**，
+  //     不需要用户再点「重启安装」。
+  //
+  // 安全性：`judgePendingUpdate` 只做保守判断（状态文件 + 文件存在 + 大小一致 +
+  // 版本确实更新），任何一条不满足就不装。安装脚本本身也改成「先备份、失败回滚」
+  // （见 update-install.ts），保证最坏情况仍是旧版可用。
+  // smoke 不装：那条路径要的是可预期的「起→握手→退」。
+  if (!SMOKE) {
+    const verdict = judgePendingUpdate(join(resolveDesktopHome(), 'updates'), readAppVersion())
+    if (verdict.kind === 'ready') {
+      process.stderr.write(`[corum-desktop] applying pending update ${verdict.version} before window creation\n`)
+      const result = performInstallUpdate({ downloadedPath: verdict.path })
+      if (result.ok) {
+        // 安装脚本已 spawn（它会等本进程退出、替换、再重启）。这里直接退出，
+        // 不再建窗——避免用户看到一闪而过的旧界面。
+        app.quit()
+        return
+      }
+      // 安装起不来：降级为正常启动（更新失败不能变成应用打不开）。
+      process.stderr.write(`[corum-desktop] pending update install failed, starting normally: ${result.error ?? 'unknown'}\n`)
+    } else if (verdict.kind === 'invalid') {
+      process.stderr.write(`[corum-desktop] ignoring pending update: ${verdict.reason}\n`)
+    }
+  }
+
   createWindow()
   // macOS 的两个常驻入口（2026-09-10 用户定调「托盘常驻要做」+「下面的 dock 栏也做一下」）：
   //   - 菜单栏托盘（status item）：未读数字是**被遮挡时**仍可见的主载体；
