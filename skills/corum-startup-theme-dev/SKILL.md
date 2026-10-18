@@ -233,22 +233,69 @@ frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';
 
 ## 9. 内置主题与 Remotion 参考
 
-### 9.1 内置主题：corum-terminal（分段视频）
+### 9.1 内置主题：`corum-terminal`（分段视频，唯一内置）
 
 `packages/desktop/assets/startup-segments/segments/*.mp4` —— 每个启动阶段一段：
-`env/spawn/plugins/mounting` 在阶段内无缝循环，`ready` 一次播完汇聚 + 发光扫描。
-描述符在 `startup-themes.ts` 的 `BUILTIN`，**这是唯一的内置主题**。
+`env/plugins/mounting` 在阶段内无缝循环，`ready` 一次播完汇聚 + 发光扫描。
+描述符是 `startup-themes.ts` 的 `BUILTIN`（`id: 'corum-terminal'`、`name: '代码成团'`、
+`version: 2.0.0`、`type: 'video'`）。**这是应用唯一自带、默认播放的主题**——
+id 沿用历史的 `corum-terminal`，是为了保住存量偏好文件与「内置不可删」规则。
 
-旧的内置 HTML 动画（`startup-terminal.html`）**已下线**，Corum 不再自带 HTML 主题；
-但 `type: 'html'` 仍是受支持的导入格式，写 HTML 主题请从
-`packages/desktop/startup-theme-kit/html/` 模板起步。若要参考旧实现，历史版本仍在：
+> ⚠️ `spawn` 阶段已于 2026-10-17 并入 `env`：阶段枚举现在是
+> `env | plugins | mounting | ready`（四段，`ALL_STAGES`）。
+> **带 `spawn` 段的旧主题包会被直接拒绝**（`validateSegments` 对不在枚举里的 stage 抛
+> 「segment stage 无效」），不是忽略——所以升级前做的主题要先把那段的 `stage` 改成
+> `env` 才能导入。另：`segments` 必须非空且**含 `ready` 段**。
+
+旧的内置 HTML 动画（`startup-terminal.html`）**已下线**，应用不再自带 HTML 主题；
+但 `type: 'html'` 仍是受支持的导入格式。`startup-theme-kit/` 模板目录**也已删除**，
+写 HTML 主题请照本技能 §11 的最小模板起步。若要参考旧实现，历史版本仍在：
 `git show 84f289f3^:packages/desktop/assets/startup-terminal.html`。
 
-### 9.2 Remotion 项目（程序化视频主题）
+### 9.2 Remotion 工程（**装在 corum-dev 扩展包里，可直接跑**）
 
-`packages/desktop/startup-theme-remotion/` —— 用 Remotion 离线渲染 MP4 启动动画。
-入口 `render.mjs`、配置 `remotion.config.ts`、源码 `src/`。
-适合做复杂合成动画（多层、音乐、转场）然后导出成 `type:'video'` 主题。
+一份完整可运行的 Remotion 工程随「Corum 开发」扩展包（`corum-dev-preset`）的技能目录分发：
+
+```
+$CORUM_HOME/skills/corum-startup-theme-dev/plugins/remotion-starter/
+```
+
+它渲染的正是应用当前那支启动动画（3D 星隧 → 代码粒子汇聚 → 「Corum Harness」→ 就绪）。
+实测出的规格：**1920×1080 · 30 fps · 240 帧（8 s）· H.264 + AAC**。
+
+> ⚠️ **它不在应用仓里**（这句是为了别让人在 kkc-desktop 里白找路径）。
+> 2026-10-16 用户拍板从应用仓移除，原话「用这个工具制作动画并不想让其成为一个插件或者组件」
+> ⇒ 现在它只在扩展包里，应用仓**没有** `packages/desktop/startup-theme-remotion/`。
+> 要取回当年那份源码：`git show d0988b76^:packages/desktop/startup-theme-remotion/`。
+> 先确认工程在不在：`ls "$CORUM_HOME/skills/corum-startup-theme-dev/plugins/remotion-starter"`。
+
+```bash
+cd "$CORUM_HOME/skills/corum-startup-theme-dev/plugins/remotion-starter"
+npm install                         # 用 npm，不要 pnpm（原因见下表）
+node render.mjs --theme             # 出 MP4 + 直接可导入的主题 ZIP
+```
+
+产物：`dist/startup-animation.mp4` 与 `dist/corum-remotion-theme.zip`（后者可
+**设置 → 外观 → 启动动画 → 导入主题** 直接装入）。
+
+改动画就改 `src/`（`StartupAnimation.tsx` 是时间轴总装，`CodeParticles`/`StarField`/
+`TextConverge` 是三层 3D，`audio.ts` 是琶音）。改主题身份用
+`node pack-theme.mjs --id=… --name=… --author=…`。
+
+**四个已实测的坑**（工程 README 里有完整版，这里只列判据）：
+
+| 现象 | 真因 | 修法 |
+|---|---|---|
+| `No browser found for rendering frames!` | Remotion 自带的解压器把 chrome-headless-shell 只解出 ABOUT/LICENSE，且**下次会跳过重解** | `render.mjs` 已内置自愈（判据是**可执行文件存在**，不是目录存在）；手工修见 README |
+| 3D 层整片黑但渲染「成功」 | 无头 Chrome 拿不到 WebGL 上下文 | `remotion.config.ts` 的 `setChromiumOpenGlRenderer('angle-egl')` 不能删 |
+| `Invalid hook call` 之类运行期错 | 与本仓工作区混装了 React | `pnpm install --ignore-workspace` |
+| `ERR_PNPM_IGNORED_BUILDS`（反复出现） | **pnpm 会把 `pnpm-workspace.yaml` 的 `allowBuilds` 覆写回占位符** `set this to true or false` | 改用 `npm install`；这条警告本身**无害**（实测不批准 esbuild 也能渲染成功） |
+
+**主题 ZIP 的硬约束**（`pack-theme.mjs` 已按应用同规自检，自己改打包脚本时照抄）：
+ZIP ≤200 MiB / 解压 ≤400 MiB / ≤2048 项；拒绝 ZIP64、多卷、加密、数据描述符；
+`manifest.json` 在根且 `formatVersion:1`；`type:'video'` 的 entry 必须 `.mp4|.webm`；
+主题 id 匹配 `^[a-z0-9][a-z0-9._-]{0,63}$` 且不能撞内置 `corum-terminal`；
+路径禁 `..`/反斜杠/冒号/控制字符/Windows 保留名/尾空格尾点。
 
 ## 10. 配色与字体参考
 
