@@ -55,6 +55,27 @@ export class CorumForegroundGate extends Service {
    * `run.dispose()` 杀掉子 Agent——这是唯一能真正中断一次性 run 的路径。
    */
   private readonly runs = new Map<string, { dispose(): Promise<void> }>()
+  /**
+   * fork（corum）2026-10-18（issue #75 #6/#8）：childId → parentAgentId 反向映射。
+   *
+   * 子 Agent 调 `ask_user_question` 时（在子 Agent 的 ctx 里），需要查「谁委派了我」
+   * 才能把问题转发给父 Agent。`agent.parentAgent` 在公开接口不暴露 owner，故 gate 自己
+   * 维护这张表（track 时写入、release 时清除）。
+   */
+  private readonly parentOf = new Map<string, string>()
+  /**
+   * fork（corum）2026-10-18（issue #75 #6/#7）：pending question 注册表。
+   *
+   * 子 Agent 的提问转发给父 Agent 后，答案需要路由回**那个具体提问**。
+   * key = questionId，value = { resolve（父 Agent 作答时调用）、childId、reject（子/父 dispose 时） }。
+   * 伪前台下父 Agent idle → 收到 followup 通知 → 用 `answer_child_question` 工具作答 →
+   * `resolveAnswer` 在此表里查到 resolve 回调 → 把答案送回等待中的子 Agent `ask` 调用。
+   */
+  private readonly pendingQuestions = new Map<string, {
+    readonly childId: string
+    readonly resolve: (answer: unknown) => void
+    readonly reject: (error: unknown) => void
+  }>()
 
   constructor(ctx: Context) {
     super(ctx, 'corumForegroundGate')
@@ -77,6 +98,8 @@ export class CorumForegroundGate extends Service {
     }
     set.add(childId)
     if (run !== undefined) this.runs.set(childId, run)
+    // fork（corum）#6/#8：子 Agent 查「谁委派了我」用这张表。
+    this.parentOf.set(childId, key)
   }
 
   /**
@@ -92,6 +115,7 @@ export class CorumForegroundGate extends Service {
     if (set === undefined) return false
     set.delete(childId)
     this.runs.delete(childId)
+    this.parentOf.delete(childId)
     if (set.size === 0) {
       this.pending.delete(key)
       return false
@@ -135,8 +159,81 @@ export class CorumForegroundGate extends Service {
           this.runs.delete(childId)
           void run.dispose().catch(() => {})
         }
+        this.parentOf.delete(childId)
+        // fork（corum）#6/#8：父 dispose 时该子 Agent 的全部待答提问一并 abort（ASK_ABORTED）。
+        this.abortQuestionsForChild(childId, 'parent agent disposed')
       }
       this.pending.delete(key)
+    }
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #6/#8）：查 childId 的父 Agent id。
+   *
+   * 子 Agent 调 `ask_user_question` 时（被覆写的 `userQuestions.ask` 在子 ctx 里跑），
+   * 用此查「谁委派了我」。返回 undefined = 该子 Agent 不在伪前台门禁里（非伪前台委派）。
+   */
+  parentOfChild(childId: string): string | undefined {
+    return this.parentOf.get(childId)
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #6/#7）：登记一个待答提问。
+   *
+   * 子 Agent 的 `ask` 调用转发给父 Agent 后，等父 Agent 作答。父作答 → `resolveAnswer`；
+   * 子/父 dispose → `rejectQuestion` / `abortQuestionsForChild`。
+   *
+   * @param questionId - 稳定 id（与 `AskUserQuestionItem.id` 同源，由调用方生成）。
+   * @param childId - 提问的子 Agent 会话 id（路由答案回哪个子 Agent）。
+   * @param resolve - 父作答时调用，传 `AskUserQuestionAnswer`。
+   * @param reject - 子/父 dispose 时调用，传 `UserQuestionError(ASK_ABORTED)`。
+   */
+  registerPendingQuestion(
+    questionId: string,
+    childId: string,
+    resolve: (answer: unknown) => void,
+    reject: (error: unknown) => void,
+  ): void {
+    this.pendingQuestions.set(questionId, { childId, resolve, reject })
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #7）：父 Agent 作答 → 把答案送回等待中的子 Agent `ask` 调用。
+   *
+   * @returns 是否找到了该 questionId（false = 父未作答提问已超时/abort）。
+   */
+  resolveAnswer(questionId: string, answer: unknown): boolean {
+    const entry = this.pendingQuestions.get(questionId)
+    if (entry === undefined) return false
+    this.pendingQuestions.delete(questionId)
+    entry.resolve(answer)
+    return true
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #16）：拒绝一个待答提问（ASK_ABORTED）。
+   *
+   * 子/父 dispose 或会话被停止时调用——协议终止路径（5.7 §3 第三步的三条）。
+   */
+  rejectQuestion(questionId: string, error: unknown): boolean {
+    const entry = this.pendingQuestions.get(questionId)
+    if (entry === undefined) return false
+    this.pendingQuestions.delete(questionId)
+    entry.reject(error)
+    return true
+  }
+
+  /**
+   * fork（corum）2026-10-18（issue #75 #16）：abort 某子 Agent 的全部待答提问。
+   *
+   * 子 Agent dispose 时调用——该子 Agent 的所有未答提问一律 ASK_ABORTED。
+   */
+  abortQuestionsForChild(childId: string, reason: string): void {
+    for (const [questionId, entry] of this.pendingQuestions) {
+      if (entry.childId === childId) {
+        this.pendingQuestions.delete(questionId)
+        entry.reject(new Error(`ask_user_question aborted: ${reason}`))
+      }
     }
   }
 

@@ -228,7 +228,19 @@ describe('策略② 失败处置：模型调用出错 ⇒ **先问用户**，按
   it('★★ 机制级提问走自己的 host 通路，**不借 userQuestions**（用户明确的架构要求）', () => {
     // 这不是风格偏好：userQuestions 的消费者是 LLM 的 ask_user_question 工具，
     // 两条询问共用一条 waterfall 会互相截获、delegate 语义纠缠。
-    expect(SRC).not.toContain("ctx.get('userQuestions')")
+    // fork（corum）2026-10-18（issue #75）：index.ts 现在覆写 userQuestions.ask（子 Agent
+    // 提问转发给父 Agent），故 `ctx.get('userQuestions')` 合法出现在 index.ts 里——
+    // 但模型不可用提问通路（corumAskAboutModel）**仍然不借 userQuestions**。
+    // 钉住 corumAskAboutModel 函数体不含 userQuestions。
+    const askFnStart = SRC.indexOf('const corumAskAboutModel = async')
+    expect(askFnStart, 'corumAskAboutModel function not found').toBeGreaterThan(-1)
+    // 找该箭头函数到下一个顶层 const/function 的范围。
+    const reNext = /\n  (const |function |async function |let |var )/g
+    reNext.lastIndex = askFnStart + 10
+    const match = reNext.exec(SRC)
+    const askFnEnd = match !== null && match.index !== undefined ? match.index : SRC.length
+    const askFnBody = SRC.slice(askFnStart, askFnEnd)
+    expect(stripComments(askFnBody), 'corumAskAboutModel must not use userQuestions').not.toContain('userQuestions')
     expect(SRC).toContain('corumModelAskChannel')
     expect(SRC).toContain("'corum/model-ask/request'")
     const run = readFileSync(join(import.meta.dirname, '../src/model-ask-run.ts'), 'utf8')

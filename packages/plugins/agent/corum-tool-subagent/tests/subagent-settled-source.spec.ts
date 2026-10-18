@@ -75,9 +75,10 @@ describe('subagent-settled 消息源字段完整性 — 每个 source 都含 sen
     }
     // fork（corum）2026-10-18：+3 个来自伪前台 `corumPseudoForegroundWait`
     // （fault / model-failure / success 三条通知路径，全部 followup + subagent-settled source）。
+    // +1 个来自 userQuestions.ask 覆写（子 Agent 提问转发给父 Agent，followup + subagent-settled source）。
     // 原 6 个：corumNotifyPartialIntegration / PendingIntegration / VerifyRejected /
     // ForegroundResult / ModelDecision / SettleCommitFailures，全部都应含 senderSessionId。
-    expect(count, 'subagent-settled source 数量异常（可能扫描逻辑坏了）').toBe(9)
+    expect(count, 'subagent-settled source 数量异常（可能扫描逻辑坏了）').toBe(10)
   })
 
   it('corumNotifyModelDecision 在无 childId 时走 logger.warn（不注入缺字段的 source）', () => {
