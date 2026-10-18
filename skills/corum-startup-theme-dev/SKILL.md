@@ -233,16 +233,19 @@ frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';
 
 ## 9. 内置主题与 Remotion 参考
 
-### 9.1 内置主题：corum-segments（分段视频）
+### 9.1 内置主题：`corum-terminal`（分段视频，唯一内置）
 
 `packages/desktop/assets/startup-segments/segments/*.mp4` —— 每个启动阶段一段：
 `env/plugins/mounting` 在阶段内无缝循环，`ready` 一次播完汇聚 + 发光扫描。
-描述符在 `startup-themes.ts` 的 `BUILTIN`。**这是应用自带、默认播放的主题**
-（id `corum-terminal` 保留作历史 id；`corum-segments` 是分段视频那份）。
+描述符是 `startup-themes.ts` 的 `BUILTIN`（`id: 'corum-terminal'`、`name: '代码成团'`、
+`version: 2.0.0`、`type: 'video'`）。**这是应用唯一自带、默认播放的主题**——
+id 沿用历史的 `corum-terminal`，是为了保住存量偏好文件与「内置不可删」规则。
 
 > ⚠️ `spawn` 阶段已于 2026-10-17 并入 `env`：阶段枚举现在是
-> `env | plugins | mounting | ready`（四段）。旧主题包里带 `spawn` 段不会报错
-> （`validateSegments` 只强制「必须含 ready」），但永远播不到。
+> `env | plugins | mounting | ready`（四段，`ALL_STAGES`）。
+> **带 `spawn` 段的旧主题包会被直接拒绝**（`validateSegments` 对不在枚举里的 stage 抛
+> 「segment stage 无效」），不是忽略——所以升级前做的主题要先把那段的 `stage` 改成
+> `env` 才能导入。另：`segments` 必须非空且**含 `ready` 段**。
 
 旧的内置 HTML 动画（`startup-terminal.html`）**已下线**，应用不再自带 HTML 主题；
 但 `type: 'html'` 仍是受支持的导入格式。`startup-theme-kit/` 模板目录**也已删除**，
