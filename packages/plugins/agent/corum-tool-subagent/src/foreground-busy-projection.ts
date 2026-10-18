@@ -10,8 +10,7 @@
  *
  * 事件 `corum/foreground-busy` 在伪前台 track / release 时 append 到父会话。
  *
- * ⚠️ 当前为 host-only projection（无 SessionProjectionMap 声明）；客户端读取 wire view
- * 待后续实施（需补 wire: { viewSchema, view } + SessionProjectionMap 声明）。
+ * 客户端 wire view：`boolean | null`（与 state 同形）。客户端读取此 projection 判 busy。
  *
  * @module @corum/corum-tool-subagent/foreground-busy-projection
  */
@@ -38,7 +37,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-// fork（corum）：声明 session projection state（host-only，客户端 wire view 待后续）。
+// fork（corum）：声明 session projection state + wire view（客户端可读）。
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     /**
@@ -49,29 +48,39 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      */
     corumForegroundBusy: boolean | null
   }
+
+  interface SessionProjectionMap {
+    /** Client-readable projection: `true`/`false`/`null` (same shape as state). */
+    corumForegroundBusy: boolean | null
+  }
 }
 
 // fork（corum）：nullable boolean 的 schema（zod v4）。
 const busySchema = zod.union([zod.null(), zod.boolean()]) as unknown as zod.ZodType<boolean | null>
 
 /**
- * The projection definition for `corumForegroundBusy` (host-only).
+ * The projection definition for `corumForegroundBusy`.
  *
  * - `init`: `null` (no foreground delegation has started yet);
  * - `apply`: on `corum/foreground-busy` events, update to `pending` (true/false);
  *   on all other events, keep the current value.
+ * - `wire`: state → wire payload is identity (boolean | null)。
  */
-export const corumForegroundBusyProjectionDefinition: ProjectionDefinition<'corumForegroundBusy', boolean | null> = {
-  key: 'corumForegroundBusy',
+export const corumForegroundBusyProjectionDefinition = {
+  key: 'corumForegroundBusy' as const,
   stateVersion: 1,
   stateSchema: busySchema,
-  init: () => null,
-  apply: (state, event: SessionEvent) => {
+  init: () => null as boolean | null,
+  apply: (state: boolean | null, event: SessionEvent) => {
     if (event.type !== 'corum/foreground-busy') return state
     const data = (event as { data?: { pending?: boolean } }).data
     return data?.pending === true
   },
-}
+  wire: {
+    viewSchema: busySchema,
+    view: (state: boolean | null) => state,
+  },
+} satisfies ProjectionDefinition<'corumForegroundBusy', boolean | null>
 
 /** Helper: append a `corum/foreground-busy` event to a parent session. */
 export function appendForegroundBusyEvent(

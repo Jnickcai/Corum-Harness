@@ -1791,6 +1791,34 @@ export function apply(ctx: Context, config: Config): void {
     })
   }
 
+  // fork（corum）2026-10-18（issue #75 #16 路径1）：父 turn 结束未作答 → 自动上报。
+  //
+  // 设计文档 §5.7 §3 第三步：父 Agent 的 turn 结束时若有未作答的 pending question，
+  // 机制应自动上报（让用户看到「子 Agent 在等回答」）。
+  //
+  // 本钩子在 `agent/turn-stopping` 上检查：若该 agent 有 pending question 且在伪前台门禁里，
+  // 追加一条会话通知提醒用户（不 abort 子 Agent 的 ask 调用——那是「死等」语义；
+  // 这里只是增强可见性，让用户知道有个问题在等）。
+  if (pseudoForegroundEnabled) {
+    ctx.on('agent/turn-stopping', ({ agent, signal }) => {
+      signal.throwIfAborted()
+      // root 会话才生效（与伪前台一致）。
+      if (agent.session.header.origin === 'subagent') return
+      if (!foregroundGate.isBlocking(agent.id)) return
+      // 追加通知：提醒用户「前台子 Agent 有待答问题」。
+      const pending = foregroundGate.pendingChildren(agent.id)
+      if (pending.length === 0) return
+      try {
+        agent.session.append('corum/foreground-busy', {
+          pending: true,
+          childIds: pending,
+        })
+      } catch {
+        // 追加失败只静默（增强不能反过来让 turn 停不下来）。
+      }
+    })
+  }
+
   // fork（corum）：实例级配置终值。
   // 2026-09-21 裁定：隔离 / 合并相关键（isolation / integrateChecks / merger）已从 preset
   // 配置面（Config 接口 + schema）与全局 ns 移除，**机制恒定生效**，故这里不再有相关解析，
