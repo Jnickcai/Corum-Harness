@@ -39,9 +39,12 @@ import { corumDirectWriteNotice, corumIsGitRepo, corumIsolationNotice } from '@c
 import { startInProcessRun } from '../driver/index.ts'
 import {
   applyMechanismRoute,
+  readPresetChildModel,
   resolveScriptChildModel,
+  type AgentPresetsFace,
+  type CorumProfilesFace,
   type OrchestrationModelOverrideFace,
-  type SettingsDescribeFace,
+  type SettingsGetFace,
 } from './script-model-resolution.ts'
 
 export const name = 'corum-subagent-isolated-in-process'
@@ -237,19 +240,39 @@ class IsolatedInProcessProvider implements SubagentProvider {
     //
     // 用户报障「编排工作流的子 Agent 模型不是全局设置的 glm-5.3-flash 而是
     // DeepSeek-v4-flash」——根因是 SCRIPT 模式经引擎的 `agent()` **不经过 corum 工具层**
-    // （`spawnOne`），而子 Agent 模型三档解析只写在 `spawnOne` 里，于是脚本子 Agent
+    // （`spawnOne`），而子 Agent 模型分档解析只写在 `spawnOne` 里，于是脚本子 Agent
     // 落到 driver 的 `resolveChildAgentOptions(parent, undefined, ...)` ⇒ **继承父路由**
     // （= 主 Agent 的 `deepseek-v4-flash`），而非全局子 Agent 设置。
     //
-    // 修法：在调 `startInProcessRun` 之前解析机制路由并注入 `agentOptions` +
-    // `agentOptionsOwnedByMechanism: true`（driver P1 剥离只剥未标记的选项，故机制路由
-    // 不会被剥）。三档解析（会话覆盖 → 全局兜底 → 跟随主 Agent）见 `script-model-resolution.ts`。
+    // 修法：在调 `startInProcessRun` 之前解析机制路由并经 `mechanismRoute` 通道注入
+    // （见 `script-model-resolution.ts` 的 `applyMechanismRoute`；该通道不受 driver 的
+    // 脚本路由剥离影响，同时保留「脚本违规自选路由 ⇒ 剥离 + 告知」）。**四档**解析
+    // （会话覆盖 → 预设锁 → 全局兜底 → 跟随主 Agent）见 `script-model-resolution.ts`。
+    //
+    // 预设锁的取数：preset id 必须从**父 Agent 自己的活 scope 链**读
+    // （`request.parent.ctx.get('agentPresets').composedPreset(request.parent.ctx)`，与
+    // `child-agent.ts` 的 `childSessionMeta` 同款用法）；profile 的 `subagentModel`
+    // 经 `corumAgent.listProfiles()` 读。任一环节缺席/查不到 ⇒ 降级为「无预设锁」
+    // （= 走全局档），**绝不阻断委派**。
     const orchestration = this.ctx.root.get('corumOrchestration', false) as CorumOrchestrationFace | undefined
-    const settings = this.ctx.root.get('settings', false) as SettingsDescribeFace | undefined
+    const settings = this.ctx.root.get('settings', false) as SettingsGetFace | undefined
+    // preset 从**父 Agent 自己的活 scope 链**读（同 `child-agent.ts` 的 `childSessionMeta`）。
+    const parentCtx = request.parent.ctx
+    const presets = parentCtx.get('agentPresets') as AgentPresetsFace | undefined
+    const presetChildModel = await readPresetChildModel(
+      presets,
+      // `corumAgent` 用 `root.get` 为主、`ctx.get` 兜底：2026-09-18 实机在
+      // `corum-tool-subagent` 里踩过「`root.get('corumAgent')` 取不到」的坑（见该包
+      // `index.ts` 的同款注释），两处口径不一致会让预设锁**静默**降级成「没配」——
+      // 正是本刀要修的缺陷形态，故这里两条读法都试，取到即用。
+      (this.ctx.root.get('corumAgent', false) ?? this.ctx.get('corumAgent')) as CorumProfilesFace | undefined,
+      parentCtx,
+    )
     const resolved = resolveScriptChildModel(
       orchestration,
       settings,
       String(request.parent.session.id),
+      presetChildModel,
     )
     const routedRequest = applyMechanismRoute(request, resolved.route)
     if (resolved.tier !== 'follow-main') {
