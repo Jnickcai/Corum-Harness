@@ -37,6 +37,15 @@ import type {
 } from '../index.ts'
 import { corumDirectWriteNotice, corumIsGitRepo, corumIsolationNotice } from '@corum/corum-orchestration'
 import { startInProcessRun } from '../driver/index.ts'
+import {
+  applyMechanismRoute,
+  readPresetChildModel,
+  resolveScriptChildModel,
+  type AgentPresetsFace,
+  type CorumProfilesFace,
+  type OrchestrationModelOverrideFace,
+  type SettingsGetFace,
+} from './script-model-resolution.ts'
 
 export const name = 'corum-subagent-isolated-in-process'
 export const inject = ['subagents']
@@ -74,8 +83,11 @@ export const Config: z<Config> = z.object({
 /**
  * `CorumOrchestration` 的最小能力面（红线 3：跨包类型用局部能力接口收窄，不耦合实现包）。
  * 由 `@corum/corum-orchestration` 在根上下文 provide。
+ *
+ * fork（corum）2026-10-19：补 `modelOverrideOf`——脚本模式子 Agent 模型解析需要读
+ * 会话级覆盖（见 `script-model-resolution.ts`）。
  */
-interface CorumOrchestrationFace {
+interface CorumOrchestrationFace extends OrchestrationModelOverrideFace {
   createWorktreeChild: (
     sessionId: string,
     parentCwd: string,
@@ -224,10 +236,56 @@ class IsolatedInProcessProvider implements SubagentProvider {
     if (mode !== this.config.mode) {
       this.ctx.logger.warn(`corum-isolated: workspace "${parentCwd}" is not a git repository; degrading isolation mode "${this.config.mode}" → "track"`)
     }
+    // fork（corum）2026-10-19：**脚本模式子 Agent 模型路由解析**。
+    //
+    // 用户报障「编排工作流的子 Agent 模型不是全局设置的 glm-5.3-flash 而是
+    // DeepSeek-v4-flash」——根因是 SCRIPT 模式经引擎的 `agent()` **不经过 corum 工具层**
+    // （`spawnOne`），而子 Agent 模型分档解析只写在 `spawnOne` 里，于是脚本子 Agent
+    // 落到 driver 的 `resolveChildAgentOptions(parent, undefined, ...)` ⇒ **继承父路由**
+    // （= 主 Agent 的 `deepseek-v4-flash`），而非全局子 Agent 设置。
+    //
+    // 修法：在调 `startInProcessRun` 之前解析机制路由并经 `mechanismRoute` 通道注入
+    // （见 `script-model-resolution.ts` 的 `applyMechanismRoute`；该通道不受 driver 的
+    // 脚本路由剥离影响，同时保留「脚本违规自选路由 ⇒ 剥离 + 告知」）。**四档**解析
+    // （会话覆盖 → 预设锁 → 全局兜底 → 跟随主 Agent）见 `script-model-resolution.ts`。
+    //
+    // 预设锁的取数：preset id 必须从**父 Agent 自己的活 scope 链**读
+    // （`request.parent.ctx.get('agentPresets').composedPreset(request.parent.ctx)`，与
+    // `child-agent.ts` 的 `childSessionMeta` 同款用法）；profile 的 `subagentModel`
+    // 经 `corumAgent.listProfiles()` 读。任一环节缺席/查不到 ⇒ 降级为「无预设锁」
+    // （= 走全局档），**绝不阻断委派**。
+    const orchestration = this.ctx.root.get('corumOrchestration', false) as CorumOrchestrationFace | undefined
+    const settings = this.ctx.root.get('settings', false) as SettingsGetFace | undefined
+    // preset 从**父 Agent 自己的活 scope 链**读（同 `child-agent.ts` 的 `childSessionMeta`）。
+    const parentCtx = request.parent.ctx
+    const presets = parentCtx.get('agentPresets') as AgentPresetsFace | undefined
+    const presetChildModel = await readPresetChildModel(
+      presets,
+      // `corumAgent` 用 `root.get` 为主、`ctx.get` 兜底：2026-09-18 实机在
+      // `corum-tool-subagent` 里踩过「`root.get('corumAgent')` 取不到」的坑（见该包
+      // `index.ts` 的同款注释），两处口径不一致会让预设锁**静默**降级成「没配」——
+      // 正是本刀要修的缺陷形态，故这里两条读法都试，取到即用。
+      (this.ctx.root.get('corumAgent', false) ?? this.ctx.get('corumAgent')) as CorumProfilesFace | undefined,
+      parentCtx,
+    )
+    const resolved = resolveScriptChildModel(
+      orchestration,
+      settings,
+      String(request.parent.session.id),
+      presetChildModel,
+    )
+    const routedRequest = applyMechanismRoute(request, resolved.route)
+    if (resolved.tier !== 'follow-main') {
+      this.ctx.logger.info(
+        `corum-isolated: script child model resolved to ${resolved.tier} `
+        + `(${resolved.route?.provider ?? '(follow-main)'}/${resolved.route?.model ?? '(follow-main)'}), `
+        + `parent session ${String(request.parent.session.id)}`,
+      )
+    }
     // `off` 分支已于 2026-09-16 移除（隔离恒定生效）：只剩 always（建 worktree）与
     // track（顺序迭代的独立模式，不建 worktree 但登记计数）。
     if (mode === 'track') {
-      const tracked = prepareTrackedChild(this.ctx, request)
+      const tracked = prepareTrackedChild(this.ctx, routedRequest)
       try {
         const run = await startInProcessRun(tracked.request, {})
         void run.result.then(tracked.release, tracked.release)
@@ -237,7 +295,7 @@ class IsolatedInProcessProvider implements SubagentProvider {
         throw error
       }
     }
-    const prepared = prepareIsolatedChild(this.ctx, request, this.config)
+    const prepared = prepareIsolatedChild(this.ctx, routedRequest, this.config)
     try {
       const run = await startInProcessRun(prepared.request, {})
       prepared.bind(String(run.id))

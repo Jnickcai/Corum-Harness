@@ -295,7 +295,9 @@ describe('B 组文本级修正（P3–P8）', () => {
 
   it('P3：不得再声称 orchestrate 有「更宽的并发上限」（实际上限同为 4，第 5 个并发 fatal）', () => {
     expect(SRC).not.toContain('wider limit')
-    expect(SRC).toContain('a single call; every result collected in one place')
+    // fork（corum）2026-10：断言强度不变（「一次调用、结果集中」），措辞随黑盒化改写——
+    // 现在是「一次调用只回一份最终结果」（旧句里的 `merge.verify` 已随字段取消）。
+    expect(SRC).toContain('a single call; ONE final result comes back')
   })
 
   it('P4：bash 改动「不进审查卡」的说法必须消失（corum-review 会解析命令串 + 轮末并集兜底）', () => {

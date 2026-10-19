@@ -2,35 +2,41 @@
 // Agent 时，在消息瀑布中流出的**流程图卡**（设计稿 `orchestrate-flow-card`，fNng3）。
 //
 // 对齐设计稿结构（节点坐标实测）：
-//   head  = avatar(layers) + meta(标题「编排工作流 · N 任务并行」/ 副标题
-//           「fan-out 并发 → fan-in 汇合」) + 状态 chip(计数) + 折叠按钮
-//   flow  = 导轨列(node-start x=4 / trunk x=14 竖虚线 / node-merge x=4) +
+//   head  = avatar(layers) + meta(标题「编排工作流 · N 任务并行」) + 状态 chip(计数)
+//           + 折叠按钮   ← 标题下**没有**副标题（#96 移除：流程图与 chip 已表达同样信息）
+//   flow  = 导轨列(node-start x=4 / trunk x=14 竖虚线 / node-close x=4) +
 //           分支列(逐 brX: line x=16 + node x=34 + card x=64) +
-//           合并汇总阶段(card-merge x=64 整行宽、无 brX-line，声明 merge 时)
+//           结尾节点(card-close x=64 整行宽、无 brX-line)
 //
 //   分支卡 = label / 副行(isolation · worktree 或 research · 只读) + 状态 chip + goto
 //
-//   合并阶段是一个**串行汇总**，与并行分支列表分层渲染：
-//   node-merge 落在导轨列(x=4，与 node-start 同列)，trunk 从 start 一路延伸到 merge
-//   承担「N 条并行 → 1 个汇总」的汇聚连接线；card-merge 整行宽(x=64)、底色更弱、
+//   结尾节点是一个**串行收尾**，与并行分支列表分层渲染：
+//   node-close 落在导轨列(x=4，与 node-start 同列)，trunk 从 start 一路延伸到 close
+//   承担「N 条并行 → 1 个收尾」的汇聚连接线；card-close 整行宽(x=64)、底色更弱、
 //   无 brX-line —— 视觉上明确区别于并行分支行。
 //
 // 状态色（设计稿两态实测）：
 //   running #FFB45C（warn）· done #3EE6B0（success）· failed #FF5C7A（error）
-//   集成：integrated=done 色「已集成」/ pending=dim「未启动」。
+//   收尾：已收尾=done 色 / 队列中=品牌蓝 / 失败=error 色。
 //
 // 数据源 = 本卡自己的 node data（orchestrate.ts 从 tool/call arguments + 结果正文
 // 折叠），无新宿主通路。子会话跳转复用 subagent 卡同一套 runtime 桥。
+//
+// ★ 2026-10 编排黑盒化（UI 半边）：机制取消了 `merge` 字段，收尾改由机制按隔离实况
+//   自动判定的 closer 节点完成（三场景 merge / summarize / research）。于是本卡的
+//   「结尾节点」不再由「模型声明了 merge」决定，而是**并行编排恒渲染**，其态读
+//   `data.closer`（报告正文也来自 `closer.report`）。详见下面 closeStage 的注释。
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Ban, Check, ChevronDown, ChevronUp, Cpu, FileText, GitMerge, Layers, Loader, X } from 'lucide-react'
 import { subagentOutcomeOf, subagentOutcomeChipTone } from '@corum/corum-api-remotes/corum-events'
 import type { SubagentStopReason } from '@corum/corum-api-remotes/corum-events'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
-import type { OrchestrateChatData, OrchestrateTask } from '../contract/orchestrate.ts'
+import type { OrchestrateChatData, OrchestrateCloserScenario, OrchestrateTask } from '../contract/orchestrate.ts'
 import { summarize } from '../contract/orchestrate.ts'
 import { chatRuntimeRef, subagentChildOf, subagentChildSubscribe, subagentChildrenOf, worktreeLedgerSubscribe } from '../chat-runtime.ts'
 import { useChildProgress } from './SubagentCard.tsx'
 import { SubagentChanges } from './SubagentChanges.tsx'
+import { SubagentResult } from './SubagentResult.tsx'
 import css from './OrchestrateCard.module.css'
 
 /** 一条分支的渲染态。 */
@@ -74,7 +80,8 @@ function branchState(data: OrchestrateChatData, index: number, stopReason?: Suba
  *  其余写任务**恒隔离**（`worktree` / `always` / `write-tasks` / 未声明，含旧值 `off`
  *  兜底——机制已无 off 逃生口）。
  *  隔离任务的 worktree 名三层兜底：① 实时台账（推送帧，按 spawn 顺序对齐）→
- *  ② 结果正文里的 slug（刷新后耐久兜底）→ ③ 泛化文案「worktree · 隔离运行」。
+ *  ② 结果里的 `results[].worktreeSlug`（2026-10 起的可寻址字段，刷新后耐久）→
+ *  ③ 泛化文案「worktree · 隔离运行」。
  *  background 修饰不再单独成行（副行保持单行）。 */
 function branchSubtitle(
   task: OrchestrateTask,
@@ -137,19 +144,23 @@ function useChildOfTask(
 }
 
 /**
- * 集成者子会话 id。
+ * 收尾节点（closer）子会话 id。
  *
- * 两条来源，**运行期优先**：① `corum/subagent/child` 广播里 label === 'integrate'
- * 的那次 spawn（机制里集成者就是一次普通 spawn，与任务分支同一 callId）；② 工具结果
- * 正文里的 `· child <id>`（`integration.childSessionId`）——推送帧不重放，刷新/重启后
- * 只有它还在。两条都没有就不渲染按钮（宁可不给入口，也不给错的）。
+ * 两条来源，**运行期优先**：① `corum/subagent/child` 广播里 label 命中收尾节点的
+ * 那次 spawn；② 结果里的 `closer.childSessionId`（**durable**）——推送帧不重放，
+ * 刷新/重启后只有它还在。两条都没有就不渲染按钮（宁可不给入口，也不给错的）。
+ *
+ * ⚠️ label 是**两个**（2026-10 迁移点）：黑盒化后 closer 的 spawn label 是
+ * `'closer'`；历史会话里集成者的 label 是 `'integrate'`。只认后者会让新会话的
+ * 「进入会话」按钮永不出现（运行期没有 durable id，结果回来前完全没入口）。
  * @param callId - 本次 orchestrate 的 callId。
- * @param fromResult - 结果里带的集成者子会话 id（缺省 = 结果还没到或未集成）。
+ * @param fromResult - 结果里带的收尾子会话 id（缺省 = 结果还没到或没有 closer）。
  * @returns 可跳转的子会话 id，或 undefined。
  */
 function useIntegratorChild(callId: string, fromResult: string | undefined): string | undefined {
   const resolve = (): string | undefined =>
-    subagentChildrenOf(callId).find(entry => entry.label === 'integrate')?.childSessionId ?? fromResult
+    subagentChildrenOf(callId).find(entry => entry.label === 'closer' || entry.label === 'integrate')?.childSessionId
+    ?? fromResult
   const [child, setChild] = useState<string | undefined>(resolve)
   useEffect(() => {
     setChild(resolve())
@@ -237,7 +248,7 @@ function useChildModel(childSessionId: string | undefined): string | undefined {
  * （React 不允许在循环里调 hook）。
  * @param props - 父 callId、任务声明、派生状态。
  */
-function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChildId, slugFallback, t }: {
+function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChildId, slugFallback, branchFallback, t }: {
   callId: string
   task: OrchestrateTask
   /** 本卡的折叠数据（含终态 outcomes 与 settled 位）。 */
@@ -247,6 +258,8 @@ function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChild
   worktrees: readonly { readonly slug: string; readonly branch: string; readonly status: string }[]
   fallbackChildId: string | undefined
   slugFallback: string | undefined
+  /** 结果里的 `results[].branch`（台账缺失时的耐久兜底）。 */
+  branchFallback: string | undefined
   t: ChatNodeViewProps<'orchestrate-call'>['t']
 }) {
   const child = useChildOfTask(callId, task.label, task.index, fallbackChildId)
@@ -275,16 +288,17 @@ function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChild
   const childModel = useChildModel(child)
   const model = task.model ?? childModel
   // 改动区需要的 worktree 三件套：slug 可得才给（SubagentChanges 缺 summary 时自返 null）。
+  // branch 三层同 slug：实时台账 → 结果里的 `results[].branch` → 空串（SubagentChanges 自兜底）。
   const slug = worktrees[task.index]?.slug ?? slugFallback
   const worktreeForChanges = slug === undefined
     ? undefined
-    : { slug, branch: worktrees[task.index]?.branch ?? '' }
+    : { slug, branch: worktrees[task.index]?.branch ?? branchFallback ?? '' }
   return (
     <div className={css.branchRowWrap} data-state={state}>
       <div className={css.branchRow}>
         <span className={css.branchLine} data-tone={chip.tone} />
         <span className={css.branchNode} data-tone={chip.tone}>
-          {state === 'done' ? <Check size={9} /> : state === 'failed' ? <X size={9} /> : state === 'aborted' ? <Ban size={9} /> : <Loader size={9} />}
+          {state === 'done' ? <Check size={9} /> : state === 'failed' ? <X size={9} /> : state === 'aborted' ? <Ban size={9} /> : <Loader size={9} className={css.chipSpin} />}
         </span>
         {/* ★ 锚点（2026-09-18）：分支行就是该子会话在瀑布里的「卡片」——详情卡的跳转按钮按
             `data-child-session-id` 定位，缺了它就只对 SubagentCard 生效、对编排模式失效。 */}
@@ -332,11 +346,88 @@ function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChild
           <div className={css.branchDetailBody}>
             {task.prompt ?? t('subagent.noTaskDetail')}
           </div>
+          {/* 结果区（#98）：这条分支的子 Agent **最终返回**了什么。
+              与任务详情（父注入的指令）分两段，用户不必点进子会话。
+              与子 Agent 卡共用 ./SubagentResult.tsx，只是换 branch 样式族。
+              `settled` = 该分支已到终态：running→done 翻转时自动重拉一次，
+              否则展开那一刻（子 Agent 还在跑）拉到的空结果会一直挂在卡上。 */}
+          <SubagentResult childSessionId={child} t={t} settled={state !== 'running'} variant="branch" />
           <SubagentChanges childSessionId={child} worktree={worktreeForChanges} t={t} />
         </div>
       )}
     </div>
   )
+}
+
+/** 结尾节点（收尾）的渲染态。见 OrchestrateCardImpl 里的状态表。 */
+type CloseStageState = 'queued' | 'closing' | 'done' | 'failed' | 'pending'
+
+/** chip 的语义色键（复用卡片既有 token；`queued` 走品牌蓝，与「运行中」区分）。 */
+type CloseChipTone = 'queued' | 'running' | 'done' | 'failed' | 'pending'
+
+/**
+ * 收尾报告正文的摘要（收起态用）。
+ *
+ * 黑盒化后 closer 的报告就是各任务正文的唯一去处，长度不可控（N 个任务的汇总），
+ * 卡上直接铺全文会把瀑布流撑爆。故收起态只给**前几行（且不超过一定字符）**，
+ * 全文走展开态或「进入子会话」。按行截断优先：报告是 markdown，断在行边界才不会
+ * 切坏表格/代码块；行内过长（单行巨型表格）再由字符上限兜底。
+ * @param report - `closer.report` 全文。
+ * @returns 摘要文本与是否被截断。
+ */
+function reportPreviewOf(report: string): { text: string; truncated: boolean } {
+  const MAX_LINES = 6
+  const MAX_CHARS = 480
+  const lines = report.split('\n')
+  let text = lines.slice(0, MAX_LINES).join('\n')
+  let truncated = lines.length > MAX_LINES
+  if (text.length > MAX_CHARS) {
+    text = text.slice(0, MAX_CHARS)
+    truncated = true
+  }
+  return { text: text.trimEnd(), truncated }
+}
+
+/**
+ * 结尾节点的文案（副行 + chip）。五个态各一句；`done` 再按机制判定的三场景分岔
+ * （merge / summarize / research）——**这是「这次到底有没有合并」的唯一权威回答**。
+ *
+ * 为什么集中在这里：这段文案原先在 JSX 里嵌了五层三元，加场景维度会变成不可读的
+ * 嵌套；抽成纯函数后每个态一行、每个场景一行，改文案不用碰渲染结构。
+ * @param state - 结尾节点态。
+ * @param scenario - 机制判定的收尾场景（undefined = 还没回，不猜）。
+ * @param t - i18n。
+ * @param detail - 该态的补充说明（历史会话 `integration.reason` / `closer.error`）；
+ *   缺省时用该态的通用文案。
+ * @returns 标题、副行、chip 文案与色键。
+ */
+function closeStageCopy(
+  state: CloseStageState,
+  scenario: OrchestrateCloserScenario | undefined,
+  t: ChatNodeViewProps<'orchestrate-call'>['t'],
+  detail?: string,
+): { title: string; sub: string; chip: string; tone: CloseChipTone } {
+  const title = t('orchestrate.close.title')
+  if (state === 'queued') {
+    return { title, sub: t('orchestrate.close.queuedSub'), chip: t('orchestrate.close.queued'), tone: 'queued' }
+  }
+  if (state === 'closing') {
+    return { title, sub: t('orchestrate.close.closingSub'), chip: t('orchestrate.close.closing'), tone: 'running' }
+  }
+  if (state === 'failed') {
+    return { title, sub: detail ?? t('orchestrate.close.failedSub'), chip: t('orchestrate.close.failed'), tone: 'failed' }
+  }
+  if (state === 'pending') {
+    return { title, sub: detail ?? t('orchestrate.close.pendingSub'), chip: t('orchestrate.close.pending'), tone: 'pending' }
+  }
+  // done：三场景各一句话（这是「有没有合并」的唯一权威回答）。
+  if (scenario === 'summarize') {
+    return { title, sub: t('orchestrate.close.doneSummarize'), chip: t('orchestrate.close.summarized'), tone: 'done' }
+  }
+  if (scenario === 'research') {
+    return { title, sub: t('orchestrate.close.doneResearch'), chip: t('orchestrate.close.researched'), tone: 'done' }
+  }
+  return { title, sub: t('orchestrate.close.doneMerge'), chip: t('orchestrate.close.merged'), tone: 'done' }
 }
 
 /**
@@ -368,38 +459,78 @@ function OrchestrateCardImpl({ node, t }: ChatNodeViewProps<'orchestrate-call'>)
     }
   }, [])
   /**
-   * 集成者是否正在跑（2026-09-12 用户实测：状态停在「队列中」直到结束才跳「已集成」，
-   * 中间那段 Agent 真的在合并却看不出来）。判据 = **全部任务都已拿到终态**，而工具结果
-   * 还没回来（`integration` 缺省）——机制在任务全 settle 后串行跑集成者，所以这正是那段窗口。
-   * 别用「工具是否 settled」单独判：任务还在跑时它同样是 false。
+   * 全部任务是否都已拿到终态（实时或结果）。机制在任务全 settle 后**串行派发**
+   * closer，所以「全终态 ∧ 结果未回」正是收尾节点在跑的那段窗口——别用「工具是否
+   * settled」单独判：任务还在跑时它同样是 false。
    */
   const branchesAllTerminal = summary.total > 0
     && (Math.max(summary.done, Math.min(liveCompleted.size, summary.total))
       + Math.max(summary.aborted, liveAborted.size)
       + Math.max(summary.failed, liveFailed.size)) >= summary.total
   /**
-   * 集成结果已到但**没有可解析的集成行** —— 两种情况，都不能再显示「集成中」：
-   *   ① 工具报错（典型 = 机制真值门禁失败：「integrate did not persist into the main tree」，
-   *      分支被保留、主 Agent 要自己处理）→ 集成失败；
-   *   ② 工具正常返回却没带 `[corum integration]` 行 → 未集成（见任务结果）。
+   * 结尾节点（收尾）的渲染门 —— **并行编排恒渲染**（2026-10 迁移点，用户定调「有头有尾」）。
    *
-   * 2026-09-12 用户实测踩到过的坑：那次真值门禁失败后卡片**永远停在「集成中」**
-   * （`integration` 缺省 && 分支都有终态 → 判据恒真），用户看到的就是「集成未返回，
-   * 主 Agent 已经在迫不及待的验证了」——其实工具 2 分钟前就返回了错误，主 Agent 是在
-   * 排查这次失败。故 integrating 必须加 `!data.settled`。
+   * 旧门是 `hasMerge || integration !== undefined`：`merge` 字段取消后 `hasMerge` 对新会话
+   * **恒 false**，而新结果也不再产生 `integration` ⇒ 门恒假 ⇒ 整段结尾节点消失，卡片变成
+   * 「有头无尾」（用户完全看不到这次编排是怎么收的）。
+   *
+   * 新门：`tasks ≥ 2`（并行编排）就恒渲染，态由 `data.closer` 决定；另外三条是**历史回放**
+   * 的兼容项——旧会话可能只有 `integration`，或声明了 `merge` 却在收尾前就中止（只有
+   * `hasMerge` 可依）。脚本模式（tasks 为空）不适用「并行」判据，有 closer 才渲染。
    */
-  const integrationSettledWithoutLine = data.settled && data.integration === undefined
-  const integrationFailed = integrationSettledWithoutLine && data.errored
-  const integrating = data.integration === undefined && !data.settled && branchesAllTerminal
-  // 集成者子会话（运行期靠 spawn 广播 label 'integrate'；刷新后靠结果里的 id）。
-  const integratorChild = useIntegratorChild(data.callId, data.integration?.kind === 'integrated' ? data.integration.childSessionId : undefined)
+  const showCloseStage = data.tasks.length >= 2
+    || data.closer !== undefined
+    || data.integration !== undefined
+    || data.hasMerge
+  const closer = data.closer
   /**
-   * 合并阶段渲染门（2026-10-04 用户实测缺陷③）：原先只认 `data.hasMerge`，于是**未声明
-   * merge 的编排整段合并阶段不渲染**——用户看不到「待集成」。机制对未集成编排会发
-   * pending-integration 并写进结果（`data.integration.kind === 'pending'`），故门放宽为
-   * 「声明了 merge ∨ 结果里有集成信息」。导轨 trunk 延伸与 node-merge 渲染同用此布尔。
+   * 结尾节点的五态（2026-10 三态 + 运行期两态）：
+   *
+   * | 态 | 判据 | 含义 |
+   * |---|---|---|
+   * | `queued` | 结果未回 ∧ 还有任务在跑 | 机制在等并行任务收尾 |
+   * | `closing` | 结果未回 ∧ 任务全终态 | closer 正在跑（机制串行派发） |
+   * | `done` | `closer` 在场 ∧ 无 error | 收尾成功（按 scenario 分三句话） |
+   * | `failed` | `closer.error` 在场，或结果已回却什么都没有 ∧ 工具报错 | 收尾失败 |
+   * | `pending` | 结果已回、无 closer、无 integration、工具未报错 | 历史/异常结果，见任务结果 |
+   *
+   * ⚠️ `failed` 必须区分「closer 自己失败」与「工具整体报错」：前者的 `results[]` 是完整的
+   * （任务级引用照旧可用，损失面可见），后者才是整批失败。
    */
-  const showMergeStage = data.hasMerge || data.integration !== undefined
+  const closeStage: CloseStageState = closer !== undefined
+    ? closer.error === undefined ? 'done' : 'failed'
+    : !data.settled
+      ? branchesAllTerminal ? 'closing' : 'queued'
+      : data.integration !== undefined
+        ? data.integration.kind === 'integrated' ? 'done' : 'pending'
+        : data.errored ? 'failed' : 'pending'
+  /**
+   * 结尾节点按哪个场景说话。closer 未回时**不猜**（场景是机制按隔离实况判的，猜错就是
+   * 假信息）；历史会话只有 `integration` 时按 `merge` 讲（那时它只可能是集成者）。
+   */
+  const closeScenario: OrchestrateCloserScenario | undefined =
+    closer?.scenario ?? (data.integration === undefined ? undefined : 'merge')
+  // 收尾者子会话（运行期靠 spawn 广播 label 'closer'/'integrate'；刷新后靠结果里的 id）。
+  const integratorChild = useIntegratorChild(
+    data.callId,
+    closer?.childSessionId ?? (data.integration?.kind === 'integrated' ? data.integration.childSessionId : undefined),
+  )
+  /**
+   * 该态的补充说明：closer 自身失败的原因（`closer.error`）或历史会话的
+   * `integration.reason`（如「2 个分支待集成」）——比通用文案信息量大得多，
+   * 有就必须显示。其余态给 undefined，由 closeStageCopy 用通用文案。
+   */
+  const closeDetail = closer?.error
+    ?? (data.integration !== undefined && data.integration.kind === 'pending' ? data.integration.reason : undefined)
+  const closeCopy = closeStageCopy(closeStage, closeScenario, t, closeDetail)
+  /**
+   * 收尾报告正文（`closer.report`）——编排黑盒化后的**主交付**：各任务的正文不再进
+   * `results[]`，而是汇总在这里。收起态给**截断摘要**，展开态给全文（可滚动），
+   * 并给出「进入子会话看全文」的入口（`closer.childSessionId`）。
+   */
+  const [reportOpen, setReportOpen] = useState(false)
+  const report = closer?.report
+  const reportPreview = report === undefined ? undefined : reportPreviewOf(report)
   const doneCount = Math.max(summary.done, Math.min(liveCompleted.size, summary.total))
   const abortedCount = Math.max(summary.aborted, liveAborted.size)
   const failedCount = Math.max(summary.failed, liveFailed.size)
@@ -422,7 +553,6 @@ function OrchestrateCardImpl({ node, t }: ChatNodeViewProps<'orchestrate-call'>)
         <span className={css.avatar}><Layers size={14} className={css.avatarIcon} /></span>
         <span className={css.meta}>
           <span className={css.name}>{summary.title}</span>
-          <span className={css.subtitle}>{summary.subtitle}</span>
         </span>
         <span className={css.chip} data-tone={overall}>
           {overall === 'running'
@@ -443,24 +573,26 @@ function OrchestrateCardImpl({ node, t }: ChatNodeViewProps<'orchestrate-call'>)
       {expanded && (
         <div className={css.flow}>
           {/* 导轨列（设计稿 x=4）：node-start + trunk 虚线主干向下延伸，
-              有 merge（或结果里已有集成信息，见 showMergeStage）时主干一路汇到
-              node-merge（承担「N→1」的汇聚连接线），无 merge 时主干只在分支区间。 */}
+              有结尾节点（见 showCloseStage）时主干一路汇到 node-close
+              （承担「N→1」的汇聚连接线），否则主干只在分支区间。 */}
           <div className={css.rail}>
             <span className={css.startNode}><span className={css.startDot} /></span>
-            <span className={css.trunk} data-extend={showMergeStage || undefined} data-merge-converge={showMergeStage || undefined} />
-            {showMergeStage && (
-              <span className={css.mergeNode} data-state={data.integration?.kind === 'integrated' ? 'done' : 'idle'}>
-                <GitMerge size={10} />
+            <span className={css.trunk} data-extend={showCloseStage || undefined} data-merge-converge={showCloseStage || undefined} />
+            {showCloseStage && (
+              <span className={css.mergeNode} data-state={closeStage === 'done' ? 'done' : closeStage === 'failed' ? 'failed' : 'idle'}>
+                {closeStage === 'failed'
+                  ? <X size={10} />
+                  : closeStage === 'done' ? <Check size={10} /> : <GitMerge size={10} />}
               </span>
             )}
           </div>
-          {/* 分支列 + 合并汇总阶段，共用一列纵向叠放，保证整行宽度对齐。 */}
+          {/* 分支列 + 结尾节点，共用一列纵向叠放，保证整行宽度对齐。 */}
           <div className={css.flowBody}>
             <div className={css.branches}>
               {data.tasks.length === 0 && (
                 <div className={css.branchRow}>
                   <span className={css.branchLine} data-tone="running" />
-                  <span className={css.branchNode} data-tone="running"><Loader size={9} /></span>
+                  <span className={css.branchNode} data-tone="running"><Loader size={9} className={css.chipSpin} /></span>
                   <div className={css.branchCard}>
                     <span className={css.branchTx}>
                       <span className={css.branchLabel}>{data.scriptName ?? '脚本编排'}</span>
@@ -479,91 +611,90 @@ function OrchestrateCardImpl({ node, t }: ChatNodeViewProps<'orchestrate-call'>)
                   worktrees={worktrees}
                   fallbackChildId={data.childSessionIds?.[task.index]}
                   slugFallback={data.worktreeSlugs?.get(task.index)}
+                  branchFallback={data.worktreeBranches?.get(task.index)}
                   t={t}
                 />
               ))}
             </div>
-            {showMergeStage && (
-              // 合并汇总阶段——独立于并行分支列表（设计稿 card-merge x=64 整行宽、
-              // 无 brX-line、底色更弱）。node-merge 在导轨列(x=4)由 trunk 汇聚，
+            {showCloseStage && (
+              // 结尾节点（收尾）——独立于并行分支列表（设计稿 card-close x=64 整行宽、
+              // 无 brX-line、底色更弱）。node-close 在导轨列(x=4)由 trunk 汇聚，
               // 此处不画横虚线。
-              <div className={css.mergeStage} data-merge-stage>
-                <span className={css.mergeStageTitle}>串行汇总</span>
-                {/* 三态（2026-09-12 用户实测后定稿，BUG-29 的 UI 半边）：
-                    ① 还没轮到（integration 缺省）= 队列中——**不能写「未启动」**：那让人
-                       以为这个阶段永远不会自己跑（用户就是据此判断「始终不会运行」）；
-                       声明了 merge ⇒ 机制保证会跑（merge.verify 即默认自动集成）。
-                    ② 跑完 = 已集成。
-                    ③ 跑过但没落地 = 待集成（含原因与分支数），这才是需要人/主 Agent
-                       插手的状态（`pending` 的 reason 由折叠器给出，如「2 个分支待集成」）。
-                    ★ 补充（2026-10-04）：**未声明 merge 但 integration 存在** = 分支留待
-                       手动集成——机制对未集成编排发 pending-integration 并写进结果，
-                       此时也渲染本阶段（否则用户完全看不到「待集成」）；那种情况下
-                       integration 恒为 pending，故不会走①的「队列中」文案。 */}
-                <div className={css.mergeCard} data-integrator
+              //
+              // ★ 2026-10 编排黑盒化：这个节点由「模型声明 merge 才有」改成**并行编排恒有**。
+              //   三场景（merge / summarize / research）由机制按隔离实况判定，卡片只负责
+              //   如实呈现 + 给出 closer 子会话入口 + 展示收尾报告。
+              //   五态见 OrchestrateCardImpl 的 closeStage 状态表。
+              <div className={css.mergeStage} data-close-stage>
+                <span className={css.mergeStageTitle}>{t('orchestrate.close.stageTitle')}</span>
+                <div className={css.mergeCard} data-closer
                   data-child-session-id={integratorChild || undefined}
-                  data-state={integrating
-                    ? 'integrating'
-                    : integrationFailed
-                      ? 'failed'
-                      : integrationSettledWithoutLine
-                        ? 'pending'
-                        : data.integration === undefined
-                          ? (data.hasMerge ? 'queued' : 'idle')
-                          : data.integration.kind === 'integrated' ? 'done' : 'pending'}>
+                  data-scenario={closeScenario}
+                  data-state={closeStage}>
                   <span className={css.mergeIcon}>
-                    {integrating ? <Loader size={16} className={css.spin} /> : <GitMerge size={16} />}
+                    {closeStage === 'closing'
+                      ? <Loader size={16} className={css.spin} />
+                      : closeStage === 'failed' ? <X size={16} /> : <GitMerge size={16} />}
                   </span>
                   <span className={css.branchTx}>
-                    <span className={css.branchLabel}>集成者 · 合并 + 验证 + 提交</span>
-                    <span className={css.branchSub}>
-                      {integrating
-                        ? '集成中 · 正在合并分支、跑验证并提交'
-                        : integrationFailed
-                          ? '集成失败 · 分支已保留，见工具结果（需主 Agent 处理）'
-                          : integrationSettledWithoutLine
-                            ? '未集成 · 结果里没有集成信息，见任务结果'
-                            : data.integration === undefined
-                              ? '队列中 · 全部并行任务完成后自动合并'
-                              : data.integration.kind === 'integrated'
-                                ? '已串行完成合并与提交'
-                                : data.integration.reason}
-                    </span>
+                    <span className={css.branchLabel}>{closeCopy.title}</span>
+                    <span className={css.branchSub}>{closeCopy.sub}</span>
                   </span>
-                  {/* 进入集成者子会话看详情（新增 2026-09-12）：集成者就是一次普通子会话，
-                      运行中即可点进去看它到底在干什么（用户实测指出「没有按钮进入会话查看详情」）。 */}
+                  {/* 进入收尾者子会话看详情：closer 就是一次普通子会话，运行中即可点进去
+                      看它到底在干什么。刷新后靠 `closer.childSessionId`（durable）。 */}
                   {integratorChild !== undefined && (
                     <button
                       type="button"
                       className={css.gotoBtn}
-                      title={`进入集成者会话 ${integratorChild}`}
-                      aria-label="进入集成者会话"
+                      title={t('orchestrate.close.gotoTitle', { session: integratorChild })}
+                      aria-label={t('orchestrate.close.gotoAria')}
                       onClick={() => { chatRuntimeRef.current?.openSession?.(integratorChild) }}
                     >
                       <ArrowRight size={12} strokeWidth={2.5} />
                     </button>
                   )}
-                  <span className={css.branchChip} data-merge-chip
-                    data-tone={integrating
-                      ? 'running'
-                      : integrationFailed
-                        ? 'failed'
-                        : integrationSettledWithoutLine
-                          ? 'pending'
-                          : data.integration === undefined
-                            ? 'queued'
-                            : data.integration.kind === 'integrated' ? 'done' : 'pending'}>
-                    {integrating
-                      ? '集成中'
-                      : integrationFailed
-                        ? '集成失败'
-                        : integrationSettledWithoutLine
-                          ? '未集成'
-                          : data.integration === undefined
-                            ? '队列中'
-                            : data.integration.kind === 'integrated' ? '已集成' : '待集成'}
+                  <span className={css.branchChip} data-close-chip data-tone={closeCopy.tone}>
+                    {closeCopy.chip}
                   </span>
                 </div>
+                {/* 收尾报告（`closer.report`）——黑盒化后各任务正文的唯一去处。
+                    收起态给截断摘要（不撑爆瀑布流），展开态给全文；
+                    全文更长时指向 closer 子会话（durable 入口）。 */}
+                {report !== undefined && (
+                  <div className={css.reportBox} data-report>
+                    <button
+                      type="button"
+                      className={css.reportToggle}
+                      aria-expanded={reportOpen}
+                      onClick={() => { setReportOpen(open => !open) }}
+                    >
+                      <FileText size={12} strokeWidth={2} className={css.reportIcon} />
+                      <span className={css.reportToggleText}>
+                        {reportOpen ? t('orchestrate.close.reportCollapse') : t('orchestrate.close.reportExpand')}
+                      </span>
+                      {reportOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                    <div className={css.reportBody} data-expanded={reportOpen || undefined}>
+                      {reportOpen ? report : reportPreview?.text}
+                    </div>
+                    {!reportOpen && reportPreview?.truncated === true && (
+                      <span className={css.reportHint}>{t('orchestrate.close.reportTruncated')}</span>
+                    )}
+                    {closer?.childSessionId !== undefined && (
+                      <span className={css.reportHint}>{t('orchestrate.close.reportFullHint')}</span>
+                    )}
+                  </div>
+                )}
+                {/* 机制在编排期间收拢的内部说明（原本会以 notice 注入父会话的那些）——
+                    黑盒化后它们是**唯一**能告诉用户「子 Agent 的 settle 被谁吞了」的线索。 */}
+                {closer?.internalNotes !== undefined && closer.internalNotes.length > 0 && (
+                  <div className={css.reportBox} data-notes>
+                    <span className={css.notesTitle}>{t('orchestrate.close.notesTitle', { count: closer.internalNotes.length })}</span>
+                    {closer.internalNotes.map((note, index) => (
+                      <div key={index} className={css.notesItem}>{note}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

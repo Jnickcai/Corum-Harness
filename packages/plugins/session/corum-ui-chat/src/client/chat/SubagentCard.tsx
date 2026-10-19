@@ -60,6 +60,7 @@ import { chatRuntimeRef, subagentChildOf, subagentChildSubscribe, subagentProgre
 import { SubagentPlan } from './SubagentPlan.tsx'
 import css from './SubagentCard.module.css'
 import { SubagentChanges } from './SubagentChanges.tsx'
+import { SubagentResult } from './SubagentResult.tsx'
 
 /** 子会话进度 RPC 返回形（与 host getChildSessionProgress 对齐）。 */
 interface ChildProgressValue {
@@ -531,7 +532,15 @@ function SubagentRow({
           </div>
         </div>
       )}
-      {/* ④ 改动（展开区）：子会话终态时列出改动文件 ±N + diff + 撤销。
+      {/* ⑤ 结果（展开区，#98）：子 Agent **最终返回**的内容（最后一条 assistant/message）。
+          与④任务详情（父注入的指令）分开两段：用户要在同一张卡上同时看到
+          「让它干什么」与「它回了什么」，而不必点进子会话。
+          还没有 assistant 输出时给空态文案（不隐藏整段——否则用户会以为漏了功能）。
+          实现抽在 ./SubagentResult.tsx（与编排卡分支行共用，避免两处行为分叉）。
+          `settled` = 本卡已终态：running→done 翻转时自动重拉一次（展开那一刻子 Agent
+          往往还在跑，否则拉到的空结果会一直挂在卡上）。 */}
+      {expanded && <SubagentResult childSessionId={childSessionId} t={t} settled={!running} />}
+      {/* ⑥ 改动（展开区）：子会话终态时列出改动文件 ±N + diff + 撤销。
           数据源 = host 终态帧 corum/subagent/progress.changeSummary
           （corumReview.snapshot(childSessionId) + 台账状态）。子 Agent 还在跑
           时 changeSummary 缺省 → 组件返回 null，不占展开区空间。 */}

@@ -68,7 +68,9 @@ describe('策略①② 模型唯一：LLM 无法表达子 Agent 模型偏好', (
     // 主 Agent 可据此把子 Agent 换到任意模型——正是策略禁止的「让 LLM 决定子 Agent 模型」。
     expect(SRC).not.toContain('Fixed model for this task')
     // 反向：tasks 段的 properties 里不得再出现 model 键。
-    const tasksBlock = between('tasks: {', 'merge: {')
+    // fork（corum）2026-10：取样终点从 `merge: {` 改成 `output: {`——`merge` 字段已删除
+    // （用户定稿「机制自动判定收尾」），原锚点不存在了；`output` 是 tasks 段之后的下一个稳定锚点。
+    const tasksBlock = between('tasks: {', 'output: {')
     expect(tasksBlock, 'orchestrate tasks 段又出现了 model 参数').not.toMatch(/\n\s{20,}model:\s*\{/)
   })
 
@@ -392,7 +394,7 @@ describe('策略② 失败处置：模型调用出错 ⇒ **先问用户**，按
   it('★ 提示词不再宣告「机制会自动重试」（改版后这句话是假的）', () => {
     // 2026-09-27 结构化：该条由单行拆成「表头 + 子项」，故取样到下一个 bullet 表头为止
     // （断言强度不变：两条事实都必须出现在提示词里）。
-    const prompt = between('Child model routing is NOT yours to choose', '- **Declare `merge.verify`')
+    const prompt = between('Child model routing is NOT yours to choose', '- **`orchestrate` is ONE BLACK-BOX CALL.**')
     expect(prompt).not.toContain('automatically retries')
   })
 
@@ -556,7 +558,7 @@ describe('策略③④ 两种 Agent 一致 + 提示词诚实', () => {
     expect(start, `anchor not found: ${anchor}`).toBeGreaterThanOrEqual(0)
     // 2026-09-27 结构化：该条由单行拆成「表头 + 子项」⇒ 取样面由「一行」扩到「该块结束」。
     // 断言强度不变（三条事实仍必须出现在提示词里，且旧承诺仍不得回潮）。
-    const line = SRC.slice(start, SRC.indexOf('- **Declare `merge.verify`', start))
+    const line = SRC.slice(start, SRC.indexOf('- **`orchestrate` is ONE BLACK-BOX CALL.**', start))
     expect(line).toContain('never try to route a child elsewhere')
     // 2026-09-18 改版后的真实承诺：机制问用户并按其答案行动；模型自己不许改路由。
     expect(line).toContain('asks the user what to do')

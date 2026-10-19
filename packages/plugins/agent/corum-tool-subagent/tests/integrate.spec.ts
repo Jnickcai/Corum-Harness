@@ -27,7 +27,6 @@ import {
   corumGit,
   corumGitHead,
   corumMergedBranches,
-  corumAutoIntegrate,
   corumReconcileIntegrated,
   corumReapRestoredEntries,
   corumReapOrphanWorktrees,
@@ -425,17 +424,14 @@ describe('corumWorktreeHasUncommitted — worktree 脏判定', () => {
   })
 })
 
-describe('corumAutoIntegrate — 声明即执行（2026-09-12 用户定调：去掉 autoIntegrate 字段）', () => {
-  it('传了 merge（带 verify）→ 机制收尾', () => {
-    expect(corumAutoIntegrate({ verify: 'pnpm build && ./scripts/verify-fork-drift.sh' })).toBe(true)
-  })
-  it('传了 merge（即使只有空对象）→ 机制收尾', () => {
-    expect(corumAutoIntegrate({})).toBe(true)
-  })
-  it('不传 merge → 分支留给调用方，收尾走显式 subagent { integrate: true }', () => {
-    expect(corumAutoIntegrate(undefined)).toBe(false)
-  })
-})
+/**
+ * fork（corum）2026-10：**`corumAutoIntegrate` 的断言已退役**（用户定稿「取消 merge 字段」）。
+ *
+ * 旧断言钉的是「传了 merge ⇒ 机制收尾 / 不传 ⇒ 分支留给调用方」。现在编排不再有 merge 声明：
+ * 收尾行为由机制按**隔离实况**自动判定（见 `closer.spec.ts` 的 `closerScenarioOf` 断言），
+ * 故这组断言的对象（merge 声明）已不存在。保留这段说明而不是静默删掉，是为了让下一个
+ * 「想顺手把 merge 加回来」的人看到它是被裁决掉的。
+ */
 
 describe('corumCleanupLedgerEntries — 已集成与已丢弃分档（2026-09-12 用户定调）', () => {
   it('已集成 + 完整清理 → 状态保持 integrated 并标 reclaimed（不是「已丢弃」）', () => {
@@ -596,24 +592,32 @@ describe('corumReapOrphanWorktrees — 台账之外的孤儿 worktree 清扫（2
  * 这些断言钉住「报告进结果」这条通路；`corumOutputText` 的折文本口径与
  * `withDiagnosticAndPartialText` 同源（只取 text block 拼接）。
  */
-describe('集成者报告透传（2026-09-20 用户报障）', () => {
+/**
+ * fork（corum）2026-10：**报告透传的载体从集成者换成了 closer**（`merge` 字段取消）。
+ *
+ * 旧断言钉的是「集成者（`runIntegrate` → `integrateOutcome`）的报告正文透到 orchestrate 的
+ * `integration.report`」。现在收尾由 closer 完成，报告的载体是 `closer.report`——同一条用户
+ * 诉求（「把合并结果 + 前面所有子 Agent 需要注意的点汇总后报告给主 Agent」）继续被钉住，
+ * 只是换了个出口。
+ */
+describe('收尾报告透传（2026-09-20 用户诉求；2026-10 载体改为 closer）', () => {
   const src = readFileSync(join(import.meta.dirname, '../src/index.ts'), 'utf8')
 
-  it('integrate 的返回值带上集成者报告正文', () => {
-    expect(src).toContain('const integrateReport = corumOutputText(integrateOutcome.output)')
-    expect(src).toMatch(/integrateReport === '' \? \{\} : \{ report: integrateReport \}/)
+  it('closer 的报告正文来自它的最终答复（corumOutputText 折文本）', () => {
+    expect(src).toContain('const report = corumOutputText(outcome.output).trim()')
   })
 
-  it('report 一路透到 orchestrate 的工具结果（schema + payload）', () => {
-    // runIntegrate 的返回类型、外层 integration 变量、结构化输出 schema 三处都要有 report。
-    expect(src).toMatch(/runIntegrate = async[^\n]*report\?: string/)
-    expect(src).toMatch(/integration\?: \{[^\n]*report\?: string/)
-    expect(src).toContain('...(out.integration.report !== undefined ? { report: out.integration.report } : {})')
+  it('report 一路透到 orchestrate 的工具结果（schema + render 投影）', () => {
+    // schema 声明 + render 投影两处都要有 report（少一处就是 INVALID_TOOL_OUTPUT 整块吞结果）。
+    expect(src).toMatch(/closer\?: \{[^\n]*report\?: string/)
+    expect(src).toContain('...(out.closer.report !== undefined ? { report: out.closer.report } : {})')
+    // 落盘路径同样是契约的一部分（报告写 CORUM_HOME 临时路径）。
+    expect(src).toContain('...(out.closer.reportPath !== undefined ? { reportPath: out.closer.reportPath } : {})')
   })
 
-  it('报告为空时不写该键（不产生空 report 噪声）', () => {
-    // 与既有 omission 纪律一致：无内容就不物化键。
-    expect(src).toContain("integrateReport === '' ? {} : { report: integrateReport }")
+  it('报告为空时如实报错（不产生「成功但没有报告」的假象）', () => {
+    // closer 的交付物就是报告：没有报告 = 本次编排没有结果，必须 fail-loud 到 `closer.error`。
+    expect(src).toContain("error: 'the closer returned no report'")
   })
 
   it('折文本只取 text block（与 withDiagnosticAndPartialText 同口径）', () => {
@@ -621,7 +625,7 @@ describe('集成者报告透传（2026-09-20 用户报障）', () => {
     expect(i).toBeGreaterThan(-1)
     const body = src.slice(i, src.indexOf('\n}', i))
     expect(body).toContain("block.type === 'text'")
-    expect(body).toContain('.join(\'\')')
+    expect(body).toContain(".join('')")
   })
 })
 

@@ -59,14 +59,6 @@
   text-overflow: ellipsis;
 }
 
-.subtitle {
-  font-size: calc(13px * var(--corum-ui-font-scale, 1)); /* 设计稿 task 13 */
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* 状态 chip（设计稿 chip：r9 + 1px 状态色描边 + 6px 状态点 + 14/600 文本）。 */
 .chip {
   flex: none;
@@ -87,6 +79,12 @@
 
 .chipText { white-space: nowrap; }
 
+/* running 态旋转图标（#97）。
+   ⚠️ 这个类**必须**同时挂在**三处** running 图标上：卡头 chip、分支节点、集成者节点。
+   2026-10 实测（:9333，2 任务并行编排）：卡头 chip 的 Loader 一直在转
+   （animationName=_…_orch-spin，currentTime 400ms 内推进 300ms，transform 每帧变），
+   但**分支节点**与**集成者节点**的 Loader 从来没挂这个类 ⇒ 用户看到的就是
+   「running 状态没有动画」（issue #97）。所以三处共用同一个类，不再各写一份。 */
 .chipSpin { animation: orch-spin 1.1s linear infinite; }
 
 @keyframes orch-spin {
@@ -182,6 +180,7 @@
 }
 
 .mergeNode[data-state='done'] { color: var(--orch-done); border-color: var(--orch-done); }
+.mergeNode[data-state='failed'] { color: var(--orch-failed); border-color: var(--orch-failed); }
 .mergeNode[data-state='idle'] { color: var(--orch-idle); }
 
 /* 分支列 + 合并汇总阶段共用一列纵向叠放（card-merge x=64 与 brX-card 同列，
@@ -358,6 +357,87 @@
   border-color: var(--corum-glass-border, rgba(185, 140, 255, 0.18));
 }
 
+/* 结尾节点（收尾）的五态描边（2026-10 编排黑盒化）：
+   queued=品牌蓝（机制在等任务收尾，**不是**某个分支在跑）/ closing=warn 色
+   （closer 真在跑）/ done=success / failed=error / pending=warn（需人插手）。
+   与 .mergeNode 的 done|failed|idle 三态一一对应，视觉语言不变。 */
+.mergeCard[data-state='queued'] { border-color: var(--dsw-alias-brand-primary); }
+.mergeCard[data-state='closing'] { border-color: var(--orch-running); }
+.mergeCard[data-state='failed'] { border-color: var(--orch-failed); }
+.mergeCard[data-state='pending'] { border-color: var(--orch-running); }
+
+.mergeCard[data-state='closing'] .mergeIcon { color: var(--orch-running); }
+.mergeCard[data-state='failed'] .mergeIcon { color: var(--orch-failed); }
+
+/* 收尾报告（closer.report）——黑盒化后各任务正文的唯一去处。
+   与 mergeCard 同宽、底色更弱（它是**卡内的一段正文**，不是又一个节点）。 */
+.reportBox {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--corum-density-scale, 1));
+  padding: calc(8px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1));
+  border-radius: 8px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.4));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  min-width: 0;
+}
+
+/* 报告展开/收起按钮：无边框、与分支详情标题同语言（品牌色小字 + 图标）。 */
+.reportToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(5px * var(--corum-density-scale, 1));
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reportToggle:hover { color: var(--dsw-alias-brand-primary); }
+
+.reportIcon { flex: none; }
+
+.reportToggleText { white-space: nowrap; }
+
+/* 报告正文：收起态 = 截断摘要（不撑爆瀑布流），展开态 = 全文可滚动。
+   等宽换行 + 保留换行，让 markdown 的行结构不被压平。 */
+.reportBody {
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.reportBody[data-expanded] { max-height: 320px; }
+
+/* 截断 / 「进子会话看全文」的提示行——比正文更弱，不抢视线。 */
+.reportHint {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.8;
+}
+
+/* 机制内部说明（编排期间收拢的 settle 通知等）：逐条列出，等宽可折行。 */
+.notesTitle {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.notesItem {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  line-height: 1.45;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* card-merge 里的 git-merge 图标 16×16（设计稿 dQ5k7 同名 lucide 图标）。 */
 .mergeIcon {
   flex: none;
@@ -438,9 +518,10 @@
 .branchChip[data-tone='idle'] { color: var(--orch-idle); }
 
 /* goto 按钮（设计稿 brX goto：22×22 r6 + arrow-right）。 */
-/* 集成中：图标旋转（原来是静态 GitMerge，看不出「正在跑」）。 */
+/* 集成中：图标旋转（原来是静态 GitMerge，看不出「正在跑」）。
+   与 .chipSpin 同一条 keyframes（上面已定义，这里不再重复声明 @keyframes——
+   同名 keyframes 写两遍虽然能跑，但改一处漏一处就是新的「动画不生效」）。 */
 .spin { animation: orch-spin 1.1s linear infinite; }
-@keyframes orch-spin { to { transform: rotate(360deg); } }
 
 /* 集成者节点的「进入会话」按钮：与分支行的 goto 同款几何（22×22 r6），
    因为它在 mergeCard 里排在 chip 前面，故不给 margin-left:auto。 */

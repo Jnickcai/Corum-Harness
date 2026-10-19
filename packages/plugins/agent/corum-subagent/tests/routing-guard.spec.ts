@@ -54,14 +54,24 @@ describe('driver 接线（防回潮）', () => {
 
   it('★ create 调用必须用剥离后的选项（不得直接透传 request.agentOptions）', () => {
     expect(DRIVER).toContain('corumStripRoutingOptions(request.agentOptions)')
-    expect(DRIVER).toContain('resolveChildAgentOptions(parent, routing.options, childDepth)')
+    expect(DRIVER).toContain('resolveChildAgentOptions(parent, requestedOptions, childDepth)')
     expect(DRIVER).not.toContain('resolveChildAgentOptions(parent, request.agentOptions, childDepth)')
+    expect(DRIVER).not.toContain('resolveChildAgentOptions(parent, routing.options, childDepth)')
   })
 
   it('剥离发生时注入机制通知（含 form: notice）', () => {
     expect(DRIVER).toContain("kind: 'mechanism-notice'")
     expect(DRIVER).toContain("form: 'notice'")
     expect(DRIVER).toContain('corumRoutingIgnoredNoticeText(')
+  })
+
+  it('★ 机制路由走独立通道，叠加在剥离之后（2026-10-19）', () => {
+    // `request.mechanismRoute` 是「机制路由不受剥离影响」的独立通道；
+    // 它必须在剥离结果之上叠加，否则机制路由会被脚本路由的剥离连带削掉。
+    expect(DRIVER).toContain('request.mechanismRoute === undefined')
+    expect(DRIVER).toContain('{ ...routing.options, ...request.mechanismRoute }')
+    // 通知里说的「实际生效路由」必须是有机制路由时的机制路由（说真话）。
+    expect(DRIVER).toContain('request.mechanismRoute ?? parentAgentOptionsForDelegation(parent)')
   })
 })
 
@@ -84,5 +94,23 @@ describe('★ 机制所有的路由不得被剥离（2026-09-27 复查反例）'
   it('driver 只对**未标记**的选项剥离', () => {
     expect(DRIVER).toContain('request.agentOptionsOwnedByMechanism === true')
     expect(DRIVER).toContain('corumStripRoutingOptions(request.agentOptions)')
+  })
+})
+
+describe('★ 脚本路径不得再用「整体替换 + 打标记」（2026-10-19 复审）', () => {
+  const SCRIPT_MODEL = readFileSync(join(import.meta.dirname, '../src/isolated/script-model-resolution.ts'), 'utf8')
+  const ISOLATED = readFileSync(join(import.meta.dirname, '../src/isolated/index.ts'), 'utf8')
+
+  it('脚本路径不再打 agentOptionsOwnedByMechanism（否则剥离/告知整段被跳过）', () => {
+    // 断言的是**代码形态**（`agentOptionsOwnedByMechanism: true` 这个赋值），
+    // 不是字面量出现——头注里会解释「为什么不再用它」，注释提及不算回潮。
+    expect(SCRIPT_MODEL).not.toContain('agentOptionsOwnedByMechanism: true')
+    expect(SCRIPT_MODEL).not.toContain('agentOptions,')
+    expect(ISOLATED).not.toContain('agentOptionsOwnedByMechanism: true')
+  })
+
+  it('脚本路径经 mechanismRoute 独立通道注入机制路由', () => {
+    expect(SCRIPT_MODEL).toContain('mechanismRoute')
+    expect(ISOLATED).toContain('applyMechanismRoute(request, resolved.route)')
   })
 })

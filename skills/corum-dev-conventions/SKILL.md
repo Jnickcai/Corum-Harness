@@ -19,6 +19,7 @@ description: Use when changing anything in this repo (corum Agent OS / kkc-deskt
 4. **消费 cordis service 走 `inject` 声明**，不要在未装配的服务上 `ctx.get`（`ctx.remote` 坑）。
 5. **host 插件改动必须重启应用**（只有 renderer 走 HMR）；跨包状态 / 壳 / 调度改动必须过**三层实机验证**：界面渲染 + 行为 + 零新增控制台报错。
    - **不要从 `boot()` 的 patch 层栈里 filter 掉 disabled 行**。disabled patch 行有双重职责：①「这个插件被禁用」的索引标记；②**禁用官方包让 fork 独占 cordis service 名**的配置载体。`boot.ts` 里 `.filter(p => p.disabled !== true)`（#54）让官方 `dsh-subagent` / `dsh-sandbox` / `dsh-credentials-local` 重新激活，和 fork 包注册同名 service → `service "…" has been registered` → host bridge exit 1。想跳过 disabled 的 config I/O，改在 cordis 内部做（不解析 config），**绝不在调用方 filter 掉整行**。证据：`docs/LESSONS.md` §1.17；PR #55 回退了 #54 的 filter。
+   - **打包时 electron-builder 调用前临时清空 `dependencies`**（`pack-macos.mjs` 的 `buildApp()` 已实现，调完恢复）。app 本体只 import Electron API，不 import dependencies 里的包——host 运行时全在 `build/host/`（extraResources）。不清空则 electron-builder 扫描 dependencies 的 node_modules 软链，遇到 pnpm `link:` override 指向工作区源码的包（`dsh-tools`/`dsh-fs-local`）会报 `must be under .pnpm/`。electron 在 devDependencies，清空 dependencies 不影响 electron 检测。证据：`docs/LESSONS.md` §1.18；PR #57。
 6. **三个平台，每次改动都要过（核心原则）**：改完问一句「这在 darwin / linux / win32 上是否不同——三个都覆盖了吗？」**「编译过」与「我机器上跑得通」在这里都不算完成**——本仓最贵的失败是**隐式假设**（硬编码 `/bin/zsh`、`~/.corum-desktop`、只用 `/` 拼路径、macOS 交通灯像素内边距、POSIX 专用命令白名单），它们在第三个平台上**不报错、只是行为不同**。
    - **两种合法布局**：corum 自有代码可用 `platform/` 目录（一平台一实现）；**官方 fork 包沿用官方「同级文件」惯例**（`fs-local/src/{fsio.ts, win32.ts}`）——**同一包内不混用**。
    - **平台选择只跟随实际运行平台**（`getPlatform()` → `process.platform`），烘入常量（`__CORUM_TARGET_PLATFORM__`）只用于一致性断言与诊断，**不得用于选实现**。
@@ -38,12 +39,18 @@ description: Use when changing anything in this repo (corum Agent OS / kkc-deskt
 
 1. **确认目标面**：先拿证据回答「这一页/这个行为由哪个组件拥有」——读调用点、看 DOM/设计稿、跑一次真实会话。**没确认就动手，等于赌**（本项目多次踩：改错了组件、改对了组件但设计帧不对）。
 2. **改拥有者，不改派生物**：`packages/desktop/shipped-presets/` 是官方 preset 的本地副本（升级会覆盖）、`lib/` 是产物、生成物改源头再重生成。
-3. **构建真正被加载的那份产物**（最容易白干的一步）：每个插件包的 `lib/index.js`（host 半）/`lib/client.js`（client 半）是**运行时按包名加载的入口**，`tsc -b` 只更新 `lib/types/*`。改完 plugin 用时间戳自查：`find <pkg>/src -newer <pkg>/lib/index.js -name '*.ts*'`；全量构建走 `./scripts/corum-instance.sh build coding`（现已覆盖全部插件包 + desktop）。
+3. **构建真正被加载的那份产物**（最容易白干的一步）：每个插件包的 `lib/index.js`（host 半）/`lib/client.js`（client 半）是**运行时按包名加载的入口**，`tsc -b` 只更新 `lib/types/*`。改完 plugin 用时间戳自查：`find <pkg>/src -newer <pkg>/lib/index.js -name '*.ts*'`。
+   - **日常**：`node scripts/build-all.mjs --changed`（只建自上次打包后改过的包 + 依赖它的包）。
+   - **全量**：`node scripts/build-all.mjs`（按依赖**拓扑序**，每包都走完整三步，失败即停并指名道姓）。
+   - **出包前必用 `--clean`**（用户 2026-10-17 定调）：见 §1.7。
+   - ⚠️ 不要再手搓 `./scripts/corum-instance.sh build coding`：那套是**按包名白名单**逐包调用，2026-10-17 的新包（`corum-web-search` / `corum-issue-reporter-ui`）就是这样漏建、直到打包最后一步才炸。
 4. **重启纪律**：host 插件 → 必须重启应用；renderer/client → 重建后刷新即可。重启主实例前记住：`./scripts/corum-instance.sh` 的兜底清理会跳过验证实例的整棵进程树。
 5. **三层实机验证**：用 `corum-cdp-verify` 技能起**自己的验证实例**（`./scripts/corum-instance.sh start --home=verify`，CDP `:9333`），写声明式断言跑完整套（`scripts/ui-verify.mjs`）并截图留证。**绝不驱动或杀掉用户的主实例（`:9222`）**。
 6. **跑守卫**：改了 fork 包 / 事件声明 → `./scripts/verify-fork-drift.sh`（fork 核心文件字节一致、事件声明↔allowlist 双向、域事件名对齐、host emit 存在性）；改了应用启动路径 → 确认 `scripts/app-launch-guard.sh` 仍拦得住沙箱内启动。
-7. **出包/发版**（按 §1.7）：`node packages/desktop/scripts/pack.mjs <目标平台>` 四步链 → **必跑 `pnpm assert:boot`**（产物启动断言，判据见 §1.7）→ 报产物时带上 SHA-256。**目标平台资产必须从它自己的 runner/机器出**（CI 矩阵已如此）；本机交叉打包只当诊断，**不要拿交叉产物发版**。
+7. **出包/发版**（按 §1.7）：`node packages/desktop/scripts/pack.mjs <darwin|linux|win32> [--arch=]` 四步链（build → pack:host → pack:node → pack:app）→ **必跑 `pnpm assert:boot`**（产物启动断言，判据见 §1.7）→ 报产物时带上 SHA-256。**目标平台资产必须从它自己的 runner/机器出**（CI 矩阵已如此）；本机交叉打包只当诊断，**不要拿交叉产物发版**。
+   - 要「重打包并重启本机实例」走 `./scripts/corum-instance.sh update --mode=packaged`：它现在是 **4 步**（`build-all --clean` → `build-all --verify` → `pack-macos.mjs --platform/--arch` → 重启），**不再**单独调 `electron-builder`（已被 `pack-macos.mjs` 的 `buildApp()` 接管，见 §1.5 第二条）。
 8. **落位**：事实与决策记入 `docs/tasks/log.jsonl`（追加式，用 `key`+`value` 收敛冲突，**不删旧条目**，冲突用新条目 `resolves` 旧的；`node scripts/tasklog-open.mjs` 渲染）。经验记入 `docs/LESSONS.md`（现象→根因→做法+来源）。一物一家：规则不写进 LESSONS，经验不写进规则。
+   - ⚠️ **`docs/` 在 .gitignore 里**（公开仓只放行 `docs/assets/` 与 `docs/fork-delta.md`）⇒ 台账与 LESSONS 是**本机资产**，不随仓库走。写台账时把**根因锚点写成源码路径**，别只写产物路径（产物在 `dist/`，同样不入库）。
 
 ## 3. 已经付过学费的坑（动手前扫一眼）
 

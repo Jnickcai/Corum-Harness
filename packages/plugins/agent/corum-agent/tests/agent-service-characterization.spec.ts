@@ -354,6 +354,102 @@ describe('特征化 · getSubagentSessionMetaRemote（簇 7 / P1）', () => {
   })
 })
 
+/**
+ * #98：子 Agent 最终返回内容（子 Agent 卡「结果」区数据源）。
+ *
+ * 判据要点：取**最后一条**有 text 的 `assistant/message`（不是第一条——子 Agent 多轮
+ * 干活，产出在最后）；只有 tool-call 的 assistant/message 不算产出（跳过继续往前找）；
+ * 内嵌 `stream` 不参与（与 message.content 重复）。
+ */
+describe('特征化 · getSubagentSessionResultRemote（#98 结果区）', () => {
+  it('取最后一条 assistant/message 的 text 块（多轮取末条）', async () => {
+    h = makeHarness()
+    h.usePersistence({
+      'child-s': {
+        events: [
+          sessionEvent('assistant/message', { message: { content: [{ type: 'text', text: '中间过程' }] } }, 1_000, 1),
+          sessionEvent('assistant/message', { message: { content: [{ type: 'text', text: '最终报告' }] } }, 1_100, 2),
+        ],
+      },
+    })
+    expect(await h.service.getSubagentSessionResultRemote('child-s')).toEqual({ result: { text: '最终报告' } })
+  })
+
+  it('只有 tool-call 的 assistant/message 不算产出（继续往前找 text）', async () => {
+    h = makeHarness()
+    h.usePersistence({
+      'child-t': {
+        events: [
+          sessionEvent('assistant/message', { message: { content: [{ type: 'text', text: '真正的产出' }] } }, 1_000, 1),
+          sessionEvent('assistant/message', { message: { content: [{ type: 'tool-call', name: 'bash' }] } }, 1_100, 2),
+        ],
+      },
+    })
+    expect(await h.service.getSubagentSessionResultRemote('child-t')).toEqual({ result: { text: '真正的产出' } })
+  })
+
+  it('多个 text 块按序拼接后 trim', async () => {
+    h = makeHarness()
+    h.usePersistence({
+      'child-u': {
+        events: [
+          sessionEvent('assistant/message', {
+            message: { content: [{ type: 'text', text: ' 前 ' }, { type: 'text', text: ' 后 ' }] },
+          }, 1_000, 1),
+        ],
+      },
+    })
+    expect(await h.service.getSubagentSessionResultRemote('child-u')).toEqual({ result: { text: '前  后' } })
+  })
+
+  it('内嵌 stream 不参与（只取 message.content 成品）', async () => {
+    h = makeHarness()
+    h.usePersistence({
+      'child-v': {
+        events: [
+          sessionEvent('assistant/message', {
+            message: { content: [{ type: 'text', text: '成品' }] },
+            stream: [{ type: 'chunk', chunk: { type: 'block-end', block: { type: 'text', text: '增量包（不该被取）' } } }],
+          }, 1_000, 1),
+        ],
+      },
+    })
+    expect(await h.service.getSubagentSessionResultRemote('child-v')).toEqual({ result: { text: '成品' } })
+  })
+
+  it('超长正文截断并显式标 truncated', async () => {
+    h = makeHarness()
+    const long = 'x'.repeat(13_000)
+    h.usePersistence({
+      'child-w': {
+        events: [sessionEvent('assistant/message', { message: { content: [{ type: 'text', text: long }] } }, 1_000, 1)],
+      },
+    })
+    const out = await h.service.getSubagentSessionResultRemote('child-w')
+    expect(out.result?.truncated).toBe(true)
+    expect(out.result?.text.length).toBe(12_000)
+  })
+
+  it('没有 assistant/message → {}（还没跑完）', async () => {
+    h = makeHarness()
+    h.usePersistence({
+      'child-x': {
+        events: [
+          sessionEvent('user/message', { content: [{ type: 'text', text: '任务指令' }] }, 1_000, 1),
+          sessionEvent('turn/start', { turn: 1 }, 1_050, 2),
+        ],
+      },
+    })
+    expect(await h.service.getSubagentSessionResultRemote('child-x')).toEqual({})
+  })
+
+  it('会话读不到 → {}（不抛）', async () => {
+    h = makeHarness()
+    h.usePersistence({})
+    expect(await h.service.getSubagentSessionResultRemote('no-such')).toEqual({})
+  })
+})
+
 /* ────────────────────────── 簇 8：变更摘要（P2） ────────────────────────── */
 
 describe('特征化 · buildChangeSummary / emitChangeSummary（簇 8 / P2）', () => {
