@@ -61,8 +61,8 @@ if [ ! -f "$SERVICE" ]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 权威基线：25 个 RPC 名字（冻结，来自 2026-09-20 拆分开始前的 HEAD **减去**
-# 已迁出的 project-lane 三个端点）
+# 权威基线：26 个 RPC 名字（冻结，来自 2026-09-20 拆分开始前的 HEAD **减去**
+# 已迁出的 project-lane 三个端点、**加上** 冻结后净增的 RPC_NAMES_ADDED）
 # ─────────────────────────────────────────────────────────────────────────────
 # 2026-09-26 项目模式剥离：`createAgentForType` / `runPromptForType` /
 # `getSessionEventsForType` 三个 @Remote **随项目模式迁到闭源仓**
@@ -71,8 +71,15 @@ fi
 # RPC_NAMES_MOVED_TO_CLOSED：本仓不得再出现（出现即代表剥离回退），而 HEAD 对照
 # 仍按「冻结 ∪ 已迁出」比对，这样第 ① 组继续保持它原本的语义——**除这次有意的
 # 移仓之外，@Remote 名字集合不得有任何变化**。
-RPC_NAMES_FROZEN="createAgent createTaskAgent deleteProfile getChildSessionProgress getEvents getImageCompatibility getPolishConfig getSubagentSessionMeta getTaskSessionEvents getWorktreeLedger listAgents listModels listPermissionPresets listProfiles listSkills listTaskAgents polishConversation polishPrompt runPrompt runPromptForTask saveProfile selectTaskAgentProfile setPolishConfig translatePrompt verify"
+RPC_NAMES_FROZEN="createAgent createTaskAgent deleteProfile getChildSessionProgress getEvents getImageCompatibility getPolishConfig getSubagentSessionMeta getSubagentSessionResult getTaskSessionEvents getWorktreeLedger listAgents listModels listPermissionPresets listProfiles listSkills listTaskAgents polishConversation polishPrompt runPrompt runPromptForTask saveProfile selectTaskAgentProfile setPolishConfig translatePrompt verify"
 RPC_NAMES_MOVED_TO_CLOSED="createAgentForType runPromptForType getSessionEventsForType"
+# 冻结之后**新增**的端点（与「移仓」区分：移仓是搬走，这里是净增）。
+# 每加一个都必须在这里记账——否则第 ① 组与 HEAD 对照都会红，而那正是它该有的行为：
+# 新 RPC 面必须是**有意的**，不是顺手长出来的。
+#   getSubagentSessionResult  #98：子 Agent 最终返回正文（子 Agent 卡「结果」区数据源）。
+#                             既有 getSubagentSessionMeta 只给父注入的任务指令，
+#                             给不出「它干完回了什么」，故必须净增一个读端点。
+RPC_NAMES_ADDED="getSubagentSessionResult"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 状态表直访预算（第 ③ 组）
@@ -180,19 +187,20 @@ if [ "$MOVED_BAD" -eq 0 ]; then
 fi
 
 # 若在 git 仓库内，再与 HEAD 对照（防「只改了基线忘了实现」）。
-# ⚠️ HEAD 对照的口径 = **HEAD 的 RPC 集合减去已迁出的三端点**：本场唯一有意的
-# RPC 面变化就是那次移仓，除此之外一个名字都不许动；否则这条判据会被「顺手改
-# 基线」绕过去（只比冻结集合的话，把某个端点从两边一起删掉也会绿）。
+# ⚠️ HEAD 对照的口径 = **HEAD 的 RPC 集合减去已迁出的三端点、加上冻结后净增的
+# RPC_NAMES_ADDED**：否则这条判据会被「顺手改基线」绕过去（只比冻结集合的话，
+# 把某个端点从两边一起删掉也会绿）。净增那一路同理——名字必须同时出现在实现里
+# 和 RPC_NAMES_ADDED 里，两处只改一处都会红。
 if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   HEAD_RPC="$(git -C "$REPO_ROOT" show HEAD:packages/plugins/agent/corum-agent/src/agent-service.ts 2>/dev/null \
     | grep -o "@Remote('[a-zA-Z]*')" | sed "s/@Remote('//;s/')//" | sort | tr '\n' ' ' | sed 's/ $//')"
-  HEAD_EXPECTED="$(printf '%s\n' $HEAD_RPC | tr ' ' '\n' | grep -vxF -e createAgentForType -e runPromptForType -e getSessionEventsForType \
-    | tr '\n' ' ' | sed 's/ $//')"
+  HEAD_BASE="$(printf '%s\n' $HEAD_RPC | tr ' ' '\n' | grep -vxF -e createAgentForType -e runPromptForType -e getSessionEventsForType)"
+  HEAD_EXPECTED="$(printf '%s\n%s\n' "$HEAD_BASE" $RPC_NAMES_ADDED | grep -v '^$' | sort | tr '\n' ' ' | sed 's/ $//')"
   if [ -n "$HEAD_RPC" ]; then
     if [ "$ACTUAL_RPC" = "$HEAD_EXPECTED" ]; then
-      pass "与 HEAD 的 @Remote 集合一致（差别仅为有意迁出的 project-lane 三端点）"
+      pass "与 HEAD 的 @Remote 集合一致（差别仅为有意迁出的 project-lane 三端点 + 已记账的净增 ${RPC_NAMES_ADDED}）"
     else
-      fail "与 HEAD 的 @Remote 集合不同（除 project-lane 三端点外还动了 RPC 面）"
+      fail "与 HEAD 的 @Remote 集合不同（除 project-lane 三端点与 RPC_NAMES_ADDED 外还动了 RPC 面）"
       /usr/bin/diff <(printf '%s\n' $HEAD_EXPECTED | tr ' ' '\n') <(printf '%s\n' $ACTUAL_RPC | tr ' ' '\n') | sed 's/^/      /'
     fi
   else

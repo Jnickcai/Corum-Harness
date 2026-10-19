@@ -59,14 +59,6 @@
   text-overflow: ellipsis;
 }
 
-.subtitle {
-  font-size: calc(13px * var(--corum-ui-font-scale, 1)); /* 设计稿 task 13 */
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* 状态 chip（设计稿 chip：r9 + 1px 状态色描边 + 6px 状态点 + 14/600 文本）。 */
 .chip {
   flex: none;
@@ -87,6 +79,12 @@
 
 .chipText { white-space: nowrap; }
 
+/* running 态旋转图标（#97）。
+   ⚠️ 这个类**必须**同时挂在**三处** running 图标上：卡头 chip、分支节点、集成者节点。
+   2026-10 实测（:9333，2 任务并行编排）：卡头 chip 的 Loader 一直在转
+   （animationName=_…_orch-spin，currentTime 400ms 内推进 300ms，transform 每帧变），
+   但**分支节点**与**集成者节点**的 Loader 从来没挂这个类 ⇒ 用户看到的就是
+   「running 状态没有动画」（issue #97）。所以三处共用同一个类，不再各写一份。 */
 .chipSpin { animation: orch-spin 1.1s linear infinite; }
 
 @keyframes orch-spin {
@@ -438,9 +436,10 @@
 .branchChip[data-tone='idle'] { color: var(--orch-idle); }
 
 /* goto 按钮（设计稿 brX goto：22×22 r6 + arrow-right）。 */
-/* 集成中：图标旋转（原来是静态 GitMerge，看不出「正在跑」）。 */
+/* 集成中：图标旋转（原来是静态 GitMerge，看不出「正在跑」）。
+   与 .chipSpin 同一条 keyframes（上面已定义，这里不再重复声明 @keyframes——
+   同名 keyframes 写两遍虽然能跑，但改一处漏一处就是新的「动画不生效」）。 */
 .spin { animation: orch-spin 1.1s linear infinite; }
-@keyframes orch-spin { to { transform: rotate(360deg); } }
 
 /* 集成者节点的「进入会话」按钮：与分支行的 goto 同款几何（22×22 r6），
    因为它在 mergeCard 里排在 chip 前面，故不给 margin-left:auto。 */

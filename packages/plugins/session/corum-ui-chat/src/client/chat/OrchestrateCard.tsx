@@ -2,8 +2,8 @@
 // Agent 时，在消息瀑布中流出的**流程图卡**（设计稿 `orchestrate-flow-card`，fNng3）。
 //
 // 对齐设计稿结构（节点坐标实测）：
-//   head  = avatar(layers) + meta(标题「编排工作流 · N 任务并行」/ 副标题
-//           「fan-out 并发 → fan-in 汇合」) + 状态 chip(计数) + 折叠按钮
+//   head  = avatar(layers) + meta(标题「编排工作流 · N 任务并行」) + 状态 chip(计数)
+//           + 折叠按钮   ← 标题下**没有**副标题（#96 移除：流程图与 chip 已表达同样信息）
 //   flow  = 导轨列(node-start x=4 / trunk x=14 竖虚线 / node-merge x=4) +
 //           分支列(逐 brX: line x=16 + node x=34 + card x=64) +
 //           合并汇总阶段(card-merge x=64 整行宽、无 brX-line，声明 merge 时)
@@ -31,6 +31,7 @@ import { summarize } from '../contract/orchestrate.ts'
 import { chatRuntimeRef, subagentChildOf, subagentChildSubscribe, subagentChildrenOf, worktreeLedgerSubscribe } from '../chat-runtime.ts'
 import { useChildProgress } from './SubagentCard.tsx'
 import { SubagentChanges } from './SubagentChanges.tsx'
+import { SubagentResult } from './SubagentResult.tsx'
 import css from './OrchestrateCard.module.css'
 
 /** 一条分支的渲染态。 */
@@ -284,7 +285,7 @@ function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChild
       <div className={css.branchRow}>
         <span className={css.branchLine} data-tone={chip.tone} />
         <span className={css.branchNode} data-tone={chip.tone}>
-          {state === 'done' ? <Check size={9} /> : state === 'failed' ? <X size={9} /> : state === 'aborted' ? <Ban size={9} /> : <Loader size={9} />}
+          {state === 'done' ? <Check size={9} /> : state === 'failed' ? <X size={9} /> : state === 'aborted' ? <Ban size={9} /> : <Loader size={9} className={css.chipSpin} />}
         </span>
         {/* ★ 锚点（2026-09-18）：分支行就是该子会话在瀑布里的「卡片」——详情卡的跳转按钮按
             `data-child-session-id` 定位，缺了它就只对 SubagentCard 生效、对编排模式失效。 */}
@@ -332,6 +333,12 @@ function BranchRow({ callId, task, data, onLiveSettled, worktrees, fallbackChild
           <div className={css.branchDetailBody}>
             {task.prompt ?? t('subagent.noTaskDetail')}
           </div>
+          {/* 结果区（#98）：这条分支的子 Agent **最终返回**了什么。
+              与任务详情（父注入的指令）分两段，用户不必点进子会话。
+              与子 Agent 卡共用 ./SubagentResult.tsx，只是换 branch 样式族。
+              `settled` = 该分支已到终态：running→done 翻转时自动重拉一次，
+              否则展开那一刻（子 Agent 还在跑）拉到的空结果会一直挂在卡上。 */}
+          <SubagentResult childSessionId={child} t={t} settled={state !== 'running'} variant="branch" />
           <SubagentChanges childSessionId={child} worktree={worktreeForChanges} t={t} />
         </div>
       )}
@@ -422,7 +429,6 @@ function OrchestrateCardImpl({ node, t }: ChatNodeViewProps<'orchestrate-call'>)
         <span className={css.avatar}><Layers size={14} className={css.avatarIcon} /></span>
         <span className={css.meta}>
           <span className={css.name}>{summary.title}</span>
-          <span className={css.subtitle}>{summary.subtitle}</span>
         </span>
         <span className={css.chip} data-tone={overall}>
           {overall === 'running'
@@ -460,7 +466,7 @@ function OrchestrateCardImpl({ node, t }: ChatNodeViewProps<'orchestrate-call'>)
               {data.tasks.length === 0 && (
                 <div className={css.branchRow}>
                   <span className={css.branchLine} data-tone="running" />
-                  <span className={css.branchNode} data-tone="running"><Loader size={9} /></span>
+                  <span className={css.branchNode} data-tone="running"><Loader size={9} className={css.chipSpin} /></span>
                   <div className={css.branchCard}>
                     <span className={css.branchTx}>
                       <span className={css.branchLabel}>{data.scriptName ?? '脚本编排'}</span>
