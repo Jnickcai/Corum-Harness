@@ -29,7 +29,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { CHILD_WORK_STYLE, CHILD_WORKER_ROLE, RESEARCHER_ROLE } from '../src/child-roles.ts'
+import { CHILD_NO_ASK_FALLBACK, CHILD_WORK_STYLE, CHILD_WORKER_ROLE, RESEARCHER_ROLE } from '../src/child-roles.ts'
 
 /** 两份角色契约（不含风格——风格段由 child-agent 单独叠加）。 */
 const CONTRACTS: Array<[string, string]> = [
@@ -100,5 +100,33 @@ describe('子 Agent 角色契约：自我事实（model / cwd）', () => {
       // 两处都写会在非隔离场景下说谎（非隔离时根本没有 worktree）。
       expect(line).not.toMatch(/isolat|worktree|relative path|branch/i)
     }
+  })
+})
+
+describe('子 Agent 提问兜底（issue #75）：不得静默替用户做决定', () => {
+  it('★ 两份契约都含兜底段', () => {
+    for (const [label, text] of CONTRACTS) {
+      expect(text, `${label}: 缺 CHILD_NO_ASK_FALLBACK ⇒ 模型会先调 ask_user_question 再被拒`)
+        .toContain(CHILD_NO_ASK_FALLBACK)
+    }
+  })
+
+  it('★ 兜底必须同时说清「工具会被拒」与「唯一正确替代动作」', () => {
+    // 只说「会被拒」而不给替代动作，模型仍会自作主张；只给替代而不说明原因，
+    // 模型会以为那是风格建议而非硬约束。两条缺一不可。
+    expect(CHILD_NO_ASK_FALLBACK).toContain('ask_user_question')
+    expect(CHILD_NO_ASK_FALLBACK).toMatch(/rejected/i)
+    expect(CHILD_NO_ASK_FALLBACK).toMatch(/final reply/i)
+    expect(CHILD_NO_ASK_FALLBACK).toMatch(/delegating agent/i)
+  })
+
+  it('★ 兜底不含未注册占位符（它是静态文本，不参与插值）', () => {
+    expect(CHILD_NO_ASK_FALLBACK).not.toMatch(/\{\{/)
+  })
+
+  it('兜底不得宣称存在真实上呈通道（当前是兜底，不是 relay）', () => {
+    // 这一段是**降级**方案：真正的「子 Agent 提问 → 用户直答」双向通道尚未实现。
+    // 若文案写成「你的问题会被交给用户」，模型会以为提问有效并干等——正是 #75 的形态。
+    expect(CHILD_NO_ASK_FALLBACK).not.toMatch(/will be (forwarded|delivered|shown|answered)/i)
   })
 })

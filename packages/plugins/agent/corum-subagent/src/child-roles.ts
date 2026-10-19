@@ -115,9 +115,48 @@ export const CHILD_WORK_STYLE = [
  */
 const SELF_FACTS = 'You are running on the {{model}} model, in the working directory {{cwd}}.'
 
+/**
+ * fork（corum）2026-10-19（issue #75）：**提问的兜底纪律**——两份契约共用。
+ *
+ * ## 为什么必须有这一段
+ *
+ * 官方 `userQuestions.ask()` 对「被另一个活着的 Agent 拥有的调用方」直接拒绝
+ * （`interaction/user-questions/src/index.ts:101-106`，`DELEGATED_CALLER`），
+ * 其错误文案自己写明了期望的替代动作：
+ *
+ * > include the unresolved question or decision in the child agent's final result
+ *
+ * 也就是说：官方**不允许**子 Agent 向 humans 提问，设计的替代是「把悬决问题写进
+ * 最终结果，交给委派方」。但 `ask_user_question` 工具**仍在子 Agent 的工具表里**
+ * （corum 的 research deny 表只含变异工具与 MCP 前缀，见 corum-agent/compile.ts），
+ * 模型看到工具就会用 ⇒ 提问 → 被拒 → 拿不到答案 → 当场**自己猜一个继续**。
+ *
+ * 实测（会话 `f185c1b9` / `83f6389b`）：前者因运行期归属缺陷挂起 517s 直到用户
+ * 手动停止（该缺陷已在 `driver/index.ts` 修复，现会稳定返回 `DELEGATED_CALLER`）；
+ * 后者拿到 DELEGATED_CALLER 后**没有上报**，直接按自己的判断选了方案 B 继续执行。
+ * 两者都不是委派方要的结果：一个赔掉整轮上下文，一个悄悄替用户做了决定。
+ *
+ * ## 这一段解决什么、不解决什么
+ *
+ * 解决：让模型**事先知道**这条路走不通，并知道唯一正确的替代动作是「写进结果」。
+ * 不解决：真正的「结构化上呈 + 用户直答」。那需要一条双向通道（relay 提问给父
+ * Agent / 用户，再把答案送回子 Agent 的 `await ask()`），是后续独立工作。
+ *
+ * ## 写作纪律
+ *
+ * 与两份契约同源：陈述**事实 + 唯一正确动作**，不解释机制、不重复隔离通知。
+ * 全英文（提示词纪律，2026-09-10）。
+ */
+export const CHILD_NO_ASK_FALLBACK = [
+  'Human interaction is unavailable to you: `ask_user_question` will be rejected because you are owned by the delegating agent, and no human can see or answer you.',
+  'Never try to "just pick one" when a decision is genuinely the user\'s to make. Instead put it in your final reply as an explicit open decision — the exact question, the options you see, your recommendation with its reason, and what you would do if nobody answers. The delegating agent can reach the human; you cannot.',
+  'The same applies to any blocking ambiguity: state it, state what you could not proceed with, and state what would unblock it. An honest "I stopped here because X" is a complete deliverable; a silent wrong assumption is not.',
+].join(' ')
+
 export const CHILD_WORKER_ROLE = [
   'You are a delegated worker agent: an executor, not a planner. The delegating agent has already done the planning, the investigation, and the design — the brief you were given is the authoritative specification, and your job is to carry it out.',
   SELF_FACTS,
+  CHILD_NO_ASK_FALLBACK,
   'Work directly with your own tools and report exactly what you did — including anything you could not do, and why.',
   'You cannot delegate further: there are no subagent tools in this session, so finish the job yourself and report back.',
   '',
@@ -154,6 +193,7 @@ export const CHILD_WORKER_ROLE = [
 export const RESEARCHER_ROLE = [
   'You are a delegated research agent: a thorough investigator. You are the delegating agent\'s eyes — it will make decisions from what you report, so an incomplete or overconfident report is worse than an explicitly uncertain one.',
   SELF_FACTS,
+  CHILD_NO_ASK_FALLBACK,
   'You have read-only tools (read / glob / grep) plus a shell restricted to read-only commands, and you cannot modify the repository. Use that freedom aggressively: you are here to find out what is actually true, not to confirm what you were told.',
   '',
   'How to investigate (binding, not advisory):',
