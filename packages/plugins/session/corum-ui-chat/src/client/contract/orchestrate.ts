@@ -333,10 +333,9 @@ export function parseCallArguments(args: unknown): {
   }
 }
 
-/** 一张卡片的 head 摘要：标题 + 副标题 + 计数。 */
+/** 一张卡片的 head 摘要：标题 + 计数。 */
 export interface OrchestrateSummary {
   readonly title: string
-  readonly subtitle: string
   readonly done: number
   readonly aborted: number
   readonly failed: number
@@ -344,8 +343,14 @@ export interface OrchestrateSummary {
 }
 
 /**
- * 折叠 head 摘要（设计稿 `编排工作流 · 3 任务并行` / `fan-out 并发 → fan-in 汇合`
+ * 折叠 head 摘要（设计稿 `编排工作流 · 3 任务并行`
  * + 状态 chip `并行执行中 · 0/3` / `3/3 完成` / `1/3 · 1 失败`）。
+ *
+ * ⚠️ 只有标题 + 计数，**没有副标题**（#96）：原先标题下方还有一行小字
+ * （`fan-out 并发 → fan-in 汇合 → 自动集成/分支留待手动集成` 或脚本模式的
+ * `脚本编排 · 逐阶段推进`），与「流程图 + 状态 chip」已经表达的信息重复，
+ * 用户在卡头只要一眼读出「这是什么 + 到哪一步了」。故该字段与渲染点一并删除；
+ * 声明了 `merge` 与否的差别由下方合并阶段的 chip 表达（已集成/待集成/队列中）。
  * @param data - 折叠结果。
  * @returns 摘要文案与计数。
  */
@@ -357,17 +362,11 @@ export function summarize(data: OrchestrateChatData): OrchestrateSummary {
   if (data.mode === 'script') {
     return {
       title: `编排工作流 · ${data.scriptName ?? '(unnamed)'}`,
-      subtitle: '脚本编排 · 逐阶段推进',
       done, aborted, failed, total,
     }
   }
   return {
     title: `编排工作流 · ${total} 任务并行`,
-    // 2026-09-12：`autoIntegrate` 字段已随 BUG-29 移除（声明 `merge` 即由机制收尾），
-    // 所以副标题按「有没有声明 merge」区分：声明了就会自动集成，没声明则分支留给调用方。
-    subtitle: data.hasMerge
-      ? 'fan-out 并发 → fan-in 汇合 → 自动集成'
-      : 'fan-out 并发 → fan-in 汇合 → 分支留待手动集成',
     done, aborted, failed, total,
   }
 }

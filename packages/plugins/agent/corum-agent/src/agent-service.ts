@@ -443,6 +443,16 @@ function contentHasImage(content: unknown): boolean {  if (!Array.isArray(conten
   return false
 }
 
+/**
+ * 子 Agent 最终返回正文的**单次回传上限**（字符数，#98）。
+ *
+ * 子 Agent 的最终报告常上万字（实测编排分支报告 1~3 万字符），一次 RPC 全量回传会把
+ * 渲染线程的 JSON 解析占满（同 `SESSION_ROWS_TTL_MS` 那条 651KB/1.3s 的量级教训）。
+ * 超限时截断并把 `truncated: true` 一并返回——卡片如实标注「已截断」，
+ * 用户要全文仍可点「进入子会话」（结果区不是唯一的阅读入口）。
+ */
+const SUBAGENT_RESULT_MAX_CHARS = 12_000
+
 /** 单条会话事件的 UI 投影（只取 UI 需要的简化结构）。 */
 export interface SessionEventDto {
   seq: number
@@ -2673,6 +2683,57 @@ export class CorumAgentService extends TypertRemoteService {
         .join('')
         .trim()
       if (text !== '') return { meta: { prompt: text } }
+    }
+    return {}
+  }
+
+  /**
+   * 按子会话 id 提取**子 Agent 最终返回的内容**（子 Agent 卡「结果」展开区数据源，#98）。
+   *
+   * 为什么需要：`getSubagentSessionMeta` 只给父注入的任务指令（首条 user/message），
+   * 卡片原先因此只能看到「让它干什么」，看不到「它干完回了什么」——用户必须点进
+   * 子会话才能读结果。子 Agent 的最终产出就是它最后一条 `assistant/message` 的
+   * text 块（tool-call / reasoning 块不算产出），故本端点倒序扫事件取第一条非空
+   * text；**不用 turn/end 的 stopReason 判**（那是状态，不是内容）。
+   *
+   * ⚠️ 必须**跳过内嵌流**（`data.stream`，0.1.3 format v2）：那是同一段输出的增量包，
+   * 与 `message.content` 重复，只取 `message.content` 这一份成品。
+   *
+   * @param sessionId - 子会话 id。
+   * @returns `result.text`（最终返回正文）/ `result.truncated`（正文超长被截断）；
+   *   读不到或还没有 assistant 输出时返回 `{}`（卡片降级为「暂无结果」，不报错）。
+   */
+  @Remote('getSubagentSessionResult')
+  async getSubagentSessionResultRemote(sessionId: string): Promise<{
+    result?: { text: string; truncated?: boolean }
+  }> {
+    let stored: readonly SessionEvent[]
+    try {
+      const events = await readPersistedEvents(this.ctx.sessionPersistence, SessionId(sessionId), 0)
+      stored = events
+    } catch {
+      return {}
+    }
+    for (let i = stored.length - 1; i >= 0; i -= 1) {
+      const event = stored[i]
+      if (event.type !== 'assistant/message') continue
+      const data = event.data as {
+        message?: { content?: Array<{ type: string; text?: string }> }
+        content?: Array<{ type: string; text?: string }>
+      }
+      const content = data.message?.content ?? data.content ?? []
+      const text = content
+        .filter(b => b.type === 'text')
+        .map(b => b.text ?? '')
+        .join('')
+        .trim()
+      if (text === '') continue
+      // 超长正文截断（子 Agent 报告常上万字，一次 RPC 全量回传会把主线程解析占满）。
+      // 截断是**显式事实**（truncated 一并返回），卡片如实标注，不假装是全文。
+      if (text.length > SUBAGENT_RESULT_MAX_CHARS) {
+        return { result: { text: text.slice(0, SUBAGENT_RESULT_MAX_CHARS), truncated: true } }
+      }
+      return { result: { text } }
     }
     return {}
   }

@@ -1,0 +1,144 @@
+/* fork（corum）：子 Agent 结果区（#98）——展开区里与「任务详情」并列的一段，
+   展示该子会话**最终返回**的内容。两套样式族：
+     · .section 系列 = 子 Agent 卡（SubagentCard）的展开区，与 .detail 同排版；
+     · .branchSection 系列 = 编排卡分支行（OrchestrateCard 的 BranchRow）展开区，
+       与 .branchDetail 同排版。
+   颜色全部沿用卡片既有 token，不新增色值；标题用 success 档做区分
+   （一眼看出「这段是产出，不是指令」）。 */
+
+/* ── 子 Agent 卡（card 族） ───────────────────────────────────────────── */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--corum-density-scale, 1));
+  padding: calc(10px * var(--corum-density-scale, 1));
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.85));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  border-radius: 10px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--corum-density-scale, 1));
+}
+
+.icon {
+  flex: none;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.title {
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.refresh {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: auto;
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  border-radius: 6px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.85));
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.refresh:hover { color: var(--dsw-alias-label-primary); }
+.refresh:disabled { opacity: 0.5; cursor: default; }
+
+.body {
+  font-size: calc(14px * var(--corum-ui-font-scale, 1));
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.empty {
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.truncated {
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+/* ── 编排卡分支行（branch 族） ────────────────────────────────────────── */
+
+.branchSection {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--corum-density-scale, 1));
+  padding: calc(9px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1));
+  border-radius: 8px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.4));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  min-width: 0;
+}
+
+.branchHead {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--corum-density-scale, 1));
+}
+
+.branchIcon {
+  flex: none;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.branchTitle {
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.branchRefresh {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: auto;
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  border-radius: 6px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.85));
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.branchRefresh:hover { color: var(--dsw-alias-label-primary); }
+.branchRefresh:disabled { opacity: 0.5; cursor: default; }
+
+.branchBody {
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.branchEmpty {
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.branchTruncated {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-state-warn-primary);
+}
