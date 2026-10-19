@@ -22,8 +22,8 @@ import type {
 import type { ISessions, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-tools/types'
 import {
-  parseCallArguments, parseIntegration, parseOutcomes, parseWorktreeSlugs,
-  type OrchestrateChatData, type OrchestrateIntegration, type OrchestrateMode, type OrchestrateTask,
+  parseCallArguments, parseCloser, parseIntegration, parseOutcomes, parseTaskRefs, parseWorktreeSlugs,
+  type OrchestrateChatData, type OrchestrateCloser, type OrchestrateIntegration, type OrchestrateMode, type OrchestrateTask,
 } from '../contract/orchestrate.ts'
 import { chatNode } from './common.ts'
 
@@ -45,13 +45,21 @@ interface OrchestrateCallState {
   readonly tasks: readonly OrchestrateTask[]
   readonly mode: OrchestrateMode
   readonly scriptName?: string
+  /** @deprecated 2026-10 起恒 false（`merge` 字段已取消）；只为历史会话回放保留。 */
   readonly hasMerge: boolean
   readonly outcomes: ReadonlyMap<number, { kind: 'done' } | { kind: 'aborted' } | { kind: 'failed'; error: string }>
   readonly settled: boolean
   readonly errored: boolean
+  /** 收尾节点（closer）的结果——2026-10 编排黑盒化的主交付。 */
+  readonly closer?: OrchestrateCloser
+  /** @deprecated 2026-10：新结果不再产生；只为历史会话回放解析。 */
   readonly integration?: OrchestrateIntegration
-  /** 逐任务的隔离 worktree slug（结果正文解析；刷新后的耐久兜底）。 */
+  /** 逐任务的隔离 worktree slug（`results[].worktreeSlug`；刷新后的耐久兜底）。 */
   readonly worktreeSlugs?: ReadonlyMap<number, string>
+  /** 逐任务的隔离分支名（`results[].branch`）。 */
+  readonly worktreeBranches?: ReadonlyMap<number, string>
+  /** 逐任务的子会话 id（`results[].childSessionId`，durable）。 */
+  readonly childSessionIds?: ReadonlyMap<number, string>
 }
 
 type ConversationEvent = Parameters<ConversationNodeDefinition['match']>[0]
@@ -89,16 +97,22 @@ function resultText(match: ConversationMatch): string {
 /** 把一条 `tool/result` 折进状态。 */
 function applyResult(state: OrchestrateCallState, match: ConversationMatch): OrchestrateCallState {
   const text = resultText(match)
+  const closer = parseCloser(text)
   const integration = parseIntegration(text)
-  const slugs = parseWorktreeSlugs(text)
+  const refs = parseTaskRefs(text)
+  // worktree slug 优先新契约的可寻址字段（`results[].worktreeSlug`），旧正文解析兜底。
+  const slugs = refs.worktreeSlugs.size > 0 ? refs.worktreeSlugs : parseWorktreeSlugs(text)
   return {
     ...state,
     outcomes: parseOutcomes(text),
     ...slugs.size > 0 ? { worktreeSlugs: slugs } : {},
+    ...refs.branches.size > 0 ? { worktreeBranches: refs.branches } : {},
+    ...refs.childSessionIds.size > 0 ? { childSessionIds: refs.childSessionIds } : {},
     settled: true,
     errored: match.event.type === 'tool/result' && match.event.data.message.content.some(
       block => block.isError === true,
     ),
+    ...closer === undefined ? {} : { closer },
     ...integration === undefined ? {} : { integration },
   }
 }
@@ -167,13 +181,21 @@ export function orchestrateCallDefinition(
       if (location?.kind !== 'turn' && location?.kind !== 'step') return null
       const state = context.state ?? fallbackState(context)
       if (state === undefined) return null
-      // 逐任务子会话 id：运行期由卡内订阅 spawn 广播解析；这里先给历史兜底值
-      // （页面刷新后无广播帧 → session/list 时间就近），卡内拿到精确广播后会覆盖。
+      // 逐任务子会话 id：**三层优先级**（2026-10 加第一层）。
+      //   ① 结果里的 `results[].childSessionId`——durable，刷新后唯一还活着的精确来源；
+      //   ② 卡内订阅的 spawn 广播（运行期，label 精确）；
+      //   ③ 这里的 session/list 时间就近（历史回放兜底，顺序对齐、无 label）。
+      // 故只把 ③ 当**缺省填充**：① 有值的下标不被覆盖。
       const summaries = sessions.list.getSnapshot().byId as unknown as Readonly<Record<string, SessionSummary>>
       const correlated = correlateChildren(summaries, state.time, state.tasks.length)
+      const durable = state.childSessionIds
+      const childSessionIds = durable === undefined
+        ? correlated
+        : correlated.map((fallback, index) => durable.get(index) ?? fallback)
       const data: OrchestrateChatData = {
-        ...correlated.some(id => id !== undefined) ? { childSessionIds: correlated } : {},
+        ...childSessionIds.some(id => id !== undefined) ? { childSessionIds } : {},
         ...state.worktreeSlugs === undefined ? {} : { worktreeSlugs: state.worktreeSlugs },
+        ...state.worktreeBranches === undefined ? {} : { worktreeBranches: state.worktreeBranches },
         tasks: state.tasks,
         mode: state.mode,
         ...state.scriptName === undefined ? {} : { scriptName: state.scriptName },
@@ -184,6 +206,7 @@ export function orchestrateCallDefinition(
         outcomes: state.outcomes,
         settled: state.settled,
         errored: state.errored,
+        ...state.closer === undefined ? {} : { closer: state.closer },
         ...state.integration === undefined ? {} : { integration: state.integration },
       }
       return chatNode(context, 'orchestrate-call', state.anchorSeq, data)

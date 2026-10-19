@@ -41,9 +41,11 @@ describe('子会话卡片锚点对账（能进入子会话 ⇒ 必须可被定�
       .toEqual([])
   })
 
-  it('编排卡：分支卡与集成者卡都带锚点（本次修复的具体对象）', () => {
+  it('编排卡：分支卡与收尾节点卡都带锚点（本次修复的具体对象）', () => {
     const src = readFileSync(join(CHAT_DIR.pathname, 'OrchestrateCard.tsx'), 'utf8')
     expect(src).toContain('className={css.branchCard} data-child-session-id={child || undefined}')
+    // 2026-10 编排黑盒化：收尾节点由「集成者卡（mergeCard / data-integrator）」改成
+    // 「收尾卡（mergeCard / data-closer）」——锚点义务不变，仍是同一张卡上的同一处。
     expect(src).toMatch(/mergeCard[\s\S]{0,200}data-child-session-id=\{integratorChild \|\| undefined\}/)
   })
 })

@@ -23,8 +23,8 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { gitSafeDirectoryArgs } from '@corum/corum-platform'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
@@ -1308,27 +1308,6 @@ export interface CorumIntegrationTruth {
  * 而不是把整次 fan-in 判死。真未落地（分支不在 HEAD）依旧抛错 + 保留现场。
  */
 /**
- * fork（corum）：`orchestrate` 要不要由机制收尾（纯函数，2026-09-12 两轮用户实测后定稿）。
- *
- * 演进：旧口径是「`merge.autoIntegrate` 缺省 = 只报告」，把合并交给模型记性。实测代价极大——
- * 12 个用过 orchestrate 的会话里 `autoIntegrate` 声明 true 仅 5 次、false 10 次、未声明 6 次，
- * **真正发生过集成的只有 3 个会话**，隔离分支（那份工作的唯一副本）静默搁浅；用户据此报
- * 「编排工作流的最后一个节点始终不会运行」。随后改成「声明 verify 即默认自动集成」，
- * 但用户点出关键：**这个字段对模型是个诱人的 footgun**——10 次提及里 10 次设成 false，
- * 而它几乎不会回来执行（见 BUG-29）。
- *
- * 定稿口径：**声明即执行**。传了 `merge`（哪怕只有 verify，甚至是空对象）= 要机制跑完流水线；
- * 不传 = 分支留着给调用方，收尾走**显式动作** `subagent { integrate: true }`——
- * 从「随手设 false 就忘」变成「必须真的调一次」，这正是两者可靠性的差别。
- *
- * @param merge - orchestrate 的 merge 声明（缺省 = 调用方自己收尾）。
- * @returns 是否由机制自动 merge + verify + commit。
- */
-export function corumAutoIntegrate(merge: { verify?: string } | undefined): boolean {
-  return merge !== undefined
-}
-
-/**
  * fork（corum）：集成成功的**补充口**——主树脏/未提交时的 diff 落盘。
  *
  * 用法（机制侧）：集成者跑完、`corumIntegrationTruth` 报「有分支没进 HEAD」时，
@@ -1755,6 +1734,344 @@ export function corumIntegratorPersona(
       : 'Report the integration outcome (merge result, verification output, and anything that looks off) so the delegating agent can make the final acceptance call against the original goal.')
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// fork（corum）2026-10：**收尾节点（closer）**——编排工作流黑盒化的收口角色
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 一次编排里机制交给 closer 的**单条任务回执**（机制内部持有，不进单条 tool/result）。 */
+export interface CorumCloserTaskRef {
+  /** 任务序号（= `tasks[]` 下标；script 模式为派发顺序）。 */
+  readonly index: number
+  /** 展示标签。 */
+  readonly label: string
+  /** 该任务是否成功结算。 */
+  readonly ok: boolean
+  /** 主 Agent 手动终止（与「失败」区分）。 */
+  readonly aborted?: boolean
+  /** 失败原因（`ok === false` 时在场）。 */
+  readonly error?: string
+  /**
+   * 该任务**子会话 id**（主 Agent 事后按需进入的唯一入口；结果里只回这个引用，
+   * 不回正文——见 {@link corumCloserPersona} 的 #100 说明）。
+   */
+  readonly childSessionId?: string
+  /** 该任务的隔离 worktree slug（无隔离时缺省）。 */
+  readonly worktreeSlug?: string
+  /** 该任务的隔离分支（无隔离时缺省）。 */
+  readonly branch?: string
+  /** 该任务是否只读研究任务。 */
+  readonly research?: boolean
+  /** 该任务**完整输出**——只喂给 closer，**不**进主 Agent 的 tool/result。 */
+  readonly output?: string
+}
+
+/**
+ * closer 的三态场景（机制**自动判定**，模型不传任何开关）。
+ *
+ * - `merge`：有 worktree 隔离分支 ⇒ 必须合并回主树 + verify + 汇总（场景 2）；
+ * - `summarize`：有写任务但全在 main（无分支）⇒ 只汇总，不合并（场景 1）；
+ * - `research`：全 research ⇒ 只把各结论汇成核查报告（场景 3）。
+ */
+export type CorumCloserScenario = 'merge' | 'summarize' | 'research'
+
+/**
+ * fork（corum）2026-10：**编排收尾报告落盘路径**（`<CORUM_HOME>/orchestrate-reports/<callId>.md`）。
+ *
+ * 用户定调：收尾报告是**阅后即焚的过程产物**，写 CORUM_HOME 临时路径即可，不归档进项目；
+ * 正文同时返回给主 Agent（路径只是「还在哪儿能再读一遍」）。
+ *
+ * CORUM_HOME 解析顺序与 desktop shell / 其它 corum 插件一致：
+ * `CORUM_HOME` env > `DSH_HOME` env（桌面壳把 DSH_HOME 指向 CORUM_HOME）> `~/.corum`。
+ * @param callId - 本次 orchestrate 的 tool call id（同一调用的报告互相覆盖是期望行为）。
+ * @param env - 环境变量表（单测注入用）。
+ * @param home - `os.homedir()`（单测注入用）。
+ * @returns 报告的绝对路径。
+ */
+export function corumOrchestrateReportPath(
+  callId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string {
+  const configured = corumHomeOf(env, home)
+  // callId 来自宿主（`exec.callId`），但落盘前仍按文件名安全字符收敛——它不该带路径分隔符，
+  // 若带了则**不能**让报告跑出 CORUM_HOME 目录（宁可截断成一个安全文件名）。
+  // 点序列（`..`）也一并折叠：它本身在单段文件名里无害，但报告路径里出现 `..` 是坏味道，
+  // 下一个读这段代码的人不该需要重新论证一次「这里逃不出去」。
+  const safe = corumSafeFileStem(callId)
+  return path.join(configured, 'orchestrate-reports', `${safe === '' ? 'orchestrate' : safe}.md`)
+}
+
+/**
+ * fork（corum）2026-10：**research 报告的落盘路径**
+ * （`<CORUM_HOME>/research-reports/<childSessionId>.md`）。
+ *
+ * 用户需求（B 方案）：把「报告留存」语义从**编排**扩展到**单个** research 子 Agent。
+ * research 子 Agent 是只读的（沙箱钉 read-only、write/edit 被 deny），自己写不了盘，
+ * 故由**机制在主进程侧**落盘——落在结果回传路径上（见 tool-subagent 的 `spawnOne`）。
+ * 同样写 CORUM_HOME 临时路径：阅后即焚的过程产物，不归档进项目。
+ *
+ * CORUM_HOME 解析顺序与 {@link corumOrchestrateReportPath} 完全一致（同一份 env 约定）。
+ * @param childSessionId - research 子 Agent 的会话 id（每个子会话一份报告）。
+ * @param env - 环境变量表（单测注入用）。
+ * @param home - `os.homedir()`（单测注入用）。
+ * @returns 报告的绝对路径。
+ */
+export function corumResearchReportPath(
+  childSessionId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string {
+  const configured = corumHomeOf(env, home)
+  // 与 orchestrate 报告同款收敛：id 来自宿主，但落盘前仍按文件名安全字符收窄——
+  // 报告不该因为一个带分隔符的 id 而跑出 CORUM_HOME 目录。
+  const safe = corumSafeFileStem(childSessionId)
+  return path.join(configured, 'research-reports', `${safe === '' ? 'research' : safe}.md`)
+}
+
+/**
+ * 把一份报告写进 CORUM_HOME 临时路径（失败**不抛**、返回 bool）。
+ *
+ * 单一写盘实现：编排收尾报告与 research 报告都走这里——「失败不抛」的语义是共同的
+ * （正文仍会返回主 Agent，落盘只是「还能再读一遍」的附加能力，不能因为它让委派失败）。
+ * @param reportPath - 目标路径（父目录不存在时自动建）。
+ * @param body - 报告正文（markdown）。
+ * @returns 写入成功与否（调用方记日志 / 在回传文本里如实说明）。
+ */
+export function corumWriteReportFile(reportPath: string, body: string): boolean {
+  try {
+    mkdirSync(path.dirname(reportPath), { recursive: true })
+    writeFileSync(reportPath, body, 'utf8')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 把收尾报告写进 CORUM_HOME 临时路径（失败**不抛**——报告正文仍会返回主 Agent，
+ * 落盘只是「还能再读一遍」的附加能力，不能因为它让整次编排失败）。
+ * @param reportPath - {@link corumOrchestrateReportPath} 的返回值。
+ * @param body - 报告正文（markdown）。
+ * @returns 写入成功与否（调用方记日志）。
+ */
+export function corumWriteOrchestrateReport(reportPath: string, body: string): boolean {
+  return corumWriteReportFile(reportPath, body)
+}
+
+/**
+ * fork（corum）2026-10 修复②：**把「已被 closer 解决」的待集成说明从内部说明里剔除**。
+ *
+ * ## 病根（实机验证 worker 实测）
+ *
+ * `drainOrchestrationNotes()` 在 closer 派发**之前**取出说明（那是**合并前**的快照），
+ * closer 合并成功后没有任何作废机制 ⇒ 结果里的 `closer.internalNotes` 仍带着
+ * 「N isolated branch(es) are NOT merged … Finish it yourself with `subagent {integrate:true}`」，
+ * 与 closer 报告里的「已合并」**互斥**。主 Agent 读到两条相反的结论，卡片也照样渲染
+ * 「机制内部说明」区（见 `corum-ui-chat` 的 `orchestrate.close.notesTitle`）。
+ *
+ * ## 剔除判据是**事实**，不是场景
+ *
+ * 调用方传入的是**台账实况**里已经翻成 `integrated` 的分支名集合（closer 成功后
+ * 重新 `entriesOf` 对账）。因此：
+ *  - 分支真的合并了 ⇒ 对应的 pending 说明被剔除（它描述的状态已解决）；
+ *  - **verify 失败 / 未合并 / closer 失败** ⇒ 台账没翻、分支不在集合里 ⇒ 说明**保留**
+ *    （那是真未解决，正是主 Agent 需要读到的）；
+ *  - 同一条说明里只有部分分支落地 ⇒ **重写成剩余分支**（不能整条丢掉，否则会漏报）；
+ *  - 非 pending 形态的说明（收口提交失败等）原样保留。
+ *
+ * 判据落在事实上而不是「merge 场景 + 无 error 就全剔」：后者会把「closer 报告说成功、
+ * 但台账没翻」这类漂移一并抹掉——那正是本仓反复付学费的那类静默失真。
+ * @param notes - 机制收拢的内部说明（原文）。
+ * @param resolvedBranches - 台账里**已翻成 integrated** 的分支名。
+ * @param rebuildPendingNotice - 重写 pending 说明的正文生成器（与捕获侧同一份实现，
+ *   保证措辞不漂移；由 `corum-tool-subagent` 传入 `corumPendingIntegrationNoticeText`）。
+ * @returns 过滤后的说明清单（未解决/非 pending 的原样保留）。
+ */
+export function corumDropResolvedIntegrationNotes(
+  notes: readonly string[],
+  resolvedBranches: ReadonlySet<string>,
+  rebuildPendingNotice: (branches: readonly string[]) => string,
+): string[] {
+  if (resolvedBranches.size === 0) return [...notes]
+  const kept: string[] = []
+  for (const note of notes) {
+    const branches = corumPendingBranchesOf(note)
+    if (branches === undefined) {
+      kept.push(note)
+      continue
+    }
+    const remaining = branches.filter(branch => !resolvedBranches.has(branch))
+    // 全部解决 ⇒ 整条丢掉；一条都没解决 ⇒ 原文照旧（不重建，避免措辞漂移）；
+    // 部分解决 ⇒ 用同一份生成器重写成剩余分支。
+    if (remaining.length === 0) continue
+    kept.push(remaining.length === branches.length ? note : rebuildPendingNotice(remaining))
+  }
+  return kept
+}
+
+/**
+ * 从一条 pending-integration 说明里解析出分支名（形态识别）。
+ *
+ * 形态单一事实源在 `corum-tool-subagent` 的 `corumPendingIntegrationNoticeText`
+ * （`[corum] N isolated branch(es) are NOT merged into the main tree: a, b. …`）——
+ * 两处必须一致，故这里只认那句**标记短语**，不认前缀（条数会变）。
+ * @param note - 说明原文。
+ * @returns 分支名清单；不是 pending 形态时 `undefined`。
+ */
+export function corumPendingBranchesOf(note: string): string[] | undefined {
+  const marker = 'are NOT merged into the main tree: '
+  const at = note.indexOf(marker)
+  if (at < 0) return undefined
+  const rest = note.slice(at + marker.length)
+  // 分支列表以句号结束（`. ` 之后是解释句）；缺失句号时整段当列表。
+  const end = rest.indexOf('. ')
+  const listed = end < 0 ? rest : rest.slice(0, end)
+  const branches = listed.split(',').map(part => part.trim()).filter(part => part !== '')
+  return branches.length === 0 ? undefined : branches
+}
+
+/** CORUM_HOME 解析（orchestrate / research 报告共用一份约定）。 */
+function corumHomeOf(env: NodeJS.ProcessEnv, home: string): string {
+  return env.CORUM_HOME !== undefined && env.CORUM_HOME.trim() !== ''
+    ? env.CORUM_HOME
+    : env.DSH_HOME !== undefined && env.DSH_HOME.trim() !== ''
+      ? env.DSH_HOME
+      : path.join(home, '.corum')
+}
+
+/** 报告文件名收敛（宿主 id → 单段安全文件名，不逃出报告目录）。 */
+function corumSafeFileStem(id: string): string {
+  return id.replace(/[^\w.-]+/gu, '_').replace(/\.{2,}/gu, '_').slice(0, 120)
+}
+
+/**
+ * fork（corum）2026-10：**编排收尾者（closer）的 persona**——机制拼装，非 LLM 自由写。
+ *
+ * ## 为什么需要这个角色（用户 2026-10 定稿「orchestrate = 一次黑盒调用」）
+ *
+ * 编排从「N 个任务各自把完整输出堆进主 Agent 的**单条** tool/result」改成「内部收拢、
+ * 统一结算一次」。三条硬约束共同决定了 closer 必须存在：
+ *
+ * ① **#100 截断根因**：`compile.ts` 的 tool-result-pruner 阈值 8192/4096/1024 会把超
+ *    8192 字符的**单条**结果中间砍掉——N 份完整输出拼一条结果，必然越过阈值，于是
+ *    主 Agent 读到的是被腰斩的正文。⇒ 各任务输出**不进**主 result，只回任务级引用
+ *    （子会话 id / 标签 / 成败），正文由本角色读取后写成一份报告。
+ * ② **黑盒语义**：主 Agent 只该看到「发起 → 最终结果」，内部执行不可见。逐条回执会
+ *    把内部细节泄回父上下文，也会让主 Agent 抢在收尾前自己去合并（#100 的另一半）。
+ * ③ **收尾需要写能力**：有分支时还要 merge + verify，故 closer 恒为**写能力**子 Agent、
+ *    跑**主树**。⚠️ 报告**落盘不是它的活**（2026-10 修复①）：机制在 `runCloser` 里用
+ *    `corumWriteOrchestrateReport` 兜底落盘，而 closer 是 workspace-write 沙箱，
+ *    它去写 `~/.corum/orchestrate-reports/…` 会**每次编排弹一次提权卡**，纯冗余。
+ *    故 persona 只要求它**把报告正文作为最终答复返回**。
+ *
+ * ## 三态（机制自动判定，模型不再传 `merge`）
+ *
+ * - `merge`：有 worktree 隔离分支 ⇒ `git merge` 回主 + 跑 verify + 汇总各任务改动；
+ * - `summarize`：全 main worker ⇒ **不合并**，只汇总各任务改动；
+ * - `research`：全 research ⇒ **不合并**，把各结论汇成核查报告。
+ *
+ * @param scenario - 机制判定的场景。
+ * @param tasks - 各任务回执（**含完整输出**——这是它们唯一的去向）。
+ * @param options - 收尾参数：报告落盘路径（**仅告知去向**，落盘由机制做）、探测式 verify
+ *   命令、待合并分支、callId。
+ * @returns closer 的完整 persona（机制把它作为子 Agent 的 prompt 注入）。
+ */
+export function corumCloserPersona(
+  scenario: CorumCloserScenario,
+  tasks: readonly CorumCloserTaskRef[],
+  options: {
+    /**
+     * 机制**将要**把这份报告落到的路径。
+     *
+     * ⚠️ 2026-10 修复①：它只是「告诉 closer 报告去向」，**不是**要它去写的目标——
+     * 落盘由机制负责（`runCloser` 里调 `corumWriteOrchestrateReport`），closer 自己
+     * 写会撞沙箱、每次编排弹一次提权卡。语义见 {@link corumCloserPersona} 的说明。
+     */
+    readonly reportPath: string
+    /** 有分支要合并时机制探测出的 verify 命令（无分支时缺省）。 */
+    readonly checks?: readonly string[]
+    /** 待合并的隔离分支（`scenario === 'merge'` 时非空）。 */
+    readonly branches?: readonly string[]
+  },
+): string {
+  const header = scenario === 'merge'
+    ? 'You are the CLOSER of an orchestration run. The parallel tasks below have already settled and their isolated branches must be merged back into the main working tree, verified, and summarized. You are the ONLY node the delegating agent will hear from.'
+    : scenario === 'research'
+      ? 'You are the CLOSER of an orchestration run. Every task below was a READ-ONLY research task: nothing was merged and nothing needs merging. Your job is to turn their separate findings into ONE verified research report for the delegating agent. You are the ONLY node the delegating agent will hear from.'
+      : 'You are the CLOSER of an orchestration run. Every task below wrote DIRECTLY in the main working tree (no worktree, no branch): there is nothing to merge. Your job is to summarize what each task changed and flag anything the delegating agent must know. You are the ONLY node the delegating agent will hear from.'
+
+  const taskLines = tasks.map((task) => {
+    const state = task.ok ? 'DONE' : task.aborted === true ? 'ABORTED' : 'FAILED'
+    const refs = [
+      task.childSessionId === undefined ? '' : `child session ${task.childSessionId}`,
+      task.worktreeSlug === undefined ? '' : `worktree ${task.worktreeSlug}`,
+      task.branch === undefined ? '' : `branch ${task.branch}`,
+    ].filter(part => part !== '').join(' · ')
+    const body = task.ok
+      ? (task.output === undefined || task.output.trim() === '' ? '(the child produced no final text)' : task.output.trim())
+      : `(no output: ${task.error ?? 'failed without a reason'}${task.output === undefined || task.output.trim() === '' ? '' : `\n\npartial output:\n${task.output.trim()}`})`
+    return `### [task ${task.index}${task.label === '' ? '' : ` · ${task.label}`}] ${state}${refs === '' ? '' : ` (${refs})`}\n${body}`
+  }).join('\n\n')
+
+  const mergeBlock = scenario === 'merge'
+    ? [
+        '',
+        `Branches to merge into the main working tree, IN ORDER: ${(options.branches ?? []).join(', ')}`,
+        'Checks to run after merging (run every one; commit only when all pass):',
+        ...((options.checks ?? []).length > 0 ? (options.checks ?? []).map(check => `- ${check}`) : ['- git diff --check']),
+        '',
+        'Merge discipline (binding):',
+        '- Merge with `git merge --no-commit` first, run the checks, and only then `git commit`. A plain `git merge` creates the commit BEFORE you verify, which makes a failed check indistinguishable from a passing one.',
+        '- If a check fails, report it and leave the tree dirty — do NOT commit. If you leave an UNCONCLUDED merge behind, finish it (`git merge --abort` when it should not land): a lingering `MERGE_HEAD` makes every later merge/commit in this tree fail.',
+        '- Never run destructive git commands on the main tree (`git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`): it may hold unrelated uncommitted work that is not yours to discard. Report a blocking dirty tree instead of wiping it.',
+        '- Report per branch whether it landed, plus the verification output.',
+      ].join('\n')
+    : scenario === 'research'
+      ? [
+          '',
+          'Research discipline (binding):',
+          // ⚠️ 2026-10 修复①：此前写的是「Your write capability exists ONLY to save the
+          // report」——那是**旧契约**（closer 自己落盘），已与「落盘归机制」矛盾。现在只
+          // 说明它写能力的存在理由（跑只读命令收集证据），不再提存报告。
+          '- Do NOT modify the repository. Read-only commands that gather evidence are fine; do not create or edit any file — the report itself is persisted by the mechanism, not by you.',
+          '- Every conclusion must be traceable: cite the file path / command / session that established it. If two tasks disagree, say so explicitly instead of picking one.',
+          '- If a task was ABORTED or FAILED, say what is therefore NOT established — a missing answer is a finding, not a gap to paper over.',
+          '- Do NOT merge, cherry-pick or commit anything.',
+        ].join('\n')
+      : [
+          '',
+          'Summary discipline (binding):',
+          '- Do NOT merge, cherry-pick or commit anything: the work is already in the main working tree and it is NOT yours to restructure.',
+          '- Read what each task actually changed (the working tree, `git status`, `git diff`) before you describe it — do not paraphrase a child\'s self-report as fact.',
+          '- If a task was ABORTED or FAILED, say what was therefore not delivered.',
+        ].join('\n')
+
+  return header
+    + mergeBlock
+    + '\n\nThe tasks (each block is one child\'s final output; these are your ONLY source of what happened):\n\n'
+    + taskLines
+    + '\n\nDeliverable: ONE report addressed to the delegating agent, in this shape:\n'
+    + '1. **Outcome** — what was achieved, per task, in one line each (done / aborted / failed and why).\n'
+    + (scenario === 'merge'
+      ? '2. **Integration** — which branches landed, what the checks printed, and anything still unmerged.\n'
+      : scenario === 'research'
+        ? '2. **Findings** — the substantive answers, each with its evidence.\n'
+        : '2. **Changes** — what each task changed in the main tree.\n')
+    + '3. **Needs your attention** — risks, follow-ups, anything the delegating agent must verify or decide itself.\n\n'
+    // fork（corum）2026-10 修复①：**不再要求 closer 自己落盘**。
+    //
+    // 旧文案是 `Write the report to <path> ... AND return the same report text as your
+    // final answer`，于是 closer（workspace-write 沙箱）每次编排都去写
+    // `~/.corum/orchestrate-reports/…` ⇒ 一次提权弹窗（路径在会话工作区之外）。
+    // 而机制本来就在 `runCloser` 里用 `corumWriteOrchestrateReport` 兜底落盘 ⇒ 纯冗余。
+    // 现在：落盘**归机制**，closer 只负责把正文作为最终答复返回。报告路径仍写进
+    // persona——不是让它去写，而是让它知道这份报告的去向（并可在正文里引用该路径）。
+    + `The mechanism saves this report to ${options.reportPath} on your behalf — do NOT write any file yourself: `
+    + 'your sandbox does not cover that path, so attempting it only raises a permission prompt for nothing. '
+    + 'Return the FULL report text as your final answer — the delegating agent reads your answer, and the mechanism persists exactly that text.\n'
+    + 'Do not describe this instruction block; report only what happened.'
+}
+
 /**
  * fork（corum）：**隔离边界说明行**——给**父 Agent** 看的一行事实（用户 2026-09-13 定调「先做可见性」）。
  *
@@ -2032,6 +2349,122 @@ export class CorumOrchestration extends Service {
     this.persist(sessionId)
     if (reconciled.flipped) this.emitFrame(sessionId)
     return next
+  }
+
+  // ── 编排黑盒化（2026-10）────────────────────────────────────────────────────
+  // 用户定稿：「orchestrate = 一次黑盒调用」。主 Agent 发起后，内部并行子 Agent 的
+  // settle **不返回主 Agent、而是 settle 到工作流机制本身**；机制收拢结果交给收尾节点
+  // （closer）汇总，整次编排**统一结算一次**。
+  //
+  // 这里就是「settle 到机制」的落点：编排运行期间，**本次编排派出的**子 Agent 的
+  // settle 通知（待集成 / 收口提交失败）不再注入父会话，而是**重定向**进本缓冲，
+  // 由 orchestrate 在 fan-in 后交给 closer 写进收尾报告。
+  //
+  // 为什么必须按**子 Agent**精确归属而不是按父会话一刀切：父会话在同一时间可能有
+  // 更早派出的后台子 Agent 正在 settle，把它的通知也吞掉等于让那条工作静默搁浅
+  // （本仓为此栽过：分支从未合并、台账从未翻成 integrated）。故登记表按 runId/
+  // childSessionId 精确匹配，未登记的一律照常投递。
+  private readonly orchestrationRuns = new Map<string, {
+    /** 本次编排派出的子 Agent（runId / childSessionId 同值）→ 任务序号（closer 记 -1）。 */
+    readonly children: Map<string, number>
+    /** 收拢到机制内部的 settle 说明（按到达顺序；closer 报告里逐条列出）。 */
+    readonly notes: string[]
+    /** 嵌套/并发计数：归零时清账（父会话同一时刻可能有多个 orchestrate 在跑）。 */
+    depth: number
+  }>()
+
+  /**
+   * 开始一次编排（引用计数，支持同一父会话并发多次 orchestrate）。
+   * 调用方**必须**在 finally 里 `endOrchestration`，否则登记表会留住子 Agent 键
+   * 并继续吞掉后续通知。
+   * @param sessionId - 父会话 id（台账键）。
+   */
+  beginOrchestration(sessionId: string): void {
+    const run = this.orchestrationRuns.get(sessionId)
+    if (run === undefined) {
+      this.orchestrationRuns.set(sessionId, { children: new Map(), notes: [], depth: 1 })
+      return
+    }
+    run.depth += 1
+  }
+
+  /**
+   * 结束一次编排。归零时清账（子 Agent 键与暂存说明一起丢掉——说明已由 closer 消化）。
+   * @param sessionId - 父会话 id。
+   */
+  endOrchestration(sessionId: string): void {
+    const run = this.orchestrationRuns.get(sessionId)
+    if (run === undefined) return
+    run.depth -= 1
+    if (run.depth <= 0) this.orchestrationRuns.delete(sessionId)
+  }
+
+  /**
+   * 登记「这个子 Agent 是本次编排派出的」——settle 通知据此**归属到机制**而不是父会话。
+   * @param sessionId - 父会话 id。
+   * @param childId - 子 Agent 的 runId / childSessionId（同值）。
+   * @param index - 任务序号（closer 自身记 -1）。
+   */
+  registerOrchestrationChild(sessionId: string, childId: string, index: number): void {
+    this.orchestrationRuns.get(sessionId)?.children.set(childId, index)
+  }
+
+  /**
+   * 该子 Agent 是不是本次编排派出的（**纯读**，不消费）。
+   *
+   * 纯读是刻意的：本插件在 corum preset 里是双实例（worker + research），两个实例各注册
+   * 一个 `{global:true}` 的 `subagent/end` 监听，同一 settle 会被处理两次。压制是**幂等**
+   * 的（不发消息），故两侧各读一次无害；若改成「取走即删」，第二个实例会读不到而照常投递
+   * ——正好把要压制的通知又发出去。
+   * @param sessionId - 父会话 id。
+   * @param childId - 子 Agent 的 runId / childSessionId。
+   * @returns 命中时返回任务序号，否则 undefined。
+   */
+  orchestrationChildIndex(sessionId: string, childId: string): number | undefined {
+    return this.orchestrationRuns.get(sessionId)?.children.get(childId)
+  }
+
+  /**
+   * 按**台账 slug** 判断是不是编排派出的子 Agent（收口提交失败的归属判定用——
+   * 那批失败的形状是 `{slug, path, reason}`，没有 runId）。
+   * @param sessionId - 父会话 id。
+   * @param slug - worktree slug。
+   * @returns 命中时返回任务序号，否则 undefined。
+   */
+  orchestrationChildIndexBySlug(sessionId: string, slug: string): number | undefined {
+    const run = this.orchestrationRuns.get(sessionId)
+    if (run === undefined) return undefined
+    const entry = (this.ledger.get(sessionId) ?? []).find(candidate => candidate.slug === slug)
+    if (entry === undefined) return undefined
+    for (const id of [entry.childSessionId, entry.runId]) {
+      if (id === undefined) continue
+      const index = run.children.get(id)
+      if (index !== undefined) return index
+    }
+    return undefined
+  }
+
+  /**
+   * 把一条本该注入父会话的 settle 说明**收拢到机制内部**（编排黑盒化的「重定向」）。
+   * 未开始编排时是 no-op（调用方应先判 `orchestrationChildIndex*`）。
+   * @param sessionId - 父会话 id。
+   * @param note - 说明正文（原文照存，closer 报告里逐条列出）。
+   */
+  captureOrchestrationNote(sessionId: string, note: string): void {
+    this.orchestrationRuns.get(sessionId)?.notes.push(note)
+  }
+
+  /**
+   * **取走**本次编排收拢的说明（取出即清）——orchestrate 在 fan-in 后交给 closer。
+   * @param sessionId - 父会话 id。
+   * @returns 说明清单；无编排在跑时为空数组。
+   */
+  drainOrchestrationNotes(sessionId: string): readonly string[] {
+    const run = this.orchestrationRuns.get(sessionId)
+    if (run === undefined) return []
+    const notes = [...run.notes]
+    run.notes.length = 0
+    return notes
   }
 
   /** 登记一条 active 条目并记录父 cwd（worktree 创建成功后调用）。 */
