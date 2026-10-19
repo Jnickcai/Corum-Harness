@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId, SessionLogOffset as SessionLogOffsetType, TurnEndReason } from '@deepseek-ai/dsh-session'
 import { boundContextSummary, createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -153,10 +153,24 @@ export async function startInProcessRun(
   const routing = request.agentOptionsOwnedByMechanism === true
     ? { options: request.agentOptions, ignored: undefined }
     : corumStripRoutingOptions(request.agentOptions)
+  // fork（corum）2026-10-19：**机制路由走独立通道**（`request.mechanismRoute`）。
+  //
+  // 背景：`corum-isolated`（脚本模式）曾把机制路由写进 `agentOptions` 并打
+  // `agentOptionsOwnedByMechanism: true` ⇒ 上面的剥离整段跳过 ⇒ 脚本违规自选的
+  // `provider`/`model` 既没被剥离、也没触发告知（方案 A 的「告知」那一半静默丢失）。
+  // 现在 `agentOptions` 保持脚本原样（正常剥离 + 告知），机制路由从独立字段叠加在
+  // **剥离之后** ⇒ 两件事同时成立：机制路由胜出 ∧ 脚本路由被剥离且被告知。
+  const requestedOptions: AgentOptions | undefined = request.mechanismRoute === undefined
+    ? routing.options
+    : { ...routing.options, ...request.mechanismRoute }
   if (routing.ignored !== undefined) {
     // 告知（方案 A 的第二半）：一条机制通知，含**实际生效的路由**，让模型学到口径。
+    // 有机制路由时，实际生效的就是它（不是父路由）——通知必须说真话。
     try {
-      const text = corumRoutingIgnoredNoticeText(routing.ignored, parentAgentOptionsForDelegation(parent))
+      const text = corumRoutingIgnoredNoticeText(
+        routing.ignored,
+        request.mechanismRoute ?? parentAgentOptionsForDelegation(parent),
+      )
       parent.inject(createUserMessage({
         content: [{ type: 'text' as const, text }],
         source: {
@@ -176,7 +190,7 @@ export async function startInProcessRun(
     meta: childSessionMeta(parent, childDepth, seed !== undefined, request.cwd),
     ...seed !== undefined ? { seed } : {},
     ...seed === undefined ? {} : { inheritedEventCount: activationBoundary },
-    agentOptions: resolveChildAgentOptions(parent, routing.options, childDepth),
+    agentOptions: resolveChildAgentOptions(parent, requestedOptions, childDepth),
     signal: request.signal,
     setup,
   })

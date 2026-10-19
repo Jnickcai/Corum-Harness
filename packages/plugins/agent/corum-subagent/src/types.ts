@@ -155,6 +155,24 @@ export interface SubagentStartRequest {
    */
   readonly agentOptionsOwnedByMechanism?: boolean
   /**
+   * fork（corum）2026-10-19：**机制拥有的子 Agent 路由**，走与 `agentOptions` 分离的通道。
+   *
+   * ## 为什么需要第二个通道
+   *
+   * `agentOptionsOwnedByMechanism` 那条通道是「整体替换 + 打标记 ⇒ driver 不剥离」，它
+   * 解决的是「机制路由不被剥掉」，但代价是**脚本自己传的路由偏好也一起看不见了** ——
+   * driver 的 P1 剥离（`corumStripRoutingOptions`）只剥**未标记**的选项，一旦标记，脚本
+   * 传的 `provider`/`model` 既没被剥离也没被告知，`corumRoutingIgnoredNoticeText` 那条
+   * 机制通知就静默丢失了（用户 2026-09-27 裁定的「剥离 + 告知」方案 A 缺了一半）。
+   *
+   * 本字段把两件事拆开：`agentOptions` 保持**脚本原样**（driver 照常剥离 + 发告知），
+   * 机制路由从这条独立通道注入（不受剥离影响，且在剥离之后叠加，因此机制路由仍然胜出）。
+   *
+   * 目前唯一生产者是 `corum-isolated` provider 的脚本模式路由解析
+   * （`isolated/script-model-resolution.ts` 的 `applyMechanismRoute`）。
+   */
+  readonly mechanismRoute?: AgentOptions
+  /**
    * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects
    * unsupported schemas or providers without the capability. Data must be plain host-realm JSON;
    * a successful child returns the matching value as {@link SubagentResult.structured}.
