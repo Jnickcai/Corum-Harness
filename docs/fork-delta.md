@@ -2166,12 +2166,65 @@ pnpm override 生效：
 
 ```yaml
 # pnpm-workspace.yaml（overrides）
-'@deepseek-ai/dsh-tools': 'link:packages/plugins/agent/corum-tools'
+'@deepseek-ai/dsh-tools': 'workspace:@corum/corum-tools@*'
 ```
 
 **失败会静默**（本 fork 最该守的地方，与 fork #14 同）：override 被改回版本钉 / fork 没构建
 （lib 缺）/ 闭包丢包，三者都不会让编译或构建报错，只是「工具失败对象悄悄退回官方
 `[object Object]`」。
+
+### 18.1 override 协议事故：`link:` → `workspace:`（2026-10-19，dev 态委派必挂的真因）
+
+**现象**：dev 态任何子 Agent 委派（`subagent` / `subagent_research` / orchestrate 任务）都在
+`tool/call` 之后**立刻** `turn/end: error`，无 `tool/result`：
+
+```
+Cannot read properties of undefined (reading 'prepare')
+```
+实测会话 `corum-task-ebde2bb0`、`corum-task-133988de`。
+
+**根因（两层）**：
+
+1. `@deepseek-ai/dsh-tools` 被**约 30 个官方包声明为 `peerDependency`**；
+2. 原 override 用的是 **`link:` 形式**，而 `link:` **不参与 peer 求解** ⇒ 同一个官方包并存
+   两个 peer 变体：一个（如 `dsh-agent-loop@…c868fc`）链到 fork，另一个
+   （`…d7d7c6e4`）链到 npm 上的官方 `dsh-tools`。
+
+两份实例各自 `Symbol()` 出 `TOOL_RUNTIME_SCHEDULER` ⇒ 跨实例**不相等**（实测
+`fork.SYM === official.SYM` 为 **false**）。PTC 的 `run_code` 走
+`registry[TOOL_RUNTIME_SCHEDULER].prepare(input)`，`registry` 来自一份、`SYM` 来自另一份
+⇒ `undefined.prepare()`。
+
+**对照实验（排除「陈旧 lockfile」这一解释）**：`@deepseek-ai/dsh-fs-local` 同样是 `link:`
+override，但它**不被任何包声明为 peer**，收敛完全正确（fork 3 / 官方 0）。差别就在 peer。
+⇒ 不能用 fs-local 有效来反证 link 可用。
+
+**修法**：改用 `workspace:` 协议（peer 一并收敛到同一 workspace 实例）。
+
+| 判据 | 修复前 | 修复后 |
+|---|---|---|
+| `dsh-tools` 解析点 | fork 26 / 官方 32 | **fork 38 / 官方 0** |
+| dev 态 `subagent_research` | `turn/end: error (prepare)` | `tool/result ok` + `completed` |
+
+**为什么长期没被发现**：打包态（`pnpm pack` 的**扁平闭包**）天然去重——实测闭包里
+`dsh-tools` 只有 1 份、229 个官方包全部扁平。故该缺陷**只在 dev 态暴露**，而历史验收
+（含 issue #75 那轮）都在打包态做。
+
+> ⚠️ 顺带纠正一处错误归因：`docs/PENDING-foreground-subagent-pseudo-foreground.md:563`
+> 把这条报错写成「沙箱环境的固有限制」——**是错的**：本次在**非沙箱**、干净构建上稳定复现，
+> 且与沙箱无关。
+
+**守卫**：`scripts/verify-fork-drift.sh` §16b 断言 override 必须是 `workspace:` 形式；
+若检测到 `link:` 直接 fail 并说明后果。此前该断言**硬编码了 `link:` 写法**，是本次事故的
+帮凶之一——守卫只验证「写的是我以为对的那行」，不验证「那行是否真的生效」。
+
+**与公网发布的关系**（用户 2026-10-19 定调：未来把 corum 单独发布到公网，让开发者不依赖
+源码即可开发插件）：`link:` 依赖工作区路径，天然不可发布；`workspace:` 可被 `pnpm publish`
+正确物化为版本号范围，与本目标一致。
+
+**通用教训**：`overrides` 的成效**不能只看配置文件写了什么**，必须验证**解析面的实况**
+（本例：统计 `realpath` 后的实例数）。「配置在 + 编译过 + 测试绿」三者都成立时，这个问题
+依然存在了数月。
 
 **验证**：
 - `tsc -b` 绿（10 模块整拷官方，类型面零破坏）；`tsdown` 出 4 个 entry（`index`/`invariant`/
@@ -2180,7 +2233,7 @@ pnpm override 生效：
   新旧逻辑对拍（结构化对象 → JSON、Error/message 字段/原始类型不变）。
 - 消费方 `@corum/corum-tool-subagent` typecheck 绿。
 - 常驻守卫 `scripts/verify-fork-drift.sh` §16b（与 §15b 同型）：9 个官方模块逐字节一致 /
-  `index.ts` 的 `errorMessage` 含 JSON.stringify 增量 / `pnpm-workspace.yaml` 的 link override
+  `index.ts` 的 `errorMessage` 含 JSON.stringify 增量 / `pnpm-workspace.yaml` 的 **workspace:** override
   在位 / `desktop-host/package.json` 登记 / `pack-macos.mjs` 含闭包断言
   （`JSON.stringify(error)` 必须在闭包那份里，缺失或退回官方即打包失败）。
 
