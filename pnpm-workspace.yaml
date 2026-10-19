@@ -241,8 +241,20 @@ overrides:
   # 无法经 cordis 服务/装饰覆盖，只能整包 fork 让 `@deepseek-ai/dsh-tools` 解析到本包，
   # 才能让「工具失败对象不再退化成 [object Object]」在真实链路上生效
   # （corum-tool-subagent / corum-orchestration / corum-subagent / corum-agent / corum-ui-chat 等都 import 它）。
+  #
+  # ⚠️ 必须是 `workspace:` 协议，**不能**写 `link:` —— 2026-10-19 实测（issue #75 排查）：
+  # `dsh-tools` 被约 30 个官方包声明为 **peerDependency**，而 `link:` 形式的 override
+  # **不参与 peer 求解** ⇒ 同一个官方包并存两个 peer 变体，一个链到 fork、一个链到 npm 官方包。
+  # 两份实例各自 `Symbol()` 出的 `TOOL_RUNTIME_SCHEDULER` 互不相等（实证 `a === b` 为 false），
+  # 于是 PTC 的 `registry[TOOL_RUNTIME_SCHEDULER].prepare(...)` 拿到 undefined ⇒
+  # **dev 态任何子 Agent 委派都报 `Cannot read properties of undefined (reading 'prepare')`**。
+  # `workspace:` 会把 peer 一并收敛到同一 workspace 实例；切换后实测解析点
+  # 从「fork 26 / 官方 32」变为「fork 38 / 官方 0」（对照：`dsh-fs-local` 因不被声明为 peer，
+  # `link:` 一直有效，故不能用它反证 link 可用）。
+  # 打包态（`pnpm pack` 的扁平闭包）天然去重，故该缺陷**只在 dev 态暴露**——
+  # 这也是它长期未被发现的原因（历史验收都在打包态做）。
   # 升级 runbook：官方 dsh-tools 升级时按 docs/fork-delta.md §5 第 3 步三方合并本 fork 的 index.ts。
-  '@deepseek-ai/dsh-tools': 'link:packages/plugins/agent/corum-tools'
+  '@deepseek-ai/dsh-tools': 'workspace:@corum/corum-tools@*'
   '@deepseek-ai/dsh-typert-loader': '0.1.5-rc.3'
   '@deepseek-ai/dsh-typert-protocol': '0.1.5-rc.3'
   '@deepseek-ai/dsh-typert-registry': '0.1.5-rc.3'
