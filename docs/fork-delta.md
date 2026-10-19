@@ -592,7 +592,7 @@ boot 零报错（host ready）→ UI 渲染（侧栏+空态操作卡+最近列�
 | `types.ts` | +7 | `SubagentStartRequest.cwd?: string`（jsdoc 注明硬隔离轴心语义） | 低（纯增量字段，官方未占用该键） |
 | `child-agent.ts` | ±6 | `childSessionMeta` 增第 4 参 `cwd?: string`；`effectiveCwd = cwd ?? parentHeader.cwd` | **中**（官方若改签名/增参需三方合并；调用点 3 处） |
 | `continuation.ts` | ±5 / **+96（2026-09-09 增量）** | ① cwd 透传 + `assertChildCwd(request.cwd)` 校验 + depth import；② **用户停止级联**：`userStopped` 标记 + `stopConversation`/`resumeConversation`/`descendantActivations`/`userStoppedFor` + `notifySettlement` 的「已停止父会话只注入不唤醒」分支（见 §10.11） | **中**（官方若重写 `notifySettlement` 的唤醒判定或 Activation 结构，需三方合并这两处） |
-| `driver/index.ts` | ±6 | one-shot 透传 `request.cwd` + import 重定向 `'@deepseek-ai/dsh-subagent'` → `'../index.ts'` | 低 |
+| `driver/index.ts` | ±6 / **+1（2026-10-19 修复）** | one-shot 透传 `request.cwd` + import 重定向 `'@deepseek-ai/dsh-subagent'` → `'../index.ts'`；**2026-10-19 补回官方 `parentAgent`**（语义漂移事故，见 §10.12） | 低 |
 | `depth.ts` | +17 | `assertChildCwd`（绝对路径 + 已存在校验，`INVALID_CWD`；node:fs/path import） | 低（纯增量函数） |
 | `index.ts` | ±3 / **+50（2026-09-09 增量）** | ① one-shot `start()` 校验调用 + depth import；② `stopConversation`/`resumeConversation` 服务面 + `session/event` / `session/disposed` 监听（用户停止判据，见 §10.11） | 低（纯增量方法/监听） |
 | `invariant.ts` | ±4 | PACKAGE_NAME → `@corum/corum-subagent`、插件名 → `corum-subagent-invariant` | 低（机械） |
@@ -673,6 +673,47 @@ subagents"，host 不会 ready）。
 rebase 风险从**中**上调为**高**——官方 `dsh-subagent` 每次版本 bump，fork 的
 continuation（1728 行）+ child-agent/depth/types/driver/spawn 都要三方合并，且 11
 spec 需每版本重跑等价验证。
+
+---
+
+### 10.12 语义漂移事故：`parentAgent` 在升级中丢失（2026-10-19，issue #75 真因）
+
+**现象**：子 Agent 调 `ask_user_question` 不返回官方预期的 `DELEGATED_CALLER`，而是
+挂死——前台委派下父 Agent 一起阻塞，直到用户手动点停止（实测会话 `f185c1b9`：
+工具调用到 `ASK_ABORTED` 历时 **517 s**，abort 完全来自用户操作）。
+
+**根因**：
+1. 官方 `0b8956aab9`（refactor(agent): move runtime parent into options，2026-09-02）
+   把运行期 owner 从「loop 隐式取 `ownerCtx.agent`」改为「读 `options.parentAgent`」，
+   并删掉旧的第二位置参；
+2. 本 fork 建于 `dsh-v0.1.3-alpha.1`，该 tag **早于**此提交
+   （`git merge-base --is-ancestor 0b8956aab9 dsh-v0.1.3-alpha.1` = NO）⇒ 基线里
+   本来就没有这个字段，抄过来是对的；
+3. 升级 0.1.5 时未跟改，而 `parentAgent?: Agent` 是**可选字段** ⇒ 编译期零报错，
+   `verify-fork-drift.sh` §16 只校验「corum 增量在不在」、不做官方参数面对账 ⇒
+   运行期静默失真，**整条链路上没有任何一处会红**。
+
+**失效链**：`create` 缺 `parentAgent` ⇒ `entry.owner === undefined` ⇒
+`agents.roots()` 把子 Agent 当成顶层 Agent ⇒ `userQuestions.ask()`
+（`interaction/user-questions/src/index.ts:101-106`）的 `DELEGATED_CALLER` 门禁放行
+⇒ 提问请求落到 **scope 在子会话** 的 `user-questions/request` waterfall，客户端按
+会话渲染卡片 ⇒ 子会话不可视 ⇒ 无处显示 ⇒ 永久等待。
+
+**同源影响面**（同一 `owner` 轴，不止提问）：`hasApiSessionSubagentOwner`
+（`api/session-controller/src/agent.ts:80-90` 的第二判据）、`tool-goal` 的
+`hasDirectHumanInput`（`goal/tool-goal/src/authority.ts:81`）都以 `roots()` 为门禁。
+
+**修法**：`src/driver/index.ts` 补 `parentAgent: parent`。
+
+**防回潮**：
+- `tests/ownership.spec.ts`（新增）——真起子 Agent，断言 `isOwnedBy` 成立、
+  `roots()` 不含它、官方 ask 门禁判定式为「拒绝」，并带父 Agent 控制组；
+- 已双向验证：回退该行 ⇒ 两个用例全红；恢复 ⇒ 全绿。
+- `verify-fork-drift.sh` §16 增补 `parentAgent` 存在性断言。
+
+**教训**：官方把**可选**字段加入已有 API 时，fork 的「编译过 + 测试绿」完全不足以
+发现漏同步。`verify-fork-drift` 需要覆盖「官方核心调用面参数」，而不只是
+「corum 增量是否还在」。
 
 ---
 

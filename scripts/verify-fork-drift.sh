@@ -1205,6 +1205,22 @@ if code_has 'assertChildCwd(request.cwd)' "$SUBAGENT_FORK/src/index.ts" && code_
 else
   fail "缺 assertChildCwd 入口（one-shot 或 continuable 之一漏校验）"
 fi
+# 2026-10-19（issue #75 真因）：官方 `0b8956aab9` 把运行期 owner 从「loop 隐式取
+# ownerCtx.agent」改为「读 options.parentAgent」。本 fork 基线（dsh-v0.1.3-alpha.1）
+# 早于该提交，升级时漏跟改——而 parentAgent 是**可选字段**，编译期零报错，于是
+# 子 Agent 被注册成 root：`userQuestions.ask()` 的 DELEGATED_CALLER 门禁放行，
+# 提问落到子会话 scope 的 waterfall 上无处渲染，前台委派下父 Agent 一起永久挂起
+# （实测一次 ask 挂 517s 直到用户手动停止）。见 docs/fork-delta.md §10.12。
+if code_has 'parentAgent: parent' "$SUBAGENT_FORK/src/driver/index.ts"; then
+  pass "one-shot driver 传 parentAgent（子 Agent 的运行期 owner 成立）"
+else
+  fail "driver/index.ts 缺 parentAgent: parent —— 子 Agent 会被注册成 root，官方 ask/goal 的 root-only 门禁全部失效"
+fi
+if code_has 'parentAgent: parent' "$SUBAGENT_FORK/src/continuation-activation.ts"; then
+  pass "continuable 入口传 parentAgent（两条创建路径口径一致）"
+else
+  fail "continuation-activation.ts 缺 parentAgent: parent —— 与 one-shot 路径口径不一致"
+fi
 
 # ── 17. 官方 preset 本地副本（shipped-presets/official）──────────────────────
 # 用户 2026-09-09 拍板「给官方换上」：官方四模式（standard/ptc/cordis/minimal）
