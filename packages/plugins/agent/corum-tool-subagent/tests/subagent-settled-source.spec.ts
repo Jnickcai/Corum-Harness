@@ -73,10 +73,15 @@ describe('subagent-settled 消息源字段完整性 — 每个 source 都含 sen
       expect(block, `subagent-settled source #${count} at offset ${idx} lacks senderSessionId`).toContain('senderSessionId')
       from = tailIdx + 1
     }
-    // 6 个写 subagent-settled source 的通知函数（corumNotifyPartialIntegration /
-    // PendingIntegration / VerifyRejected / ForegroundResult / ModelDecision /
-    // SettleCommitFailures），全部都应含 senderSessionId。
-    expect(count, 'subagent-settled source 数量异常（可能扫描逻辑坏了）').toBe(6)
+    // 5 个写 subagent-settled source 的通知函数（corumNotifyPartialIntegration /
+    // PendingIntegration / ForegroundResult / ModelDecision / SettleCommitFailures），
+    // 全部都应含 senderSessionId。
+    //
+    // 2026-10：**从 6 降到 5**——`corumNotifyVerifyRejected` 随 `merge` 字段一起退役
+    // （收尾改由 closer 承担，被拒形态由它的 persona 逐条报告，不再走第二条 notice 通路）。
+    // 这条断言是「新增/修改 subagent-settled source 别漏写 senderSessionId」的结构兜底，
+    // 数量变化本身不是失败信号，但必须**显式改一次**——静默漂移才是。
+    expect(count, 'subagent-settled source 数量异常（可能扫描逻辑坏了）').toBe(5)
   })
 
   it('corumNotifyModelDecision 在无 childId 时走 logger.warn（不注入缺字段的 source）', () => {

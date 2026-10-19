@@ -264,6 +264,39 @@ export const zh = {
   'terminalCard.status.failed': '{shell} · 失败',
   'terminalCard.lines.expanded': '{commands} 行命令 · {output} 行输出',
   'terminalCard.lines.collapsed': '{output} 行输出',
+  // ── 编排卡的结尾节点（收尾 / closer，2026-10 编排黑盒化）─────────────────
+  // 机制取消了 `merge` 字段，收尾改由机制按**隔离实况**自动判定的 closer 完成，
+  // 三场景：merge（有隔离分支 ⇒ 合并+验证+提交）/ summarize（全 main ⇒ 只汇总）/
+  // research（全只读 ⇒ 核查报告）。卡片要如实呈现「这次到底有没有合并」。
+  'orchestrate.close.stageTitle': '串行收尾',
+  'orchestrate.close.title': '收尾 · 汇总全部任务',
+  // 运行期两态：队列中（还有任务在跑）/ 收尾中（任务全终态，closer 在跑）。
+  'orchestrate.close.queued': '队列中',
+  'orchestrate.close.queuedSub': '队列中 · 全部并行任务完成后自动收尾',
+  'orchestrate.close.closing': '收尾中',
+  'orchestrate.close.closingSub': '收尾中 · 正在汇总各任务结果并写出收尾报告',
+  // 失败 / 待定（历史会话或异常结果）。
+  'orchestrate.close.failed': '收尾失败',
+  'orchestrate.close.failedSub': '收尾失败 · 各任务引用仍可用，见工具结果（需主 Agent 处理）',
+  'orchestrate.close.pending': '未收尾',
+  'orchestrate.close.pendingSub': '未收尾 · 结果里没有收尾信息，见任务结果',
+  // 成功三场景（互斥，由 `closer.scenario` 决定）。
+  'orchestrate.close.merged': '已集成',
+  'orchestrate.close.doneMerge': '已串行完成合并、验证与提交',
+  'orchestrate.close.summarized': '已汇总',
+  'orchestrate.close.doneSummarize': '全部任务在主树直跑，无分支可合 —— 是否合并由主 Agent 稍后决定',
+  'orchestrate.close.researched': '已核查',
+  'orchestrate.close.doneResearch': '全部任务为只读调研，已汇成核查报告',
+  // 收尾者子会话入口。
+  'orchestrate.close.gotoTitle': '进入收尾者会话 {session}',
+  'orchestrate.close.gotoAria': '进入收尾者会话',
+  // 收尾报告（closer.report）——黑盒化后各任务正文的唯一去处。
+  'orchestrate.close.reportExpand': '展开收尾报告',
+  'orchestrate.close.reportCollapse': '收起收尾报告',
+  'orchestrate.close.reportTruncated': '报告较长，已截断',
+  'orchestrate.close.reportFullHint': '完整报告请进入收尾者子会话查看',
+  // 机制收拢的内部说明（原本会以 notice 注入父会话的那些）。
+  'orchestrate.close.notesTitle': '机制内部说明（{count} 条）',
 } satisfies Record<string, string>
 
 /** Chat dictionary key union. */
@@ -514,4 +547,28 @@ export const en = {
   'terminalCard.status.failed': '{shell} · Failed',
   'terminalCard.lines.expanded': '{commands} cmd lines · {output} output lines',
   'terminalCard.lines.collapsed': '{output} output lines',
+  // ── Orchestrate card's closing node (closer, 2026-10 orchestration black-boxing) ──
+  'orchestrate.close.stageTitle': 'Serial finish',
+  'orchestrate.close.title': 'Closer · summarize all tasks',
+  'orchestrate.close.queued': 'Queued',
+  'orchestrate.close.queuedSub': 'Queued · finishes automatically once every parallel task settles',
+  'orchestrate.close.closing': 'Finishing',
+  'orchestrate.close.closingSub': 'Finishing · collecting every task result and writing the report',
+  'orchestrate.close.failed': 'Finish failed',
+  'orchestrate.close.failedSub': 'Finish failed · per-task references are intact, see the tool result (the parent agent must handle it)',
+  'orchestrate.close.pending': 'Not finished',
+  'orchestrate.close.pendingSub': 'Not finished · the result carries no closer info, see the task results',
+  'orchestrate.close.merged': 'Integrated',
+  'orchestrate.close.doneMerge': 'Branches merged, verified and committed in one serial pass',
+  'orchestrate.close.summarized': 'Summarized',
+  'orchestrate.close.doneSummarize': 'Every task ran in the main tree — nothing to merge; the parent agent decides later',
+  'orchestrate.close.researched': 'Reviewed',
+  'orchestrate.close.doneResearch': 'Every task was read-only research; findings are collected in the report',
+  'orchestrate.close.gotoTitle': 'Open the closer session {session}',
+  'orchestrate.close.gotoAria': 'Open the closer session',
+  'orchestrate.close.reportExpand': 'Expand the closer report',
+  'orchestrate.close.reportCollapse': 'Collapse the closer report',
+  'orchestrate.close.reportTruncated': 'The report is long and was truncated',
+  'orchestrate.close.reportFullHint': 'Open the closer session for the full report',
+  'orchestrate.close.notesTitle': 'Mechanism notes ({count})',
 } satisfies Record<ChatKey, string>

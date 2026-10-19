@@ -180,6 +180,7 @@
 }
 
 .mergeNode[data-state='done'] { color: var(--orch-done); border-color: var(--orch-done); }
+.mergeNode[data-state='failed'] { color: var(--orch-failed); border-color: var(--orch-failed); }
 .mergeNode[data-state='idle'] { color: var(--orch-idle); }
 
 /* 分支列 + 合并汇总阶段共用一列纵向叠放（card-merge x=64 与 brX-card 同列，
@@ -354,6 +355,87 @@
 
 .mergeCard[data-state='idle'] {
   border-color: var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+}
+
+/* 结尾节点（收尾）的五态描边（2026-10 编排黑盒化）：
+   queued=品牌蓝（机制在等任务收尾，**不是**某个分支在跑）/ closing=warn 色
+   （closer 真在跑）/ done=success / failed=error / pending=warn（需人插手）。
+   与 .mergeNode 的 done|failed|idle 三态一一对应，视觉语言不变。 */
+.mergeCard[data-state='queued'] { border-color: var(--dsw-alias-brand-primary); }
+.mergeCard[data-state='closing'] { border-color: var(--orch-running); }
+.mergeCard[data-state='failed'] { border-color: var(--orch-failed); }
+.mergeCard[data-state='pending'] { border-color: var(--orch-running); }
+
+.mergeCard[data-state='closing'] .mergeIcon { color: var(--orch-running); }
+.mergeCard[data-state='failed'] .mergeIcon { color: var(--orch-failed); }
+
+/* 收尾报告（closer.report）——黑盒化后各任务正文的唯一去处。
+   与 mergeCard 同宽、底色更弱（它是**卡内的一段正文**，不是又一个节点）。 */
+.reportBox {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--corum-density-scale, 1));
+  padding: calc(8px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1));
+  border-radius: 8px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.4));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  min-width: 0;
+}
+
+/* 报告展开/收起按钮：无边框、与分支详情标题同语言（品牌色小字 + 图标）。 */
+.reportToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(5px * var(--corum-density-scale, 1));
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reportToggle:hover { color: var(--dsw-alias-brand-primary); }
+
+.reportIcon { flex: none; }
+
+.reportToggleText { white-space: nowrap; }
+
+/* 报告正文：收起态 = 截断摘要（不撑爆瀑布流），展开态 = 全文可滚动。
+   等宽换行 + 保留换行，让 markdown 的行结构不被压平。 */
+.reportBody {
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.reportBody[data-expanded] { max-height: 320px; }
+
+/* 截断 / 「进子会话看全文」的提示行——比正文更弱，不抢视线。 */
+.reportHint {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.8;
+}
+
+/* 机制内部说明（编排期间收拢的 settle 通知等）：逐条列出，等宽可折行。 */
+.notesTitle {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.notesItem {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  line-height: 1.45;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* card-merge 里的 git-merge 图标 16×16（设计稿 dQ5k7 同名 lucide 图标）。 */

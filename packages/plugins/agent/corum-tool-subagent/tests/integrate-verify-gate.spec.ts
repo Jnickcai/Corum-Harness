@@ -350,23 +350,50 @@ describe('输出 schema 与返回值/投影字段对齐（防 INVALID_TOOL_OUTPU
     expect(integrationSchemaBlock()).toContain('rejected: { type: \'string\', enum: [\'unmerged\', \'verify\'] }')
   })
 
-  it('schema 声明的每个 integration 字段，都在 catch 构造与 render 投影里出现（三处对齐）', () => {
+  /**
+   * fork（corum）2026-10：**对齐对象改成 `closer`**（`merge` 字段取消后新增的收尾节点结果）。
+   *
+   * 旧断言钉的是 `integration` 的「schema ↔ catch 构造 ↔ render 投影」三处对齐。`integration`
+   * 现在只为历史会话回放保留（新结果不再产生，见 render 里的 `@deprecated`），真正有漂移风险的
+   * 对象换成了 `closer`——它同样是 `additionalProperties: false`，少声明一个字段就是
+   * `INVALID_TOOL_OUTPUT` 整块吞结果（本仓已因同一形态栽过两次）。
+   */
+  it('schema 声明的每个 closer 字段，都在 runCloser 的构造与 render 投影里出现（三处对齐）', () => {
+    const start = SRC.indexOf("closer: {\n                    type: 'object'")
+    expect(start, 'orchestrate output schema 的 closer 段未找到').toBeGreaterThanOrEqual(0)
+    // 取样终点必须是 **schema 里紧跟其后的 `script:` 段**——不能取 `parentTreeTasks`（太远，
+    // 会把 script/integration 两个别的对象的字段一起算进来），也不能取 `integration: {`
+    // （它前面还隔着 script 段）。第一次写这条断言时两种错锚都踩过。
+    const end = SRC.indexOf("script: {\n                    type: 'object'", start)
+    expect(end).toBeGreaterThan(start)
+    const schema = SRC.slice(start, end)
+    expect(schema).toContain('additionalProperties: false')
+    // 字段名恒在**恰好 22 空格**缩进上（`closer:` 是 18、其 properties 是 20、字段是 22）。
+    // ⚠️ 用 `[ ]` 而不是 `\s`：`\s` 会跨行吃掉换行，把字段名切错（第一次写这条断言就踩了）。
+    const declared = [...schema.matchAll(/^ {22}(\w+):/gmu)].map(m => m[1])
+    expect(declared.length).toBeGreaterThanOrEqual(6)
+    // runCloser 的返回构造（成功路径 + 失败路径各一处）。
+    const closerFnStart = SRC.indexOf('const runCloser = async (')
+    expect(closerFnStart).toBeGreaterThanOrEqual(0)
+    const closerFn = SRC.slice(closerFnStart, closerFnStart + 5200)
+    const renderStart = SRC.indexOf('structured.closer = {')
+    expect(renderStart).toBeGreaterThanOrEqual(0)
+    const renderBlock = SRC.slice(renderStart, renderStart + 1200)
+    for (const field of declared) {
+      expect(closerFn, `schema 声明了 closer.${field}，但 runCloser 从不产出它`).toContain(field)
+      expect(renderBlock, `schema 声明了 closer.${field}，但 render 投影没有透出它（模型/卡片读不到）`).toContain(`out.closer.${field}`)
+    }
+  })
+
+  it('integration schema 仍与 render 投影对齐（历史会话回放路径）', () => {
     const schema = integrationSchemaBlock()
     const declared = [...schema.matchAll(/^\s{22}(\w+):/gmu)].map(m => m[1])
     expect(declared.length).toBeGreaterThanOrEqual(5)
-    // catch 里构造 integration 对象的那一段。
-    const catchStart = SRC.indexOf('const rejected = integrateError instanceof CorumIntegrateRejected')
-    expect(catchStart).toBeGreaterThanOrEqual(0)
-    const catchBlock = SRC.slice(catchStart, catchStart + 1600)
-    // render 的 structured.integration 投影段。
     const renderStart = SRC.indexOf('structured.integration = {')
     expect(renderStart).toBeGreaterThanOrEqual(0)
     const renderBlock = SRC.slice(renderStart, renderStart + 900)
     for (const field of declared) {
-      const inCatch = catchBlock.includes(field)
-      const inRender = renderBlock.includes(`out.integration.${field}`)
-      expect(inCatch || inRender, `schema 声明了 integration.${field}，但 catch 构造与 render 投影两处都没提到它`).toBe(true)
-      expect(inRender, `schema 声明了 integration.${field}，但 render 投影没有透出它（模型/卡片读不到）`).toBe(true)
+      expect(renderBlock, `schema 声明了 integration.${field}，但 render 投影没有透出它`).toContain(`out.integration.${field}`)
     }
   })
 })

@@ -69,7 +69,6 @@ export {
   corumResolveRejectedIntegration,
   CORUM_INTEGRATE_VERIFY_TIMEOUT_MS,
   corumMutationToolsForPlatform,
-  corumAutoIntegrate,
   corumReapRestoredEntries,
   corumReapOrphanWorktrees,
   corumListIsolatedWorktrees,
@@ -88,6 +87,16 @@ export {
   corumPortPendingBranches,
   corumMergeBase,
   corumIntegratorPersona,
+  // fork（corum）2026-10：编排收尾节点（closer）——黑盒化后整次编排统一结算的那一个角色。
+  corumCloserPersona,
+  corumOrchestrateReportPath,
+  corumWriteOrchestrateReport,
+  // fork（corum）2026-10 修复②：closer 成功后按台账实况作废「待集成」类内部说明。
+  corumDropResolvedIntegrationNotes,
+  corumPendingBranchesOf,
+  // fork（corum）2026-10 修复③（B 方案）：单个 research 子 Agent 的报告落盘。
+  corumResearchReportPath,
+  corumWriteReportFile,
   corumDirectWriteNotice,
   type CorumDirectWriteReason,
   corumIsGitRepo,
@@ -128,6 +137,9 @@ export type {
   ConfinementViolationKind,
 } from './confinement.ts'
 export type {
+  // fork（corum）2026-10：收尾节点（closer）的入参形状与三态场景。
+  CorumCloserScenario,
+  CorumCloserTaskRef,
   CorumWorktreeChild,
   CorumChildSpawnFacts,
   CorumSettleCommitFailure,
