@@ -187,6 +187,24 @@ export async function startInProcessRun(
 
   const handle = await parent.ctx.agents.create({
     sessionId: childId,
+    // fork（corum）2026-10-19：**运行期归属（owner）必须显式传**，否则子 Agent
+    // 会被注册成 root —— 这是一处被官方语义变更打断后遗留的漏改，不是设计。
+    //
+    // 官方在 `0b8956aab9`（refactor(agent): move runtime parent into options，
+    // 2026-09-02）把 owner 从「loop 隐式取 `ownerCtx.agent`」改为「读
+    // `options.parentAgent`」，同一提交删掉了旧的第二位置参。本 fork 建于
+    // dsh-v0.1.3-alpha.1（该提交**晚于**此 tag，`git merge-base --is-ancestor`
+    // 为 NO），基线里本就没有这个字段——升级 0.1.5 时未跟改，而它是**可选字段**，
+    // 编译器不报错，于是整条链路上无人发现。
+    //
+    // 后果：`entry.owner === undefined` ⇒ `agents.roots()` 把子 Agent 也当成顶层
+    // Agent ⇒ `userQuestions.ask()` 的 `DELEGATED_CALLER` 门禁放行 ⇒ 子 Agent 的
+    // 提问请求落到 scope 在子会话的 waterfall 上无人认领 ⇒ **前台委派下父 Agent
+    // 一起永久挂起**（issue #75 实测：一次 ask 直至用户手动停止才被 abort，517s）。
+    //
+    // 官方对照：`@deepseek-ai/dsh-subagent` manager.ts 的
+    // `this.ownerCtx.agents.create({ parentAgent: parent, ... })`。
+    parentAgent: parent,
     meta: childSessionMeta(parent, childDepth, seed !== undefined, request.cwd),
     ...seed !== undefined ? { seed } : {},
     ...seed === undefined ? {} : { inheritedEventCount: activationBoundary },

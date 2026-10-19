@@ -1120,10 +1120,20 @@ if code_has 'JSON.stringify(error)' "$TOOLS_FORK/src/index.ts" && code_has 'json
 else
   fail "index.ts 的 errorMessage 缺 JSON.stringify 增量——工具失败对象会退回官方 [object Object]"
 fi
-if code_has_re "^  '@deepseek-ai/dsh-tools': 'link:packages/plugins/agent/corum-tools'" "$REPO_ROOT/pnpm-workspace.yaml"; then
-  pass "pnpm-workspace.yaml 把 dsh-tools 解析到 fork（消费方共用它）"
+# 2026-10-19（dev 态子 Agent 委派必挂的真因）：必须是 `workspace:` 协议。
+# `link:` 形式的 override **不参与 peer 求解** —— `dsh-tools` 被约 30 个官方包声明为
+# peerDependency，link 会让同一个官方包并存两个 peer 变体（一链 fork、一链 npm 官方包），
+# 两份实例各自 `Symbol()` 的 `TOOL_RUNTIME_SCHEDULER` 不相等 ⇒ PTC 的
+# `registry[TOOL_RUNTIME_SCHEDULER].prepare()` 拿到 undefined ⇒ 报
+# `Cannot read properties of undefined (reading 'prepare')`。
+# 实证：切到 workspace: 后 dsh-tools 解析点从「fork 26 / 官方 32」变为「fork 38 / 官方 0」。
+# 详见 docs/fork-delta.md §18.1。
+if code_has_re "^  '@deepseek-ai/dsh-tools': 'workspace:@corum/corum-tools@" "$REPO_ROOT/pnpm-workspace.yaml"; then
+  pass "pnpm-workspace.yaml 用 workspace: 协议把 dsh-tools 收敛到 fork（peer 一并收口）"
+elif code_has_re "^  '@deepseek-ai/dsh-tools': 'link:" "$REPO_ROOT/pnpm-workspace.yaml"; then
+  fail "dsh-tools 的 override 用了 link: —— 它不参与 peer 求解，dev 态会并存两份实例（Symbol 不等）⇒ 子 Agent 委派必报 prepare 错误；请改用 workspace:@corum/corum-tools@*"
 else
-  fail "pnpm-workspace.yaml 缺 dsh-tools 的 link: override——fork 不会在应用里生效（消费方仍加载官方包）"
+  fail "pnpm-workspace.yaml 缺 dsh-tools 的 fork override——消费方仍加载官方包（工具失败对象退回 [object Object]）"
 fi
 if code_has '"@corum/corum-tools"' "$REPO_ROOT/packages/desktop/desktop-host/package.json"; then
   pass "desktop-host 闭包登记 fork（deploy 物化为真实目录）"
@@ -1204,6 +1214,22 @@ if code_has 'assertChildCwd(request.cwd)' "$SUBAGENT_FORK/src/index.ts" && code_
   pass "两个入口（start / continuable）都做 cwd 校验"
 else
   fail "缺 assertChildCwd 入口（one-shot 或 continuable 之一漏校验）"
+fi
+# 2026-10-19（issue #75 真因）：官方 `0b8956aab9` 把运行期 owner 从「loop 隐式取
+# ownerCtx.agent」改为「读 options.parentAgent」。本 fork 基线（dsh-v0.1.3-alpha.1）
+# 早于该提交，升级时漏跟改——而 parentAgent 是**可选字段**，编译期零报错，于是
+# 子 Agent 被注册成 root：`userQuestions.ask()` 的 DELEGATED_CALLER 门禁放行，
+# 提问落到子会话 scope 的 waterfall 上无处渲染，前台委派下父 Agent 一起永久挂起
+# （实测一次 ask 挂 517s 直到用户手动停止）。见 docs/fork-delta.md §10.12。
+if code_has 'parentAgent: parent' "$SUBAGENT_FORK/src/driver/index.ts"; then
+  pass "one-shot driver 传 parentAgent（子 Agent 的运行期 owner 成立）"
+else
+  fail "driver/index.ts 缺 parentAgent: parent —— 子 Agent 会被注册成 root，官方 ask/goal 的 root-only 门禁全部失效"
+fi
+if code_has 'parentAgent: parent' "$SUBAGENT_FORK/src/continuation-activation.ts"; then
+  pass "continuable 入口传 parentAgent（两条创建路径口径一致）"
+else
+  fail "continuation-activation.ts 缺 parentAgent: parent —— 与 one-shot 路径口径不一致"
 fi
 
 # ── 17. 官方 preset 本地副本（shipped-presets/official）──────────────────────
