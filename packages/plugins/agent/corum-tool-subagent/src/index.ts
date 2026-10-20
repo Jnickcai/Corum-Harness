@@ -243,8 +243,6 @@ import {
 } from './settings-namespace.ts'
 // fork（corum）2026-10-18（issue #75）：伪前台门禁 service。
 import { acquireCorumForegroundGate, CorumForegroundGate } from './foreground-gate.ts'
-// fork（corum）2026-10-18（issue #75 #9）：伪前台 busy 语义的 session projection。
-import { corumForegroundBusyProjectionDefinition, appendForegroundBusyEvent } from './foreground-busy-projection.ts'
 
 // 保持对外导出面不变（此前这些名字直接定义在本文件，外部/测试可能引用）。
 export {
@@ -899,8 +897,6 @@ function corumPseudoForegroundWait(
       result = await run.result
     } catch (error: unknown) {
       gate.release(parent.id, childId)
-      // fork（corum）#9：emit corum/foreground-busy event → 客户端 projection 更新 busy=false（若全部 settle）。
-      appendForegroundBusyEvent(parent.session, gate.isBlocking(parent.id), gate.pendingChildren(parent.id))
       try {
         parent.followup(createUserMessage({
           content: [{ type: 'text', text: `Subagent (${label}) settled with an infrastructure fault: ${error instanceof Error ? error.message : String(error)}` }],
@@ -918,8 +914,6 @@ function corumPseudoForegroundWait(
       return
     }
     gate.release(parent.id, childId)
-    // fork（corum）#9：emit corum/foreground-busy event → 客户端 projection 更新 busy。
-    appendForegroundBusyEvent(parent.session, gate.isBlocking(parent.id), gate.pendingChildren(parent.id))
     const error = stopReasonError(result)
     if (error !== undefined) {
       // fork（corum）：模型/传输失败（stopReason==='error'）——伪前台阶段如实上报，
@@ -2236,8 +2230,6 @@ export function apply(ctx: Context, config: Config): void {
 
   const modelSelectionCapable = config.modelSelectionSettings === true
   ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
-  // fork（corum）2026-10-18（issue #75 #9）：伪前台 busy 投影（客户端据此判父 Agent idle 但仍在忙）。
-  ctx.sessionProjections.register(corumForegroundBusyProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     if (typeof config.maxDepth === 'number' && !subagentProvider.capabilities.depthLimit) {
@@ -3176,8 +3168,6 @@ export function apply(ctx: Context, config: Config): void {
             // 父 Agent dispose / 停止时，gate.disposeAllFor 直接 run.dispose() 杀掉子 Agent。
             // 这是中断一次性 run 的唯一有效路径（cancel 在 idle 时 no-op、interrupt 对 one-shot 静默 no-op）。
             foregroundGate.track(parent.id, childId, run)
-            // fork（corum）#9：emit corum/foreground-busy event → 客户端 projection 判 busy。
-            appendForegroundBusyEvent(parent.session, true, foregroundGate.pendingChildren(parent.id))
             // 异步 waiter：等 run.result settle → 释放门禁 → followup 通知 → dispose。
             corumPseudoForegroundWait(run, parent, childId, args.label, foregroundGate, runtimeCtx.logger)
             // fork（corum）5.6 问题 3：必须 concludeTurn()，否则父 Agent 在同一 turn 内继续干活、
