@@ -14,6 +14,7 @@
     "build:verify": "node scripts/build-all.mjs --verify",
     "verify:plugin-spec": "node scripts/verify-plugin-spec.mjs",
     "verify:plugin-spec:strict": "node scripts/verify-plugin-spec.mjs --strict",
+    "verify:plugin-ui": "node scripts/verify-plugin-ui-surface.mjs",
     "verify:publish-shape": "node scripts/verify-plugin-publish-shape.mjs",
     "verify:plugin-install": "node scripts/verify-plugin-install-e2e.mjs",
     "typecheck": "pnpm -r run typecheck",

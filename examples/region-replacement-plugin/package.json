@@ -50,7 +50,8 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@corum/plugin-sdk": "workspace:*"
+    "@corum/plugin-sdk": "workspace:*",
+    "@corum/plugin-ui-contract": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

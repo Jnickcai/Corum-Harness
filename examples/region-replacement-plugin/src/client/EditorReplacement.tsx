@@ -82,6 +82,10 @@ export function EditorReplacement({ callRemote }: EditorReplacementProps): React
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined)
 
   const platform = useMemo(() => bridge()?.getPlatform?.() ?? 'unknown', [])
+  // 设置页（设置 › 扩展）写这个键；本面板读它 —— 演示「设置页写、区域面板读」的链路。
+  const showTokens = useMemo(() => {
+    try { return window.localStorage.getItem('region-replacement.showThemeTokens') !== '0' } catch { return true }
+  }, [])
 
   useEffect(() => {
     void bridge()?.getAppVersion?.().then(setAppVersion).catch(() => undefined)
@@ -122,7 +126,7 @@ export function EditorReplacement({ callRemote }: EditorReplacementProps): React
             <div style={S.label}>已装功能插件数（宿主 RPC）</div>
             <div style={S.value}>{pluginCount ?? (rpcError === undefined ? '查询中…' : `失败：${rpcError}`)}</div>
           </div>
-          <div style={S.cell}>
+          {showTokens && <div style={S.cell}>
             <div style={S.label}>主题 token 取样</div>
             <div style={S.swatches}>
               <span style={{ ...S.swatch, background: 'var(--corum-glass-1)' }} title="--corum-glass-1" />
@@ -130,7 +134,7 @@ export function EditorReplacement({ callRemote }: EditorReplacementProps): React
               <span style={{ ...S.swatch, background: 'var(--dsw-alias-label-primary)' }} title="--dsw-alias-label-primary" />
               <span style={{ ...S.swatch, background: 'var(--corum-glass-border)' }} title="--corum-glass-border" />
             </div>
-          </div>
+          </div>}
         </div>
 
         <p style={S.note}>
