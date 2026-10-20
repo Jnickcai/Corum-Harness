@@ -49,6 +49,8 @@ const TARGETS = [
   'packages/plugins/agent/corum-fs-local',
   // 第三方插件的最小依赖面：它的「1 个 SDK」承诺必须在这里被证，而不是靠文档。
   'packages/sdk/corum-plugin-sdk',
+  // 插件 UI 契约：第三方只需要它 + SDK 就能覆盖右侧区域、加设置页。
+  'packages/sdk/corum-plugin-ui-contract',
 ]
 
 const failures = []
@@ -243,8 +245,9 @@ if (installed) {
     "import { makeCorumRpcCall } from '@corum/corum-rpc-client/client'",
     "import type { CorumRpcCall } from '@corum/corum-rpc-client/client'",
     "import { defineTool } from '@corum/corum-tools'",
+    "import { registerRegionOverride, registerSettingsSection, PLUGIN_UI_SLOTS } from '@corum/plugin-ui-contract'",
     '',
-    'export const probe = { registerSlot, getSlotMeta, makeCorumRpcCall, defineTool }',
+    'export const probe = { registerSlot, getSlotMeta, makeCorumRpcCall, defineTool, registerRegionOverride, registerSettingsSection, PLUGIN_UI_SLOTS }',
     'export type Probe = CorumRpcCall',
     '',
   ].join('\n'))
@@ -269,6 +272,7 @@ if (installed) {
     "import { definePlugin } from '@corum/plugin-sdk'",
     "import type { Context } from '@corum/plugin-sdk'",
     "import { defineClientPlugin, registerSlot, RegionCard, makeCorumRpcCall } from '@corum/plugin-sdk/client'",
+    "import { registerRegionOverride, registerSettingsSection, REGION_OVERRIDE_SLOTS } from '@corum/plugin-ui-contract'",
     "import type { SlotMeta, CorumRpcCall } from '@corum/plugin-sdk/client'",
     '',
     'export const hostPlugin = definePlugin({ name: "probe", inject: [], apply: (_ctx: Context) => undefined })',

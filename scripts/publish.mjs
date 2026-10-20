@@ -51,6 +51,7 @@ const LAYER = argValue('layer', 'public')
 /** 公开层：第三方插件开发真正需要的面（方案 §A.2）。 */
 const PUBLIC_LAYER = new Set([
   '@corum/plugin-sdk',
+  '@corum/plugin-ui-contract',
   '@corum/plugin-build',
   '@corum/corum-ui-base',
   '@corum/corum-rpc-client',
