@@ -45,11 +45,18 @@ export interface ToolsFace {
  */
 export const defineAgentTool: typeof defineTool = defineTool
 
+/** 工具名约束（DeepSeek wire 契约：≤64 字符、`[A-Za-z0-9_-]`）。 */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
 /**
  * 注册一条工具到 Agent 的工具面。
  *
  * 注册失败时抛出**指名道姓**的错误（工具名 + 原因）—— 工具是模型能直接看到的东西，
  * 静默失败会让插件作者以为「我注册了」，实际 Agent 从来没用过它。
+ *
+ * ⚠️ **时序**：工具面在每一回合开头就被快照，所以注册必须在 `apply(ctx)` 里**同步**完成
+ * （`ctx.effect(...)` 会立即执行），不要 `await` 网络/IO 之后再注册 —— 那会导致
+ * 「第一回合没工具、第二回合才有」（本仓 MCP 代理踩过同样的坑）。
  *
  * @param tools - `ctx.tools`（插件需 `inject: ['tools']`）。
  * @param definition - `defineAgentTool(...)` 的产物。
@@ -57,6 +64,11 @@ export const defineAgentTool: typeof defineTool = defineTool
  */
 export function registerAgentTool(tools: ToolsFace, definition: ToolDefinition): () => void {
   const name = (definition as { name?: string }).name ?? '(unnamed)'
+  // 名字先自己判：官方 registry 只校验结构，不校验 wire 命名契约；而名字越界
+  // （>64 字符或含非法字符）在**模型侧**才会炸，报错离注册点很远。
+  if (!TOOL_NAME_PATTERN.test(name)) {
+    throw new Error(`registerAgentTool: 工具名 ${JSON.stringify(name)} 不合规（需 ≤64 字符且仅 [A-Za-z0-9_-]）`)
+  }
   if (tools === undefined || typeof tools.register !== 'function') {
     throw new Error(`registerAgentTool: ctx.tools 不可用（插件是否在 inject 里声明了 'tools'？工具 ${name}）`)
   }
