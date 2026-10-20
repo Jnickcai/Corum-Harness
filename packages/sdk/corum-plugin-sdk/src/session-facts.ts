@@ -124,7 +124,8 @@ export async function readSessionFacts(
   connection: RpcConnection,
   args: ReadSessionFactsArgs = {},
 ): Promise<SessionFactsSnapshot> {
-  const result = await connection.rpc.call('/api', 'corumSessionFacts/snapshot', { args })
+  // 线上 args 是**扁平字段**（typert 只接受能被 SRC 静态解析的标识符参数）。
+  const result = await connection.rpc.call('/api', 'corumSessionFacts/snapshot', { args: { sessionId: args.sessionId } })
   if (!result.ok) throw new Error(`${result.error?.code ?? 'rpc/error'}: ${result.error?.message ?? 'corumSessionFacts/snapshot failed'}`)
   return result.value as SessionFactsSnapshot
 }

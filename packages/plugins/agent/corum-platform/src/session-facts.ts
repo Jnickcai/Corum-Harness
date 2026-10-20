@@ -113,13 +113,15 @@ export class SessionFactsService extends TypertRemoteService {
    * @returns 快照。
    */
   @Remote('snapshot')
-  async snapshot(args?: SnapshotArgs): Promise<SessionFactsSnapshot> {
-    // ⚠️ typert 网关的硬约束（实测报错 `SRC method "snapshot" must use unique identifier
-    // parameters without destructuring, defaults, or rest`）：`@Remote` 方法的形参必须是
-    // **普通标识符**，不能解构/默认值/rest。所以缺省值只能在这里补。
-    const input: SnapshotArgs = args ?? {}
+  async snapshot(sessionId?: string): Promise<SessionFactsSnapshot> {
+    // ⚠️ typert 网关的两条硬约束（都是实测报错换来的）：
+    // ① `SRC method "snapshot" must use unique identifier parameters without destructuring,
+    //    defaults, or rest` —— 形参必须是**普通标识符**；
+    // ② `args fields do not match the descriptor: unexpected "sessionId"` —— 参数**类型**若
+    //    不能被 SRC 静态解析成字段表，网关就把 args 当空对象，传任何字段都被拒。
+    //    所以这里用「扁平的唯一标识符」而不是对象参数：`{ sessionId }` → 一个 string 形参。
     const warnings: string[] = []
-    const session = this.resolveSession(input.sessionId, warnings)
+    const session = this.resolveSession(sessionId, warnings)
     if (session === undefined) {
       return { sessionId: '', running: false, isSubagent: false, subagents: [], warnings: [...warnings, '没有可用会话'] }
     }
@@ -158,20 +160,14 @@ export class SessionFactsService extends TypertRemoteService {
    * @returns 工具名数组（升序）；工具服务不可用时为空数组 + 说明。
    */
   @Remote('toolNames')
-  toolNames(args?: { names?: string[] }): { names: string[]; present?: Record<string, boolean>; warning?: string } {
-    const input = args ?? {}
+  toolNames(): { names: string[]; warning?: string } {
     try {
       const tools = this.ctx.get('tools' as never) as {
         schemas?: () => ReadonlyArray<{ name: string }>
         get?: (name: string) => unknown
       } | undefined
       if (tools?.schemas === undefined) return { names: [], warning: 'tools 服务不可用' }
-      const names = tools.schemas().map(schema => schema.name).sort()
-      // 可选：逐名核对注册表解析结果（`get()` 走 scope 视图；`schemas()` 是模型可见面）。
-      if (input.names === undefined) return { names }
-      const present: Record<string, boolean> = {}
-      for (const name of input.names) present[name] = tools.get?.(name) !== undefined
-      return { names, present }
+      return { names: tools.schemas().map(schema => schema.name).sort() }
     } catch (error) {
       return { names: [], warning: `工具清单读取失败：${error instanceof Error ? error.message : String(error)}` }
     }
