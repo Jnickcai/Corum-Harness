@@ -84,3 +84,6 @@ packages/desktop/startup-theme-remotion/
 # 它与上面内置的 5 个 MP4 内容重复（约 17MB），且 `pnpm pack:theme` 可随时重生成，
 # 故作为构建产物不进库。
 packages/desktop/assets/startup-segments.zip
+
+# npm CLI 的临时 cache（脚本里 npm_config_cache 指到这里，避免写 ~/.npm）
+.corum-tmp/
