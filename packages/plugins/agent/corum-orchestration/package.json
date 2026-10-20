@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-orchestration",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 子 Agent 编排器独立包：会话级隔离台账（CorumOrchestration cordis 根上下文单例）+ worktree 编排纯函数 + 台账持久化 domain（corum_orchestration）。从 @corum/corum-tool-subagent/orchestration.ts 整体迁出（docs/plan/PLAN-refactor-orchestration-package-and-settings-center.md 重构 1）。",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -19,19 +18,38 @@
   "dependencies": {
     "@corum/corum-git-core": "workspace:*",
     "@corum/corum-platform": "workspace:*",
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-storage-domain": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-subagent": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.14",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3"
   }
 }

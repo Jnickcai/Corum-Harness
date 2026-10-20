@@ -9,22 +9,12 @@
  * 类型）保持 external：host 从真实安装解析，与工作区/闭包里的那份**必须是同一个模块实例**
  * （红线 1 的同源纪律：模块级状态跨 bundle 分裂的代价本仓已付过）。
  */
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-export default defineConfig(() => [
-  {
-    name: '@corum/corum-preset-modules',
-    entry: ['lib/types/index.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@corum/corum-mcp-manager',
-      '@corum/corum-skill-manager',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-preset-modules',
+  host: {
+    external: ['@corum/corum-mcp-manager', '@corum/corum-skill-manager'],
   },
-])
+  client: false,
+})

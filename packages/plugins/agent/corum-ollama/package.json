@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ollama",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 本地 LLM 插件：探测/管理本机推理引擎（Ollama，Apple Silicon 友好），为 AI 润色等轻量任务提供本地模型能力",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -30,7 +29,37 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@corum/corum-api-remotes": "workspace:*",
+    "@corum/corum-api-remotes": "workspace:*"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.0.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
@@ -38,11 +67,5 @@
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
-  },
-  "devDependencies": {
-    "@types/node": "^22.20.0",
-    "tsdown": "^0.22.2",
-    "typescript": "^6.0.3",
-    "@types/react": "^18.0.0"
   }
 }

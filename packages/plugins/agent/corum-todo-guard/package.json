@@ -1,10 +1,8 @@
 {
   "name": "@corum/corum-todo-guard",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "todo 清单对账兜底（corum host 插件）：turn 将关时若 `todos` 投影仍有 `in_progress` 项，就 steer 模型自己调 `todo_write` 把清单改准。起因见 issue #2——面板停在「进行中」不是面板 BUG，而是模型没再调 `todo_write`；官方 dsh 没有任何 turn 收口对账机制，本插件补这一点。",
-  "private": true,
   "type": "module",
-  "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
@@ -25,6 +23,7 @@
     "@deepseek-ai/dsh-session-projection": "^0.1.5-rc.3"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
@@ -33,5 +32,19 @@
     "tsdown": "^0.22.14",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
   }
 }

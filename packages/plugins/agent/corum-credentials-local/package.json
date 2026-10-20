@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-credentials-local",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 定制版本地凭证存储（fork 官方 dsh-credentials-local 0.1.2-alpha.2，与运行时 alpha.1 源码逐字节等价）：ref 值与 api-key record 的 key/env 值经 AES-256-GCM 加密落盘（enc:v1: 前缀，明文条目双读兼容），主密钥由 Electron main 经 safeStorage 封装后注入。其余与官方逐行一致",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -16,18 +15,41 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-atomic-write": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-credentials": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-launch-environment": "^0.1.5-rc.3",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "chokidar": "^4.0.3",
-    "yaml": "^2.9.0"
-  },
-  "devDependencies": {
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-atomic-write": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-launch-environment": "^0.1.5-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.1"
   }
 }

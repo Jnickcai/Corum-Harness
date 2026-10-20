@@ -296,7 +296,49 @@ function makeUpdateApi(rpc: CorumRpcCall): UpdateApi {
 
 export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
+
+  /**
+   * 可被插件覆盖的右侧区域（与 `@corum/plugin-ui-contract` 的
+   * `REGION_OVERRIDE_SLOTS` 保持一致；契约包是公开投影，这里是壳侧的唯一实现点）。
+   */
+  const PLUGIN_OVERRIDABLE_REGIONS = ['corum.editor', 'corum.trajectory', 'corum.panel'] as const
+
+  /**
+   * 是否被插件接管：该槽存在 `priority < 0` 的占用者（宿主自己占用在 0）。
+   * 读的是官方槽注册表，不做任何缓存 —— 注册/卸载即时生效。
+   */
+  const pluginOverrides = (key: string): boolean => {
+    try {
+      const entries = ctx.slots.entries(key as never)
+      return entries.some(entry => ((entry.options.priority as number | undefined) ?? 0) < 0)
+    } catch {
+      return false
+    }
+  }
+
+  /** 点亮被插件接管的区域（AppFrame 未接线时静默跳过：接线后 attachGridActions 会再跑一次）。 */
+  const revealPluginOverriddenRegions = (actions: GridActions): void => {
+    for (const key of PLUGIN_OVERRIDABLE_REGIONS) {
+      if (!pluginOverrides(key)) continue
+      try {
+        actions.showRegion(key)
+      } catch {
+        /* 壳尚未就绪：只影响可见性，不影响插件注册 */
+      }
+    }
+  }
   ctx.effect(() => {
+    // 插件可能晚于壳挂载才注册（cordis 激活序不定）⇒ 订阅这三个槽的注册变化，
+    // 一出现 priority < 0 的占用者就点亮（策略逻辑与 attachGridActions 共用一份）。
+    const unwatch = PLUGIN_OVERRIDABLE_REGIONS.map(key => ctx.slots.subscribe(key as never, () => {
+      if (!pluginOverrides(key)) return
+      try {
+        layout.showRegion(key)
+      } catch {
+        /* AppFrame 未接线：等 attachGridActions 那一次补点 */
+      }
+    }))
+    ctx.effect(() => () => { for (const dispose of unwatch) dispose() })
     const disposeService = ctx.reflect.provide('layout', layout)
     // C1：槽位注册表服务化——provide 为 cordis 服务（跨 bundle 单例），并把
     // ui-base registerSlot() 的写路径桥接到同一实例。此后任何 bundle 的
@@ -377,7 +419,13 @@ export function apply(ctx: ClientContext): void {
         // 直连网格（替代原 window CustomEvent 事件桥）。
         return {
           setTheme: (p: 'light' | 'dark' | 'system') => { ctx.theme.setTheme(p) },
-          attachGridActions: (a: GridActions) => { layout.attachGrid(a) },
+          attachGridActions: (a: GridActions) => {
+            layout.attachGrid(a)
+            // 壳策略（2026-10-21）：某区域一旦有**插件接管**（priority < 0 的占用者），
+            // 壳自动点亮它。否则「插件注册了 occupant 却永远看不见」——而点亮区域
+            // 属于**布局**，不该由插件做（docs/PLUGIN-SPEC.md §9b）。
+            revealPluginOverriddenRegions(a)
+          },
           // 活动栏工作面面（PR3）：setSidebarMode 直通 ctx.layout 的幂等写
           // （PR2 已建通路）——活动栏「任务/项目」点击写它，侧栏骨架按同一份
           // 跨 bundle 单例状态切换面板（不再需要侧栏内部的模式切换 UI）。

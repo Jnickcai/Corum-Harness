@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-session-archive",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 会话日志归档插件（保存会话日志 ZIP / 导入会话日志 ZIP，走桌面原生桥）",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -23,12 +22,17 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "build": "tsc -b && tsdown && corum-inline-css",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false"
   },
   "dependencies": {
     "@corum/corum-ide-ui": "workspace:*",
+    "immer": "^10.1.1",
+    "zustand": "~4.4.7"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-store": "^0.1.5-rc.3",
@@ -38,15 +42,37 @@
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
-    "immer": "^10.1.1",
-    "react": "^18.2.0",
-    "zustand": "~4.4.7"
-  },
-  "devDependencies": {
     "@tsdown/css": "^0.22.14",
     "@types/react": "~18.3.31",
+    "react": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
+    "react": "^18.2.0"
   }
 }

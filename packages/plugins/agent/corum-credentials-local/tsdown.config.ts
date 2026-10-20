@@ -1,25 +1,9 @@
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-export default defineConfig(() => [
-  {
-    name: '@corum/corum-credentials-local',
-    entry: ['lib/types/index.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/dsh-atomic-write',
-      '@deepseek-ai/dsh-credentials',
-      '@deepseek-ai/dsh-home-paths',
-      '@deepseek-ai/dsh-launch-environment',
-      '@deepseek-ai/schemastery',
-      'chokidar',
-      'yaml',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-credentials-local',
+  host: {
+    external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-atomic-write', '@deepseek-ai/dsh-credentials', '@deepseek-ai/dsh-home-paths', '@deepseek-ai/dsh-launch-environment', '@deepseek-ai/schemastery', 'chokidar', 'yaml'],
   },
-])
+  client: false,
+})

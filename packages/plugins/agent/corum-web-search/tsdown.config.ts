@@ -14,67 +14,15 @@
  * `lib/style.css`，只有 inline-css 这一步能把它变成 client.js 内的 <style> 注入
  * （加载器不提供独立 CSS 资源，只跑 tsdown 等于样式全丢）。
  */
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-/** Module-table entries the desktop seed answers: kept external in the browser bundle. */
-const CLIENT_EXTERNALS: readonly string[] = [
-  'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-store',
-  '@deepseek-ai/dsh-client-connection',
-]
-
-const CLIENT_ID = '@corum/corum-web-search'
-
-export default defineConfig(() => [
-  // Node library entry (tsc-emitted from lib/types).
-  {
-    name: CLIENT_ID,
-    entry: ['lib/types/index.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/schemastery',
-      '@deepseek-ai/dsh-agent',
-      '@deepseek-ai/dsh-credentials',
-      '@deepseek-ai/dsh-launch-environment',
-      '@deepseek-ai/dsh-settings',
-      '@deepseek-ai/dsh-typert-protocol',
-      '@deepseek-ai/dsh-web',
-      '@deepseek-ai/dsh-web-search-deepseek',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-web-search',
+  host: {
+    external: ['@deepseek-ai/cordis', '@deepseek-ai/schemastery', '@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-credentials', '@deepseek-ai/dsh-launch-environment', '@deepseek-ai/dsh-settings', '@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/dsh-web', '@deepseek-ai/dsh-web-search-deepseek'],
   },
-  // Browser bundle: the settings-section client half.
-  {
-    name: `${CLIENT_ID}/client`,
-    entry: { client: 'src/client/index.tsx' },
-    outDir: 'lib',
-    format: 'cjs',
-    platform: 'browser',
-    dts: false,
-    sourcemap: true,
-    clean: false,
-    external: [...CLIENT_EXTERNALS],
-    define: {
-      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
-      'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
-      'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
-    },
-    noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
-    css: { splitting: false },
-    outputOptions: {
-      entryFileNames: 'client.js',
-      inlineDynamicImports: true,
-      banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(CLIENT_ID)}, factory: (require) => {`,
-      footer: 'return module.exports; } });',
-      intro: 'var module = { exports: {} }; var exports = module.exports;',
-    },
+  client: {
+    entry: 'src/client/index.tsx',
+    extraExternals: ['@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-client-store', '@deepseek-ai/dsh-client-connection'],
   },
-])
+})

@@ -592,7 +592,7 @@ boot 零报错（host ready）→ UI 渲染（侧栏+空态操作卡+最近列�
 | `types.ts` | +7 | `SubagentStartRequest.cwd?: string`（jsdoc 注明硬隔离轴心语义） | 低（纯增量字段，官方未占用该键） |
 | `child-agent.ts` | ±6 | `childSessionMeta` 增第 4 参 `cwd?: string`；`effectiveCwd = cwd ?? parentHeader.cwd` | **中**（官方若改签名/增参需三方合并；调用点 3 处） |
 | `continuation.ts` | ±5 / **+96（2026-09-09 增量）** | ① cwd 透传 + `assertChildCwd(request.cwd)` 校验 + depth import；② **用户停止级联**：`userStopped` 标记 + `stopConversation`/`resumeConversation`/`descendantActivations`/`userStoppedFor` + `notifySettlement` 的「已停止父会话只注入不唤醒」分支（见 §10.11） | **中**（官方若重写 `notifySettlement` 的唤醒判定或 Activation 结构，需三方合并这两处） |
-| `driver/index.ts` | ±6 | one-shot 透传 `request.cwd` + import 重定向 `'@deepseek-ai/dsh-subagent'` → `'../index.ts'` | 低 |
+| `driver/index.ts` | ±6 / **+1（2026-10-19 修复）** | one-shot 透传 `request.cwd` + import 重定向 `'@deepseek-ai/dsh-subagent'` → `'../index.ts'`；**2026-10-19 补回官方 `parentAgent`**（语义漂移事故，见 §10.12） | 低 |
 | `depth.ts` | +17 | `assertChildCwd`（绝对路径 + 已存在校验，`INVALID_CWD`；node:fs/path import） | 低（纯增量函数） |
 | `index.ts` | ±3 / **+50（2026-09-09 增量）** | ① one-shot `start()` 校验调用 + depth import；② `stopConversation`/`resumeConversation` 服务面 + `session/event` / `session/disposed` 监听（用户停止判据，见 §10.11） | 低（纯增量方法/监听） |
 | `invariant.ts` | ±4 | PACKAGE_NAME → `@corum/corum-subagent`、插件名 → `corum-subagent-invariant` | 低（机械） |
@@ -673,6 +673,47 @@ subagents"，host 不会 ready）。
 rebase 风险从**中**上调为**高**——官方 `dsh-subagent` 每次版本 bump，fork 的
 continuation（1728 行）+ child-agent/depth/types/driver/spawn 都要三方合并，且 11
 spec 需每版本重跑等价验证。
+
+---
+
+### 10.12 语义漂移事故：`parentAgent` 在升级中丢失（2026-10-19，issue #75 真因）
+
+**现象**：子 Agent 调 `ask_user_question` 不返回官方预期的 `DELEGATED_CALLER`，而是
+挂死——前台委派下父 Agent 一起阻塞，直到用户手动点停止（实测会话 `f185c1b9`：
+工具调用到 `ASK_ABORTED` 历时 **517 s**，abort 完全来自用户操作）。
+
+**根因**：
+1. 官方 `0b8956aab9`（refactor(agent): move runtime parent into options，2026-09-02）
+   把运行期 owner 从「loop 隐式取 `ownerCtx.agent`」改为「读 `options.parentAgent`」，
+   并删掉旧的第二位置参；
+2. 本 fork 建于 `dsh-v0.1.3-alpha.1`，该 tag **早于**此提交
+   （`git merge-base --is-ancestor 0b8956aab9 dsh-v0.1.3-alpha.1` = NO）⇒ 基线里
+   本来就没有这个字段，抄过来是对的；
+3. 升级 0.1.5 时未跟改，而 `parentAgent?: Agent` 是**可选字段** ⇒ 编译期零报错，
+   `verify-fork-drift.sh` §16 只校验「corum 增量在不在」、不做官方参数面对账 ⇒
+   运行期静默失真，**整条链路上没有任何一处会红**。
+
+**失效链**：`create` 缺 `parentAgent` ⇒ `entry.owner === undefined` ⇒
+`agents.roots()` 把子 Agent 当成顶层 Agent ⇒ `userQuestions.ask()`
+（`interaction/user-questions/src/index.ts:101-106`）的 `DELEGATED_CALLER` 门禁放行
+⇒ 提问请求落到 **scope 在子会话** 的 `user-questions/request` waterfall，客户端按
+会话渲染卡片 ⇒ 子会话不可视 ⇒ 无处显示 ⇒ 永久等待。
+
+**同源影响面**（同一 `owner` 轴，不止提问）：`hasApiSessionSubagentOwner`
+（`api/session-controller/src/agent.ts:80-90` 的第二判据）、`tool-goal` 的
+`hasDirectHumanInput`（`goal/tool-goal/src/authority.ts:81`）都以 `roots()` 为门禁。
+
+**修法**：`src/driver/index.ts` 补 `parentAgent: parent`。
+
+**防回潮**：
+- `tests/ownership.spec.ts`（新增）——真起子 Agent，断言 `isOwnedBy` 成立、
+  `roots()` 不含它、官方 ask 门禁判定式为「拒绝」，并带父 Agent 控制组；
+- 已双向验证：回退该行 ⇒ 两个用例全红；恢复 ⇒ 全绿。
+- `verify-fork-drift.sh` §16 增补 `parentAgent` 存在性断言。
+
+**教训**：官方把**可选**字段加入已有 API 时，fork 的「编译过 + 测试绿」完全不足以
+发现漏同步。`verify-fork-drift` 需要覆盖「官方核心调用面参数」，而不只是
+「corum 增量是否还在」。
 
 ---
 
@@ -2125,12 +2166,65 @@ pnpm override 生效：
 
 ```yaml
 # pnpm-workspace.yaml（overrides）
-'@deepseek-ai/dsh-tools': 'link:packages/plugins/agent/corum-tools'
+'@deepseek-ai/dsh-tools': 'workspace:@corum/corum-tools@*'
 ```
 
 **失败会静默**（本 fork 最该守的地方，与 fork #14 同）：override 被改回版本钉 / fork 没构建
 （lib 缺）/ 闭包丢包，三者都不会让编译或构建报错，只是「工具失败对象悄悄退回官方
 `[object Object]`」。
+
+### 18.1 override 协议事故：`link:` → `workspace:`（2026-10-19，dev 态委派必挂的真因）
+
+**现象**：dev 态任何子 Agent 委派（`subagent` / `subagent_research` / orchestrate 任务）都在
+`tool/call` 之后**立刻** `turn/end: error`，无 `tool/result`：
+
+```
+Cannot read properties of undefined (reading 'prepare')
+```
+实测会话 `corum-task-ebde2bb0`、`corum-task-133988de`。
+
+**根因（两层）**：
+
+1. `@deepseek-ai/dsh-tools` 被**约 30 个官方包声明为 `peerDependency`**；
+2. 原 override 用的是 **`link:` 形式**，而 `link:` **不参与 peer 求解** ⇒ 同一个官方包并存
+   两个 peer 变体：一个（如 `dsh-agent-loop@…c868fc`）链到 fork，另一个
+   （`…d7d7c6e4`）链到 npm 上的官方 `dsh-tools`。
+
+两份实例各自 `Symbol()` 出 `TOOL_RUNTIME_SCHEDULER` ⇒ 跨实例**不相等**（实测
+`fork.SYM === official.SYM` 为 **false**）。PTC 的 `run_code` 走
+`registry[TOOL_RUNTIME_SCHEDULER].prepare(input)`，`registry` 来自一份、`SYM` 来自另一份
+⇒ `undefined.prepare()`。
+
+**对照实验（排除「陈旧 lockfile」这一解释）**：`@deepseek-ai/dsh-fs-local` 同样是 `link:`
+override，但它**不被任何包声明为 peer**，收敛完全正确（fork 3 / 官方 0）。差别就在 peer。
+⇒ 不能用 fs-local 有效来反证 link 可用。
+
+**修法**：改用 `workspace:` 协议（peer 一并收敛到同一 workspace 实例）。
+
+| 判据 | 修复前 | 修复后 |
+|---|---|---|
+| `dsh-tools` 解析点 | fork 26 / 官方 32 | **fork 38 / 官方 0** |
+| dev 态 `subagent_research` | `turn/end: error (prepare)` | `tool/result ok` + `completed` |
+
+**为什么长期没被发现**：打包态（`pnpm pack` 的**扁平闭包**）天然去重——实测闭包里
+`dsh-tools` 只有 1 份、229 个官方包全部扁平。故该缺陷**只在 dev 态暴露**，而历史验收
+（含 issue #75 那轮）都在打包态做。
+
+> ⚠️ 顺带纠正一处错误归因：`docs/PENDING-foreground-subagent-pseudo-foreground.md:563`
+> 把这条报错写成「沙箱环境的固有限制」——**是错的**：本次在**非沙箱**、干净构建上稳定复现，
+> 且与沙箱无关。
+
+**守卫**：`scripts/verify-fork-drift.sh` §16b 断言 override 必须是 `workspace:` 形式；
+若检测到 `link:` 直接 fail 并说明后果。此前该断言**硬编码了 `link:` 写法**，是本次事故的
+帮凶之一——守卫只验证「写的是我以为对的那行」，不验证「那行是否真的生效」。
+
+**与公网发布的关系**（用户 2026-10-19 定调：未来把 corum 单独发布到公网，让开发者不依赖
+源码即可开发插件）：`link:` 依赖工作区路径，天然不可发布；`workspace:` 可被 `pnpm publish`
+正确物化为版本号范围，与本目标一致。
+
+**通用教训**：`overrides` 的成效**不能只看配置文件写了什么**，必须验证**解析面的实况**
+（本例：统计 `realpath` 后的实例数）。「配置在 + 编译过 + 测试绿」三者都成立时，这个问题
+依然存在了数月。
 
 **验证**：
 - `tsc -b` 绿（10 模块整拷官方，类型面零破坏）；`tsdown` 出 4 个 entry（`index`/`invariant`/
@@ -2139,7 +2233,7 @@ pnpm override 生效：
   新旧逻辑对拍（结构化对象 → JSON、Error/message 字段/原始类型不变）。
 - 消费方 `@corum/corum-tool-subagent` typecheck 绿。
 - 常驻守卫 `scripts/verify-fork-drift.sh` §16b（与 §15b 同型）：9 个官方模块逐字节一致 /
-  `index.ts` 的 `errorMessage` 含 JSON.stringify 增量 / `pnpm-workspace.yaml` 的 link override
+  `index.ts` 的 `errorMessage` 含 JSON.stringify 增量 / `pnpm-workspace.yaml` 的 **workspace:** override
   在位 / `desktop-host/package.json` 登记 / `pack-macos.mjs` 含闭包断言
   （`JSON.stringify(error)` 必须在闭包那份里，缺失或退回官方即打包失败）。
 

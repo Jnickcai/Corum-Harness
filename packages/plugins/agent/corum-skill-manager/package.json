@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-skill-manager",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum Skill 管理插件：导入 / 删除 / 版本追踪 / 绑定 skill，管理 ~/.dsh/skills/ 全局目录",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -16,14 +15,32 @@
     "typecheck": "tsc -b --pretty false",
     "check:shipped-skills": "node scripts/check-shipped-skills.mjs"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
-  },
-  "devDependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
   }
 }

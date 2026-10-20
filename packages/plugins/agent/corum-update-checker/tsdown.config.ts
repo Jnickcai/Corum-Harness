@@ -1,16 +1,9 @@
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-export default defineConfig(() => [
-  {
-    name: '@corum/corum-update-checker',
-    entry: ['lib/types/index.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
+export default definePluginBundle({
+  id: '@corum/corum-update-checker',
+  host: {
     external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-typert-protocol'],
   },
-])
+  client: false,
+})

@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-memory",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 通用记忆底座插件：事实级记忆组织（重要性/合并/衰减/驱逐四杠杆 + valid_at/invalid_at 时间窗 + 分层），存储复用官方 dsh-storage-domain，host 半 provide MemoryService、client 半在「设置 → 扩展」注册「记忆」面板。本插件只承载「组织形式」，不绑定任何记忆来源。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -36,6 +35,41 @@
   },
   "dependencies": {
     "@corum/corum-api-remotes": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage-domain": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage-json": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.0.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
@@ -44,15 +78,6 @@
     "@deepseek-ai/dsh-storage": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-storage-domain": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
-    "@deepseek-ai/schemastery": "^3.18.1",
-    "zod": "^4.6.7"
-  },
-  "devDependencies": {
-    "@deepseek-ai/dsh-storage-json": "^0.1.5-rc.3",
-    "@types/node": "^22.20.0",
-    "@types/react": "^18.0.0",
-    "tsdown": "^0.22.2",
-    "typescript": "^6.0.3",
-    "vitest": "^5.0.0"
+    "@deepseek-ai/schemastery": "^3.18.1"
   }
 }

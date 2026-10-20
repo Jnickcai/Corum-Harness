@@ -58,5 +58,21 @@ jobs:
         # 里先测必挂（本地能过只是 lib/ 缓存）。
         run: pnpm -r --filter './packages/**' run build
 
+      - name: Plugin spec gate
+        # 规范守卫（docs/PLUGIN-SPEC.md + scripts/verify-plugin-spec.mjs）。
+        # 这类缺陷「编译过、测试绿」也发现不了，所以必须是**独立判据**：
+        # exports 指向 TS 源码、客户端构建缺 inline-css 步、dsh.client 与 ./client 不配对、
+        # 兼容声明缺字段/自相矛盾、未登记的 exports 子路径。
+        # 必须在 Build 之后跑：它断言 exports 目标文件真实存在，全新 checkout 里 Build 前
+        # lib/ 还不存在（守卫的 NO-ARTIFACT 是 warn，--strict 会把它判失败）。
+        run: node scripts/verify-plugin-spec.mjs --strict
+
+      - name: Plugin guide gate
+        # 指南随 @corum/plugin-sdk 发布 ⇒ 指南里的每条断言都必须与实现一致。这条守卫会
+        # ①核对包内 GUIDE.md 与文件清单、②核对指南提到的 API 在产物 d.ts 里真的导出、
+        # ③核对区域白名单与契约包一致、④在临时目录真跑一遍脚手架并断言生成物形状。
+        # 必须在 Build 之后跑：它读的是 lib/ 的产物 d.ts。
+        run: node scripts/verify-plugin-guide.mjs
+
       - name: Unit tests (all packages that define test)
         run: pnpm -r --filter './packages/**' --if-present run test

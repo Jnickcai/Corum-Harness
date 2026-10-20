@@ -1,0 +1,6 @@
+# 插件挂载层：`insert` 不带 id ⇒ 追加到组件树根，不需要知道宿主任何 row id。
+# 宿主半是 no-op（本插件的能力全在客户端半），但**必须有这一行**：
+# 客户端半是按 loader 条目供应的，没有条目就不会被加载。
+- insert:
+    - id: region-replacement
+      name: '@corum-examples/region-replacement'

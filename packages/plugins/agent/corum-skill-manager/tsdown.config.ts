@@ -3,23 +3,12 @@
  * bundles the tsc-emitted ESM from lib/types into lib/index.js consumed by the
  * shell host. The client half (settings UI + dialog) lives in dev-agent-shell.
  */
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-export default defineConfig(() => [
-  {
-    name: '@corum/corum-skill-manager',
-    entry: ['lib/types/index.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/dsh-typert-protocol',
-      '@deepseek-ai/dsh-home-paths',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-skill-manager',
+  host: {
+    external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/dsh-home-paths'],
   },
-])
+  client: false,
+})

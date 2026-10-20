@@ -1,0 +1,108 @@
+# 插件包发布（`@corum/*` 公开层）—— 打 tag 自动发，也可手动触发。
+#
+# ## 为什么用 tag 触发
+#
+# 发布**不可逆**：npm 上同版本号不能覆盖。绑到 tag 上，意味着「发了什么」与「仓库哪一点」
+# 一一对应（tag 就是台账指针），也避免「合进 main 就自动发」把半成品推出去。
+#
+#   git tag plugin-v0.6.1 && git push origin plugin-v0.6.1     # → 自动发布公开层
+#
+# ## 认证：Trusted Publishing（OIDC，**不需要任何长期 token**）
+#
+# npm 官方已不建议给 CI 造 automation token（页面明确警告 "There are security risks with this
+# option. For automation or CI/CD uses, please use Trusted Publishing instead."），Classic token
+# 也在 2025 年底被吊销。所以本 workflow 走 OIDC：
+#
+# 1. **每个包**在 npm 页面 → Settings → Trusted publishing 里登记：
+#    GitHub Actions · owner=`kukucaiCndy` · repo=`Corum-Harness` · workflow=`publish-plugins.yml`
+#    （⚠️ Trusted Publishing 要求包**已存在** ⇒ 每个包的**首个版本必须先在本地交互发一次**）
+# 2. workflow 里 `permissions: id-token: write`（已配）—— npm 据此确认「是这个 workflow 在发」。
+# 3. 上传用 **npm CLI**（`--via=npm`：pnpm 负责打包改写 `workspace:*`，npm 负责 OIDC 上传）；
+#    pnpm publish 目前不会交换 OIDC token。
+#
+# ## 为什么先跑三道门禁再发
+#
+# `verify-plugin-spec --strict`（包形态/字段/兼容声明）、`verify-plugin-guide`（指南与实现一致
+# + 脚手架冒烟）、`verify-plugin-ui-surface`（插件只用契约允许的 UI 面）—— 这三条都是
+# 「编译过、测试绿也发现不了」的类，发布前必须绿。
+
+name: publish-plugins
+
+on:
+  push:
+    tags:
+      - 'plugin-v*'
+  workflow_dispatch:
+    inputs:
+      layer:
+        description: '发布哪一层'
+        type: choice
+        options: [public, all]
+        default: public
+      dry_run:
+        description: '只干跑（不真的发）'
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish-plugins-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # 保护：只有 main 上的 tag / 手动手动触发才发（避免从任意分支发）
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/plugin-v')
+    permissions:
+      contents: read
+      id-token: write        # npm provenance（来源声明）
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          # 可信发布（OIDC）需要 npm ≥ 11.5 ⇒ Node 24 自带；Node 22 的 npm 版本可能不够。
+          node-version: '24'
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'   # 写入 .npmrc 的 registry
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # 发布产物必须从零构建：tarball 里的 lib/ 就是这一步的产物，
+      # 用陈旧 lib/ 发布会把旧代码推到 npm（不可逆）。
+      - name: Build (clean)
+        run: node scripts/build-all.mjs --clean
+
+      - name: Gate — plugin spec
+        run: node scripts/verify-plugin-spec.mjs --strict
+
+      - name: Gate — plugin guide (含脚手架冒烟)
+        run: node scripts/verify-plugin-guide.mjs
+
+      - name: Gate — plugin UI surface
+        run: node scripts/verify-plugin-ui-surface.mjs
+
+      - name: Gate — publish shape (真实第三方安装 + tsc)
+        run: node scripts/verify-plugin-publish-shape.mjs
+
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: node scripts/publish.mjs --layer=${{ inputs.layer }}
+
+      # 可信发布：无 token。npm 凭 OIDC（id-token: write）确认本 workflow 有发布权；
+      # --via=npm 让它用 npm CLI 上传（pnpm 先 pack，把 workspace:* 改写成真实版本）。
+      - name: Publish (trusted publishing)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: node scripts/publish.mjs --publish --via=npm --provenance --layer=${{ github.event_name == 'push' && 'public' || inputs.layer }}
+
+      - name: Upload ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ledger
+          path: docs/RELEASE-LEDGER.md
+          if-no-files-found: ignore

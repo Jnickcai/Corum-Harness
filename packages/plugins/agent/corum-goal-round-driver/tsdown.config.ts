@@ -6,27 +6,13 @@
  * （见 src/index.ts 的 corum fork delta）。官方 dsh 包全部 external——host 从真实安装解析，
  * 与官方同版本共存。
  */
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-export default defineConfig(() => [
-  {
-    name: '@corum/corum-goal-round-driver',
-    entry: ['lib/types/index.js', 'lib/types/invariant.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/dsh-agent',
-      '@deepseek-ai/dsh-goal',
-      '@deepseek-ai/dsh-invariants',
-      '@deepseek-ai/dsh-llm',
-      '@deepseek-ai/dsh-scope',
-      '@deepseek-ai/dsh-session',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-goal-round-driver',
+  host: {
+    entries: ['lib/types/index.js', 'lib/types/invariant.js'],
+    external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-goal', '@deepseek-ai/dsh-invariants', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-scope', '@deepseek-ai/dsh-session'],
   },
-])
+  client: false,
+})

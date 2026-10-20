@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-mcp-manager",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum MCP 服务管理插件：全局注册表 + Agent 授权访问控制",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -21,15 +20,35 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
   }
 }

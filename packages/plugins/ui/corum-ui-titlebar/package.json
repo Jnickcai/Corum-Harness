@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ui-titlebar",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 统一标题栏：窗口顶部 40px 这条带子的唯一 owner（拖拽命中区 + 窗口控制按钮 + 会话段）。占据壳声明的 corum.titlebar 槽，按界面状态（main/floating × 有无活跃会话 × 侧栏折叠）组合不同内容。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -23,31 +22,52 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "build": "tsc -b && tsdown && corum-inline-css",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false",
     "test": "vitest run"
   },
   "dependencies": {
     "@corum/corum-ide-ui": "workspace:*",
     "@corum/corum-ui-base": "workspace:*",
+    "lucide-react": "^0.460.0"
+  },
+  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
-    "lucide-react": "^0.460.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
-  "peerDependencies": {
-    "react": "^18.2.0"
-  },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
     "@tsdown/css": "^0.22.14",
     "@types/react": "~18.3.31",
     "@types/react-dom": "^18.3.7",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
   }
 }

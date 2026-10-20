@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ide-explorer-ui",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum IDE 资源管理器（文件树，design.pen ④ 210px）：以 host 项目根为边界的目录浏览，注册进壳的 corum.explorer 槽。数据源 corum.fs.list（host fs RPC）。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -23,26 +22,45 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "build": "tsc -b && tsdown && corum-inline-css",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
     "@corum/corum-ide-ui": "workspace:*",
     "@corum/corum-ui-base": "workspace:*",
+    "lucide-react": "^0.460.0"
+  },
+  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
-    "lucide-react": "^0.460.0",
-    "react": "^18.2.0"
-  },
-  "peerDependencies": {
     "react": "^18.2.0"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
     "@tsdown/css": "^0.22.14",
     "@types/react": "~18.3.31",
+    "react": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
   }
 }

@@ -13,6 +13,16 @@ const floatingDragListeners = new Set<(payload: { slotKey: string; dragging: boo
 const nativeNotificationClickListeners = new Set<(payload: { notificationId: string | null }) => void>()
 const notificationCenterListeners = new Set<() => void>()
 const maximizeListeners = new Set<(maximized: boolean) => void>()
+/** 启动诊断的渲染层视图（字段与 host 侧 `BootDiagnostics` 一致）。 */
+export interface BootDiagnosticsInfo {
+  generatedAt: string
+  hostVersion: string
+  profileName: string
+  supportedApis: readonly number[]
+  skipped: Array<{ packageName: string; reason: string; detail: string }>
+  undeclared: string[]
+}
+
 type StartupStatus = { phase: 'loading' | 'ready' | 'error'; stage?: 'env' | 'plugins' | 'mounting'; progress?: number; message?: string }
 const startupListeners = new Set<(status: StartupStatus) => void>()
 ipcRenderer.on('corum:startup-status', (_event, status: StartupStatus) => {
@@ -67,6 +77,11 @@ export interface CorumDesktopBridge {
    * 诊断，经 `getBakedTargetPlatform` 取，**禁止用于选实现**。
    */
   getPlatform: () => 'darwin' | 'linux' | 'win32'
+  /**
+   * 启动诊断（profile 预检结果）。host 死在装载阶段时，这是 renderer 唯一
+   * 能拿到「哪个插件被跳过、为什么」的通道。无诊断时返回 undefined。
+   */
+  getBootDiagnostics: () => Promise<BootDiagnosticsInfo | undefined>
   /** 烘入的目标平台（诊断用；dev 态为 undefined）。禁止用于选实现。 */
   getBakedTargetPlatform: () => 'darwin' | 'linux' | 'win32' | undefined
   /** 应用版本号（读 `packages/desktop/package.json`）：品牌行的版本小字用。 */
@@ -169,6 +184,7 @@ contextBridge.exposeInMainWorld('corumDesktop', {
    * 平台是启动期常量，不值得为它走 IPC（异步会迫使消费面全变异步）。
    */
   getPlatform: (): 'darwin' | 'linux' | 'win32' => RUNTIME_PLATFORM,
+  getBootDiagnostics: (): Promise<BootDiagnosticsInfo | undefined> => ipcRenderer.invoke('corum:boot-diagnostics'),
   getStartupAnimationEnabled: (): Promise<boolean> => ipcRenderer.invoke('corum:startup-animation-get'),
   setStartupAnimationEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('corum:startup-animation-set', enabled),
   getStartupStatus: (): Promise<StartupStatus | undefined> => ipcRenderer.invoke('corum:startup-status-get'),

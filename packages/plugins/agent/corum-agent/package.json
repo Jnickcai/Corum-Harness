@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-agent",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum Agent 实例开发插件：AgentProfile 数据模型 + preset 编译 + 创建真正绑定模型/工具/skill/MCP 的 root Agent",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -34,6 +33,10 @@
     "@corum/corum-mcp-manager": "workspace:*",
     "@corum/corum-orchestration": "workspace:*",
     "@corum/corum-preset-modules": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.5-rc.3",
@@ -58,12 +61,49 @@
     "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "zod": "^4.6.7"
-  },
-  "devDependencies": {
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-permission-presets": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-persona": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session-projection": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session-projection-cache": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session-title": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage-domain": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage-json": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-storage-sqlite": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tool-todo": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.1"
   }
 }

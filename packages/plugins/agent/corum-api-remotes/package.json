@@ -1,10 +1,8 @@
 {
   "name": "@corum/corum-api-remotes",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 定制版 Remote BFF 装配（fork 官方 dsh-api-remotes 0.1.2-alpha.2）：核心 165 行转发循环 + 162 行 client contribution 挂载整文件照抄，实质 diff 仅「API_REMOTE_FORWARDED_EVENTS 追加 13 个 corum 事件（emit 形态）+ 自包含 corum-events.ts（cordis Events 声明 + TypertRemoteEventSelection 合并）」。统一事件中心一期承载包（docs/agent-foundation/UNIFIED-EVENT-BUS.md）",
-  "private": true,
   "type": "module",
-  "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
@@ -39,13 +37,8 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@deepseek-ai/dsh-client-file-upload": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-deque": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-util-values": "^0.1.5-rc.3"
-  },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.3",
@@ -55,25 +48,49 @@
     "@deepseek-ai/dsh-api-workspace-controller": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-api-workspace-files": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-file-upload": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-command-feedback": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-commands": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-cordis-host-runner": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-credentials": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-deque": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-file-reference": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-goal": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-host-plugin-inventory": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-message-feedback": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-session-reference": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-settings": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-subagent": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-user-approval": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-user-questions": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-util-values": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-file-upload": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-deque": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-util-values": "^0.1.5-rc.3"
   }
 }

@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ui-approval",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 定制版审批呈现层（fork 官方 dsh-client-ui-approval）：scoped Remote Event waterfall 上的审批 composer takeover + pendingInteractions 数据通路。首版与官方行为完全一致，后续重构 ApprovalPanel 为 corum 审批卡。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -34,11 +33,16 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "build": "tsc -b && tsdown && corum-inline-css",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
     "@corum/corum-api-remotes": "workspace:*",
+    "lucide-react": "^0.460.0"
+  },
+  "devDependencies": {
+    "@corum/corum-ui-conversation": "workspace:*",
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
@@ -50,15 +54,39 @@
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
-    "lucide-react": "^0.460.0",
-    "react": "^18.2.0"
-  },
-  "devDependencies": {
-    "@corum/corum-ui-conversation": "workspace:*",
     "@tsdown/css": "^0.22.14",
     "@types/react": "~18.3.31",
     "@types/react-dom": "~18.3.0",
+    "react": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "files": [
+    "lib"
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
+    "react": "^18.2.0"
   }
 }

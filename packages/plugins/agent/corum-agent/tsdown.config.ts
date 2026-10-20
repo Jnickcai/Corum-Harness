@@ -15,39 +15,13 @@
  * **支撑面**（./lane-support 导出：profile 编译/落盘、模型选择安装、事件投影、
  * 内置 PM 播种）。单开一条缝而不是塞进包根导出，理由见该文件头注。
  */
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-export default defineConfig(() => [
-  {
-    name: '@corum/corum-agent',
-    entry: [
-      'lib/types/index.js',
-      'lib/types/contract/index.js',
-      'lib/types/runtime-state.js',
-      'lib/types/lane-support.js',
-    ],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@corum/corum-mcp-manager',
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/dsh-agent',
-      '@deepseek-ai/dsh-agent-default-model',
-      '@deepseek-ai/dsh-agent-presets',
-      '@deepseek-ai/dsh-llm',
-      '@deepseek-ai/dsh-persona',
-      '@deepseek-ai/dsh-session',
-      '@deepseek-ai/dsh-system-prompt',
-      '@deepseek-ai/dsh-tools',
-      '@deepseek-ai/dsh-typert-protocol',
-      '@deepseek-ai/dsh-home-paths',
-      '@deepseek-ai/dsh-storage-domain',
-      'zod',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-agent',
+  host: {
+    entries: ['lib/types/index.js', 'lib/types/contract/index.js', 'lib/types/runtime-state.js', 'lib/types/lane-support.js'],
+    external: ['@corum/corum-mcp-manager', '@deepseek-ai/cordis', '@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-agent-default-model', '@deepseek-ai/dsh-agent-presets', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-persona', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/dsh-home-paths', '@deepseek-ai/dsh-storage-domain', 'zod'],
   },
-])
+  client: false,
+})

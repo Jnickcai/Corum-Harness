@@ -1,0 +1,61 @@
+{
+  "name": "@corum/plugin-sdk",
+  "version": "0.6.0",
+  "description": "corum 插件的运行时唯一入口：类型聚合 + definePlugin/defineClientPlugin + 给 Agent 加工具的 defineAgentTool/registerAgentTool + 读会话资源的 readSessionFacts + 公开层 API 转发。零运行时状态；完整开发指南见包内 GUIDE.md，脚手架 CLI 为 corum-plugin-init。",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "bin",
+    "GUIDE.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@corum/corum-rpc-client": "workspace:*",
+    "@corum/corum-ui-base": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.31",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kukucaiCndy/Corum-Harness.git",
+    "directory": "packages/sdk/corum-plugin-sdk"
+  },
+  "bin": {
+    "corum-plugin-init": "./bin/corum-plugin-init.mjs"
+  }
+}

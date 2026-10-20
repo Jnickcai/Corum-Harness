@@ -24,8 +24,9 @@ import z from '@deepseek-ai/schemastery'
 import { carrierKeyOf, scopeChainOf, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
+import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, MessageSource, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
@@ -133,7 +134,7 @@ import type { CorumWorktreeEntry, CorumWorktreeLedgerFrame } from './orchestrati
 type CorumIntegrateRejectedWithRun = CorumIntegrateRejected & { runId?: string }
 
 export const name = 'corum-tool-subagent'
-export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
+export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections', 'userQuestions']
 
 /** Config: which registered provider this tool delegates to, plus child defaults. */
 export interface Config {
@@ -207,6 +208,23 @@ export interface Config {
    *   · true + 无 model 键 = 显式跟随主 Agent ⇒ **跳过**全局档。
    */
   modelFollowMain?: boolean
+  /**
+   * fork（corum）2026-10-18（issue #75）：**伪前台**模式开关。
+   *
+   * 默认 false：前台子 Agent 阻塞父 Agent 工具调用（`await run.result`）。
+   * 设 true：前台子 Agent 不阻塞——工具立即返回 `{kind:'foreground-pending'}`
+   * + `exec.concludeTurn()`，父 Agent 的 turn 正常结束进入 idle、仍能收事件；
+   * 子 Agent settle 后经 `followup` 通知唤醒父 Agent。门禁（`agent/pre-step`）
+   * 在等待期拦截用户插话（排队）、放行子 Agent 通知。
+   *
+   * 仅对 **root 会话**（`origin !== 'subagent'`）生效——嵌套委派仍走旧阻塞路径
+   * （5.7 E：corum 禁止子 Agent 继续委派，伪前台只对 root 生效）。
+   *
+   * ⚠️ 当前为「小验证」阶段：模型失败重试（`corumAskAboutModel`）路径仍走旧阻塞
+   * 逻辑（它需要同步问用户）；只有正常成功路径走伪前台。验证通过后再补全失败路径。
+   * 设计文档：`docs/PENDING-foreground-subagent-pseudo-foreground.md`。
+   */
+  pseudoForeground?: boolean
 }
 
 // ── fork（corum）：`corum-subagent` 全局设置面（三级配置第一级）──────────────────
@@ -223,6 +241,10 @@ import {
   type CorumSubagentGlobalSettings,
   type CorumSubagentGlobalSettingsScope,
 } from './settings-namespace.ts'
+// fork（corum）2026-10-18（issue #75）：伪前台门禁 service。
+import { acquireCorumForegroundGate, CorumForegroundGate } from './foreground-gate.ts'
+// fork（corum）2026-10-18（issue #75 #9）：伪前台 busy 语义的 session projection。
+import { corumForegroundBusyProjectionDefinition, appendForegroundBusyEvent } from './foreground-busy-projection.ts'
 
 // 保持对外导出面不变（此前这些名字直接定义在本文件，外部/测试可能引用）。
 export {
@@ -273,6 +295,8 @@ export const Config: z<Config> = z.object({
   //   · modelFollowMain 未设 + 无 model 键 = 不覆盖 ⇒ 走全局档；
   //   · modelFollowMain: true + 无 model 键 = 显式跟随主 Agent ⇒ **跳过**全局档。
   modelFollowMain: z.boolean().default(undefined as unknown as boolean),
+  // fork（corum）2026-10-18（issue #75）：伪前台开关（默认 false，验证期由 preset 显式开）。
+  pseudoForeground: z.boolean().default(undefined as unknown as boolean),
 })
 
 /** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
@@ -768,6 +792,21 @@ export function corumResearchReportDelivery(
 }
 
 /**
+ * fork（corum）2026-10-18（issue #75）：**伪前台**——前台子 Agent 不阻塞父 Agent。
+ *
+ * 工具立即返回本结果 + `exec.concludeTurn()`：父 Agent 的 turn 正常结束进入 idle，
+ * 子 Agent settle 后经 `followup` 通知唤醒父 Agent。门禁（`agent/pre-step`）在等待期
+ * 拦截用户插话（排队）、放行子 Agent 通知。`runId` 供停止/取消路径持有 run 引用。
+ *
+ * 设计文档：`docs/PENDING-foreground-subagent-pseudo-foreground.md` §5.6/§5.7。
+ */
+type ForegroundPendingToolResult = {
+  readonly kind: 'foreground-pending'
+  readonly runId: SubagentRun['id']
+  readonly childIds: string[]
+}
+
+/**
  * fork（corum）2026-09-20：把一次前台委派产出的 content blocks 折成纯文本。
  *
  * 用途：`integrate` 收尾时把集成者的报告正文带回 `orchestrate` 的工具结果（见 `runIntegrate`
@@ -823,6 +862,100 @@ async function settleForegroundRun(run: SubagentRun): Promise<ForegroundToolResu
   }
   if (disposal.status === 'rejected') throw disposal.reason
   return execution.value
+}
+
+/**
+ * fork（corum）2026-10-18（issue #75）：伪前台的**异步 settle waiter**。
+ *
+ * 工具已返回 `foreground-pending` + `concludeTurn()`，父 Agent 的 turn 已结束、
+ * 进入 idle。本函数在后台 `await run.result`：子 Agent settle 后——
+ *   ① 从门禁释放该 childId（`gate.release`）；
+ *   ② 把结果经 `followup`（**不是 `inject`**——`inject` 不唤醒 ⇒ 门禁永不打开）
+ *     投递给父 Agent，唤醒它开下一个 turn；
+ *   ③ `run.dispose()`（伪前台必须延后 dispose，否则 `localAgent` 不可达；
+ *     见 5.4）。
+ *
+ * 失败只告警（fire-and-forget）：伪前台的工具调用早已返回，此刻无法把异常
+ * 回传给模型；失败必须以**可见通知**出现，而非 throw。
+ *
+ * @param run - 持有的前台子 Agent run（未 dispose）。
+ * @param parent - 委派方 Agent（`followup` 目标）。
+ * @param childId - 子会话 id（= `run.id`，通知的 senderSessionId）。
+ * @param label - 委托标签（通知标题）。
+ * @param gate - 伪前台门禁 service。
+ * @param logger - 失败告警出口。
+ */
+function corumPseudoForegroundWait(
+  run: SubagentRun,
+  parent: Agent,
+  childId: string,
+  label: string,
+  gate: CorumForegroundGate,
+  logger: { warn: (message: string) => void },
+): void {
+  void (async () => {
+    let result: SubagentResult | undefined
+    try {
+      result = await run.result
+    } catch (error: unknown) {
+      gate.release(parent.id, childId)
+      // fork（corum）#9：emit corum/foreground-busy event → 客户端 projection 更新 busy=false（若全部 settle）。
+      appendForegroundBusyEvent(parent.session, gate.isBlocking(parent.id), gate.pendingChildren(parent.id))
+      try {
+        parent.followup(createUserMessage({
+          content: [{ type: 'text', text: `Subagent (${label}) settled with an infrastructure fault: ${error instanceof Error ? error.message : String(error)}` }],
+          source: {
+            kind: 'subagent-settled',
+            form: 'notice',
+            summary: boundContextSummary(`Subagent settled with fault (${label})`),
+            senderSessionId: childId,
+          } as unknown as MessageSource,
+        }))
+      } catch (notifyError: unknown) {
+        logger.warn(`pseudo-foreground fault notice was not delivered: ${String(notifyError)}`)
+      }
+      try { await run.dispose() } catch { /* idempotent */ }
+      return
+    }
+    gate.release(parent.id, childId)
+    // fork（corum）#9：emit corum/foreground-busy event → 客户端 projection 更新 busy。
+    appendForegroundBusyEvent(parent.session, gate.isBlocking(parent.id), gate.pendingChildren(parent.id))
+    const error = stopReasonError(result)
+    if (error !== undefined) {
+      // fork（corum）：模型/传输失败（stopReason==='error'）——伪前台阶段如实上报，
+      // 不走 corumAskAboutModel（那需要同步问用户；验证期接受该降级）。
+      try {
+        parent.followup(createUserMessage({
+          content: [{ type: 'text', text: `Subagent (${label}) ended with model/transport error: ${withDiagnosticAndPartialText(error, result)}` }],
+          source: {
+            kind: 'subagent-settled',
+            form: 'notice',
+            summary: boundContextSummary(`Subagent model failure (${label})`),
+            senderSessionId: childId,
+          } as unknown as MessageSource,
+        }))
+      } catch (notifyError: unknown) {
+        logger.warn(`pseudo-foreground failure notice was not delivered: ${String(notifyError)}`)
+      }
+    } else {
+      // 成功：把结果正文经 followup 投递（唤醒父 Agent 开下一个 turn）。
+      const text = outputValueText(result.output as unknown as JsonValue[]).trim()
+      try {
+        parent.followup(createUserMessage({
+          content: [{ type: 'text', text: text.length > 0 ? text : `Subagent (${label}) settled with no output.` }],
+          source: {
+            kind: 'subagent-settled',
+            form: 'notice',
+            summary: boundContextSummary(`Subagent settled (${label})`),
+            senderSessionId: childId,
+          } as unknown as MessageSource,
+        }))
+      } catch (notifyError: unknown) {
+        logger.warn(`pseudo-foreground result notice was not delivered: ${String(notifyError)}`)
+      }
+    }
+    try { await run.dispose() } catch { /* idempotent */ }
+  })()
 }
 
 /**
@@ -1236,10 +1369,17 @@ function providerWording(inheritsConversation: boolean): { description: string; 
  * @param options.backgroundEnabled - 是否启用后台调度。
  * @param options.continuable - 是否为 continuable 后台模式。
  * @param options.readonlyResearch - 是否为只读研究实例。
+ * @param options.pseudoForeground - 是否启用伪前台（issue #75）：前台子 Agent 不阻塞，
+ *   报告经 followup 通知送达（不在工具结果里）。
  * @returns 接在 `wording.description` 后面的调度描述句（开头保留一个空格）。
  */
-export function corumSchedulingDescription(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean }): string {
+export function corumSchedulingDescription(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean; readonly pseudoForeground?: boolean }): string {
   if (options.readonlyResearch) {
+    // fork（corum）2026-10-18（issue #75）：伪前台开启时，research 报告经 followup 通知送达，
+    // 不在工具结果里（工具立即返回 foreground-pending + concludeTurn）。
+    if (options.pseudoForeground === true) {
+      return ' This read-only research tool runs in the FOREGROUND but does NOT block you: the call returns immediately as `foreground-pending` and you continue other work; the child\'s report arrives as a followup notice when it settles — so do NOT expect the findings in this tool result. Do NOT pass `run_in_background: true` (it is rejected). You may fan out several research calls in one message; each settles independently and delivers its own notice.'
+    }
     return ' This read-only research tool ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline. Do NOT pass `run_in_background: true` (it is rejected).'
   }
   if (!options.backgroundEnabled) {
@@ -1263,8 +1403,12 @@ export function corumSchedulingDescription(options: { readonly backgroundEnabled
  * @param ptcPrefix - PTC 模式前缀（非 PTC 为空串）。
  * @returns 机制段文本（`ptcPrefix` + 调度句）。
  */
-export function corumSchedulingSectionText(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean }, toolName: string, ptcPrefix: string): string {
+export function corumSchedulingSectionText(options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly readonlyResearch: boolean; readonly pseudoForeground?: boolean }, toolName: string, ptcPrefix: string): string {
   if (options.readonlyResearch) {
+    // fork（corum）2026-10-18（issue #75）：伪前台开启时，research 报告经 followup 通知送达。
+    if (options.pseudoForeground === true) {
+      return ptcPrefix + 'This read-only research tool runs in the FOREGROUND but does NOT block you: the call returns immediately as `foreground-pending` and you continue other work; the child\'s report arrives as a followup notice when it settles — so do NOT expect the findings in this tool result. Do NOT pass `run_in_background: true` (it is rejected). It has a shell for read-only commands (`git log`, `ls`, reading PID/log files, a verify script\'s `status`) but its sandbox is pinned to `read-only` and write/edit are denied, so it can never modify the repo. Fan out several research calls in ONE message when you need answers from different angles — each settles independently and delivers its own notice.'
+    }
     return ptcPrefix + 'This read-only research tool ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline. Do NOT pass `run_in_background: true` (it is rejected) — a backgrounded investigation leaves you guessing or repeating work. It has a shell for read-only commands (`git log`, `ls`, reading PID/log files, a verify script\'s `status`) but its sandbox is pinned to `read-only` and write/edit are denied, so it can never modify the repo. Fan out several research calls in ONE message when you need answers from different angles.'
   }
   return ptcPrefix + `Use ${toolName} in the background by default.`
@@ -1592,6 +1736,140 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  // fork（corum）2026-10-18（issue #75）：伪前台门禁 service（get-or-create，根上下文单例，
+  // 红线 1 合规）。worker/research 双实例各 apply 一次都安全。
+  const foregroundGate = acquireCorumForegroundGate(ctx)
+  const pseudoForegroundEnabled = config.pseudoForeground === true
+
+  // fork（corum）2026-10-18（issue #75 #6/#8）：就地覆写 `userQuestions.ask`（不 fork）。
+  //
+  // 设计文档 §5.6 问题 10：`DELEGATED_CALLER` 在 waterfall 之前抛出 ⇒ 任何 listener 都
+  // 拦不到。覆写先例 `corum-session-queue-revert:146-196`（就地改写服务方法 + 幂等标记）。
+  //
+  // 覆写逻辑：
+  //   · 子 Agent（被拥有的）调 `ask_user_question` 时，官方会以 `DELEGATED_CALLER` 拒绝。
+  //   · 伪前台开启时，改为：转发提问给父 Agent（followup，带 `subagent-question` source kind），
+  //     父 Agent idle → 收到通知 → 作答 → gate.resolveAnswer → 子 Agent 继续。
+  //   · 父 Agent 答不了 → 上呈用户（复用官方 user-questions/request waterfall，以父 Agent 为载体重发）。
+  //   · 非伪前台（pseudoForeground !== true）或子 Agent 不在 gate 里 → 仍走官方原逻辑（DELEGATED_CALLER）。
+  //
+  // ⚠️ 仅在伪前台开启时覆写；否则完全不动官方行为（零影响）。
+  // 类型用 `unknown`（本包不直接依赖 @deepseek-ai/dsh-user-questions，类型经 ctx.userQuestions 环境增强可用）。
+  if (pseudoForegroundEnabled) {
+    const userQuestions = ctx.get('userQuestions')
+    if (userQuestions !== undefined) {
+      const askMethod = userQuestions.ask as ((request: unknown) => Promise<unknown>) & { __corumPseudoForegroundPatched?: boolean }
+      if (askMethod.__corumPseudoForegroundPatched !== true) {
+        const originalAsk = askMethod.bind(userQuestions) as (request: unknown) => Promise<unknown>
+        const patchedAsk = async (request: unknown): Promise<unknown> => {
+          // 拆解 request 的标准字段（AskUserQuestionRequest 形态）。
+          const req = request as { agent?: Agent; signal?: AbortSignal; questions: Array<{ id: string; question: string; header?: string; options?: Array<{ label: string; description?: string }> }> }
+          // 无 agent → 走官方原逻辑（非 Agent 上下文的提问，如 host 直接调）。
+          if (req.agent === undefined) return originalAsk(request)
+          // 检查是否为被拥有的子 Agent（非 root）。
+          const agents = ctx.get('agents')
+          if (agents === undefined) return originalAsk(request)
+          const agent = req.agent
+          if (agents.roots().includes(agent)) return originalAsk(request)
+          // 子 Agent 调 ask：查 gate 里有没有它的伪前台记录。
+          const parentAgentId = foregroundGate.parentOfChild(String(agent.id))
+          if (parentAgentId === undefined) {
+            // 子 Agent 不在伪前台门禁里（非伪前台委派）→ 走官方原逻辑（抛 DELEGATED_CALLER）。
+            return originalAsk(request)
+          }
+          const parent = agents.get(parentAgentId as unknown as import('@deepseek-ai/dsh-session').SessionId)
+          if (parent === undefined) {
+            // 父 Agent 已不在 → abort。
+            throw new Error('ask_user_question was aborted: the parent agent is no longer live (ASK_ABORTED)')
+          }
+          // 转发提问给父 Agent：用 followup 投递 subagent-settled notice（承载提问摘要）。
+          // 设计文档 §5.7：以「子 Agent 待澄清」消息投给父会话。
+          //
+          // ⚠️ 最小实现：暂用 `subagent-settled` source kind + 文本摘要承载提问
+          // （不新建 MessageSource kind，避免动 dsh-llm 的 MessageSourceMap）。
+          // 后续实施可升级为独立 `subagent-question` kind。
+          const questionId = req.questions[0]?.id ?? String((globalThis.crypto ?? require('node:crypto').webcrypto).randomUUID())
+          // 注册 pending question：等父 Agent 作答。
+          const answerPromise = new Promise<unknown>((resolve, reject) => {
+            foregroundGate.registerPendingQuestion(questionId, String(agent.id), resolve, reject)
+          })
+          // 构造提问摘要文本。
+          const questionTexts = req.questions.map(q => {
+            const opts = (q.options ?? []).map((o: { label: string; description?: string }) => `  - ${o.label}${o.description !== undefined ? ` (${o.description})` : ''}`).join('\n')
+            return `**${q.header ?? 'Question'}**: ${q.question}${opts.length > 0 ? '\n' + opts : ''}`
+          }).join('\n\n')
+          try {
+            parent.followup(createUserMessage({
+              content: [{ type: 'text', text: `Subagent (${String(agent.id).slice(0, 12)}) asks a question (id=${questionId}):\n\n${questionTexts}` }],
+              source: {
+                kind: 'subagent-settled',
+                form: 'notice',
+                summary: boundContextSummary(`Subagent question (${questionId})`),
+                senderSessionId: String(agent.id),
+              } as unknown as MessageSource,
+            }))
+          } catch (notifyError: unknown) {
+            foregroundGate.rejectQuestion(questionId, new Error(
+              `ask_user_question could not be forwarded to the parent agent: ${notifyError instanceof Error ? notifyError.message : String(notifyError)}`,
+            ))
+          }
+          // 等：父 Agent 作答（resolveAnswer）或 abort（reject）。
+          return answerPromise
+        }
+        ;(patchedAsk as { __corumPseudoForegroundPatched?: boolean }).__corumPseudoForegroundPatched = true
+        userQuestions.ask = patchedAsk as typeof userQuestions.ask
+      }
+    }
+  }
+
+  // fork（corum）2026-10-18（issue #75）：伪前台门禁——`agent/pre-step` 钩子。
+  //
+  // 父 Agent 派出前台子 Agent 后，工具返回 `foreground-pending` + `concludeTurn()`，
+  // 父 Agent 的 turn 结束进入 idle。子 Agent 还在跑，这期间父 Agent 若被唤醒（用户新消息、
+  // 子 Agent 通知），下一个 turn 会进 pre-step——门禁在此拦截：
+  //   · 子 Agent 完成通知：穿透（让父 Agent 收到结果、放行）；
+  //   · 用户插话：回填进 inbox 排队（定调 5：排队保持现状），不进模型上下文。
+  //
+  // 做法是「分区 + 回填 + `enter{messages:[]}`」（5.6 问题 4 的修法，**不用 `reject`**）：
+  //   - `reject` 会丢消息（官方既定语义，`consumed-work.ts:34-38`）且让后续队列停摆；
+  //   - `enter{messages:[]}`：step 0 且 messages 为空 ⇒ `turnEnds={completed}; return false`
+  //     （`agent.ts:324-327`）——不花模型调用、不丢消息、不写 `blocked`。
+  //
+  // 透传白名单（5.6 问题 4）：
+  //   · `subagent-settled`（子 Agent 完成通知）——穿透；
+  //   · 其余（用户新消息等）——回填排队。
+  //
+  // 仅对 root 会话生效（5.7 E：`origin !== 'subagent'`）——嵌套委派仍走旧阻塞路径。
+  // 钩子挂 `{ global: true }`：worker/research 双实例都会挂，但 gate 状态是共享单例，
+  // 故幂等（同一 agent 的 pre-step 被调多次，每次都判 `isBlocking`）。
+  if (pseudoForegroundEnabled) {
+    ctx.on('agent/pre-step', async ({ agent, messages, signal }, next): Promise<PreStepDecision> => {
+      // root 会话才生效（嵌套子 Agent 的前台委派不进伪前台）。
+      if (agent.session.header.origin === 'subagent') return next()
+      if (!foregroundGate.isBlocking(agent.id)) return next()
+      // 分区：透传 vs 排队。
+      const isPassthrough = (message: UserMessage): boolean =>
+        message.source.kind === 'subagent-settled'
+      const pass = messages.filter(isPassthrough)
+      const hold = messages.filter(message => !isPassthrough(message))
+      if (hold.length === 0) {
+        // 全透传：正常进 step（带透传消息）。
+        return next()
+      }
+      // 回填排队的消息（仿 `restoreOtherClaimed` 的 `inbox.prepend` 先例）。
+      // 按原序回填（next-step 尾部，FIFO）；prepend 逐条会逆序，用 splice 追加保序。
+      for (const message of hold) {
+        agent.inbox.append('next-step', message)
+      }
+      if (pass.length === 0) {
+        // 无透传：空 enter ⇒ turn 结束（completed），不花模型调用、不丢消息。
+        return { kind: 'enter', messages: [] }
+      }
+      // 有透传：只带透传消息进 step。
+      return { kind: 'enter', messages: pass }
+    }, { global: true })
+  }
+
   // fork（corum）：host settings namespace `corum-subagent`（三级配置第一级：
   // 全局默认；「子 Agent」设置 section 读写此面，preset config 逐键覆盖）。
   //
@@ -1607,6 +1885,34 @@ export function apply(ctx: Context, config: Config): void {
       corumGlobalSettingsScope = acquireCorumSubagentSettingsScope(
         settingsCtx.settings as unknown as CorumSettingsProviderFace,
       )
+    })
+  }
+
+  // fork（corum）2026-10-18（issue #75 #16 路径1）：父 turn 结束未作答 → 自动上报。
+  //
+  // 设计文档 §5.7 §3 第三步：父 Agent 的 turn 结束时若有未作答的 pending question，
+  // 机制应自动上报（让用户看到「子 Agent 在等回答」）。
+  //
+  // 本钩子在 `agent/turn-stopping` 上检查：若该 agent 有 pending question 且在伪前台门禁里，
+  // 追加一条会话通知提醒用户（不 abort 子 Agent 的 ask 调用——那是「死等」语义；
+  // 这里只是增强可见性，让用户知道有个问题在等）。
+  if (pseudoForegroundEnabled) {
+    ctx.on('agent/turn-stopping', ({ agent, signal }) => {
+      signal.throwIfAborted()
+      // root 会话才生效（与伪前台一致）。
+      if (agent.session.header.origin === 'subagent') return
+      if (!foregroundGate.isBlocking(agent.id)) return
+      // 追加通知：提醒用户「前台子 Agent 有待答问题」。
+      const pending = foregroundGate.pendingChildren(agent.id)
+      if (pending.length === 0) return
+      try {
+        agent.session.append('corum/foreground-busy', {
+          pending: true,
+          childIds: pending,
+        })
+      } catch {
+        // 追加失败只静默（增强不能反过来让 turn 停不下来）。
+      }
     })
   }
 
@@ -1958,6 +2264,8 @@ export function apply(ctx: Context, config: Config): void {
 
   const modelSelectionCapable = config.modelSelectionSettings === true
   ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
+  // fork（corum）2026-10-18（issue #75 #9）：伪前台 busy 投影（客户端据此判父 Agent idle 但仍在忙）。
+  ctx.sessionProjections.register(corumForegroundBusyProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     if (typeof config.maxDepth === 'number' && !subagentProvider.capabilities.depthLimit) {
@@ -1996,7 +2304,7 @@ export function apply(ctx: Context, config: Config): void {
     if (modelSelectionPolicy !== undefined) registerListSubagentModels(runtimeCtx, modelSelectionPolicy)
     // Load order and HMR replacement can change provider availability while
     // this fiber remains active.
-    let mounted: { subagentProvider: SubagentProvider; disposeTool: () => void; disposeOrchestrate: () => void } | undefined
+    let mounted: { subagentProvider: SubagentProvider; disposeTool: () => void; disposeOrchestrate: () => void; disposeAnswerChildQuestion: () => void } | undefined
 
     /**
      * fork（corum）：单任务隔离 spawn——subagent（单发）与 orchestrate（任务清单
@@ -2054,7 +2362,7 @@ export function apply(ctx: Context, config: Config): void {
 
     const spawnOne = async (
       runtimeCtx: Context,
-      exec: { agent: Agent; signal: AbortSignal; callId?: string },
+      exec: { agent: Agent; signal: AbortSignal; callId?: string; concludeTurn?: () => void },
       args: {
         label: string
         prompt: string
@@ -2091,7 +2399,7 @@ export function apply(ctx: Context, config: Config): void {
         onChildStarted?: (childId: string) => void
       },
       subagentProvider: SubagentProvider,
-    ): Promise<ForegroundToolResult | { kind: 'continuable'; subagentId: string } | { kind: 'background'; jobId: string }> => {
+    ): Promise<ForegroundToolResult | ForegroundPendingToolResult | { kind: 'continuable'; subagentId: string } | { kind: 'background'; jobId: string }> => {
       const parent = exec.agent
       // fork（corum）：官方模型自选请求面（provider/model/reasoning_effort 直挂
       // args 顶层）——corum 的 subagent/orchestrate schema 已剔除这三个字段
@@ -2368,7 +2676,9 @@ export function apply(ctx: Context, config: Config): void {
         ? { runInBackground: false }
         : resolveDelegationRun(args, { backgroundEnabled, continuable })
       if (effReadonlyResearch && args.run_in_background === true) {
-        throw new Error('run_in_background is not supported for read-only research: the report IS the deliverable, so a research child always runs in the foreground and its report returns in this tool result.')
+        throw new Error(pseudoForegroundEnabled
+          ? 'run_in_background is not supported for read-only research: the report IS the deliverable, so a research child always runs in the foreground and its report arrives as a followup notice (it does not block you — you get foreground-pending and continue).'
+          : 'run_in_background is not supported for read-only research: the report IS the deliverable, so a research child always runs in the foreground and its report returns in this tool result.')
       }
       const corumSessionId = parent.session.id
       const corumConcurrent = (args.fanoutCount ?? 1) > 1
@@ -2850,6 +3160,66 @@ export function apply(ctx: Context, config: Config): void {
           }
         }
 
+        // fork（corum）2026-10-18（issue #75）：伪前台路径。
+        //
+        // 仅对 root 会话生效（5.7 E：`origin !== 'subagent'`，嵌套委派仍走旧阻塞路径）。
+        // 启用时（config.pseudoForeground === true）：前台子 Agent 不阻塞父 Agent——
+        // 预检通过 + run 启动后，立即 track + 启动异步 waiter + 返回 foreground-pending
+        // + concludeTurn()。
+        //
+        // 模型失败重试（corumAskAboutModel）路径**不走伪前台**（它需要同步问用户）：
+        // 若锁定路由预检失败（corumLockedRouteFailure）或非锁定路由预检失败，仍走下方
+        // 阻塞的「问用户」分支。只有预检通过、run 成功启动后，才进入伪前台。
+        const isPseudoForeground = pseudoForegroundEnabled
+          && parent.session.header.origin !== 'subagent'
+        // fork（corum）：spawn 期预检失败（锁定/非锁定路由都可能在 spawn 前判出）。
+        // 伪前台与阻塞路径共用此变量：伪前台路径预检失败时落进阻塞的「问用户」分支。
+        let configuredFailure: string | undefined
+        if (isPseudoForeground) {
+          // fork（corum）2026-09-26：锁定路由预检失败 ⇒ 直接走「问用户」阻塞分支（不启死会话）。
+          if (corumLockedRouteFailure !== undefined) {
+            configuredFailure = corumLockedRouteFailure
+          } else {
+            const llm = runtimeCtx.get('llm')
+            if (llm !== undefined) {
+              try {
+                await preflightChildLlmRoute(
+                  llm,
+                  parentOptions,
+                  request.agentOptions,
+                  exec.signal,
+                  providerRouteDefaults === undefined,
+                )
+              } catch (error: unknown) {
+                configuredFailure = error instanceof Error ? error.message : String(error)
+              }
+            }
+          }
+          if (configuredFailure === undefined) {
+            // 预检通过：启动 run，进入伪前台。
+            const run = await startRun()
+            emitStarted(run)
+            const childId = String(run.id)
+            // fork（corum）5.6 问题 1（停止必须有效）：gate 持有 run 引用——
+            // 父 Agent dispose / 停止时，gate.disposeAllFor 直接 run.dispose() 杀掉子 Agent。
+            // 这是中断一次性 run 的唯一有效路径（cancel 在 idle 时 no-op、interrupt 对 one-shot 静默 no-op）。
+            foregroundGate.track(parent.id, childId, run)
+            // fork（corum）#9：emit corum/foreground-busy event → 客户端 projection 判 busy。
+            appendForegroundBusyEvent(parent.session, true, foregroundGate.pendingChildren(parent.id))
+            // 异步 waiter：等 run.result settle → 释放门禁 → followup 通知 → dispose。
+            corumPseudoForegroundWait(run, parent, childId, args.label, foregroundGate, runtimeCtx.logger)
+            // fork（corum）5.6 问题 3：必须 concludeTurn()，否则父 Agent 在同一 turn 内继续干活、
+            // 门禁只挂 turn 入口 ⇒ 串行语义无机制支撑。先例 corum-subagent/driver/structured.ts:94。
+            exec.concludeTurn?.()
+            return {
+              kind: 'foreground-pending' as const,
+              runId: run.id,
+              childIds: [childId],
+            }
+          }
+          // 预检失败：落进下方阻塞的「问用户」分支（与旧路径一致）。
+        }
+
         /**
          * 至多两轮：① 用户配置的路由；② **用户同意后**用主 Agent 路由重新指派。
          *
@@ -2858,7 +3228,6 @@ export function apply(ctx: Context, config: Config): void {
          * 「主 Agent 全权承担开发直到任务完成」）。
          */
         let outcome: ForegroundToolResult | undefined
-        let configuredFailure: string | undefined
         /** 最终 settle 的那次 run 的 id（通知标题用它；重跑轮会覆盖成新 run）。 */
         let settledRunId = ''
         /** fork（corum）：失败子 Agent 的上下文（attempt 0 失败后提取，attempt 1 注入）。 */
@@ -3044,7 +3413,7 @@ export function apply(ctx: Context, config: Config): void {
         description: (corumReadonlyResearch
           ? 'This tool delegates a READ-ONLY research task: the child can read files, search, and run read-only shell commands, but it cannot write — there is no worktree, no branch, and nothing to merge. **It also has no MCP tools**: never route MCP work through it (the call would fail in the child). It returns what it found, not where a change landed. '
           : 'A write-capable delegation is ISOLATED by default: it gets its own git worktree + branch, so its edits reach your tree only through integration (`subagent { integrate: true }`, or automatically for an `orchestrate` call). Pass `isolation: "main"` when the child must work in your REAL tree instead — builds/installs, `git push`, merging, another repository, or any path outside this one: a default (isolated) child is hard-denied those and no approval card will appear. Cost dimension: isolation exists to keep CONCURRENT writers apart and protect an in-progress parent tree. For a SINGLE delegation with a clean tree and no parallel work it buys nothing and costs you (the worktree has no node_modules — no build/install/typecheck — and the edits stay invisible until you integrate): prefer `isolation: "main"` there; the moment a second concurrent writer exists (parallel children, background subagents, uncommitted work in your tree) the default isolated route is what you want. A read-only research delegation is not isolated (it writes nothing). A FOREGROUND result tells you which route ran, so you never have to guess whether a branch carries the work; a backgrounded run reports through its settlement notice instead, so do not expect the boundary marker there. ')
-          + wording.description + corumSchedulingDescription({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch })
+          + wording.description + corumSchedulingDescription({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch, pseudoForeground: pseudoForegroundEnabled })
           // fork（corum）：决策点分工（2026-09-14 委派正确性轮）——工具描述是模型
           // 选工具时唯一**贴着选择点**读到的文本，因此分工必须写在这里，而不是只
           // 写在机制段里。只读调研走 `subagent_research`（无修改 → 不召唤写能力
@@ -3158,6 +3527,18 @@ export function apply(ctx: Context, config: Config): void {
                   reportPath: { type: 'string' },
                 },
               },
+              // fork（corum）2026-10-18（issue #75）：伪前台——前台子 Agent 不阻塞父 Agent。
+              // ⚠️ 必须同步声明在 schema（additionalProperties: false），否则
+              // INVALID_TOOL_OUTPUT 会整块吞掉结果（5.6 问题 6）。
+              {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kind: { type: 'string', required: true, const: 'foreground-pending' },
+                  runId: { type: 'string', required: true },
+                  childIds: { type: 'array', required: true, items: { type: 'string' } },
+                },
+              },
             ],
           },
           render: (_args, value) => [{
@@ -3166,9 +3547,11 @@ export function apply(ctx: Context, config: Config): void {
               ? `started background subagent job ${value.jobId}`
               : value.kind === 'continuable'
                 ? `started subagent ${value.subagentId}`
-                : `${outputValueText(value.output)}${value.isolationBoundary === undefined
-                  ? ''
-                  : `\n\n${corumIsolationBoundaryNotice(value.isolationBoundary)}`}`,
+                : value.kind === 'foreground-pending'
+                  ? `foreground subagent ${value.runId} started and will settle asynchronously; its result arrives as a followup notice.`
+                  : `${outputValueText(value.output)}${value.isolationBoundary === undefined
+                    ? ''
+                    : `\n\n${corumIsolationBoundaryNotice(value.isolationBoundary)}`}`,
           }],
         },
         // Children never mutate the parent session; the one parent-owned write
@@ -3181,7 +3564,7 @@ export function apply(ctx: Context, config: Config): void {
           }
           // fork（corum）：单任务隔离 spawn 已抽取为 spawnOne（install 作用域闭包），
           // subagent 工具 execute 是它的薄壳。
-          return spawnOne(runtimeCtx, { agent: parent, signal: exec.signal, callId: String(exec.callId) }, {
+          return spawnOne(runtimeCtx, { agent: parent, signal: exec.signal, callId: String(exec.callId), ...pseudoForegroundEnabled ? { concludeTurn: () => exec.concludeTurn() } : {} }, {
             label: args.description,
             prompt: args.prompt,
             ...args.run_in_background !== undefined ? { run_in_background: args.run_in_background } : {},
@@ -3193,7 +3576,51 @@ export function apply(ctx: Context, config: Config): void {
           }, subagentProvider)
         },
       }))
-      // fork（corum）：orchestrate 工具（方案甲任务清单 fan-out）——仅在 worker 实例
+      // fork（corum）2026-10-18（issue #75 #6/#7）：`answer_child_question` 工具。
+      //
+      // 伪前台下子 Agent 调 `ask_user_question` → 覆写的 ask 转发提问给父 Agent（followup 通知，
+      // 带 questionId）→ 父 Agent 用**本工具**作答 → gate.resolveAnswer → 子 Agent 继续。
+      //
+      // 仅在伪前台开启 + worker 实例注册（research 实例不提供此工具——父 Agent 的作答通道由
+      // worker 实例垄断，避免双实例各注册一个同名工具冲突）。
+      const disposeAnswerChildQuestion = pseudoForegroundEnabled && isWorkerInstance
+        ? runtimeCtx.tools.register(defineTool({
+            name: 'answer_child_question',
+            description: 'Answer a question that a foreground subagent asked during its task. The question arrived as a subagent notice carrying a question id; pass that id and your answer here — the subagent receives it and continues. If you cannot answer from context, answer with what you know and the subagent will decide. This tool exists only in pseudo-foreground mode (foreground subagents do not block you; their questions reach you as notices).',
+            parameters: {
+              questionId: { type: 'string', required: true, description: 'The question id from the subagent notice (the line "Subagent (...) asks a question (id=...)")' },
+              answer: { type: 'string', required: true, description: 'Your answer to the subagent\'s question. If it was a multiple-choice question, name the chosen option label(s); otherwise write a free-text answer. The subagent will parse it and continue.' },
+            },
+            output: {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  delivered: { type: 'boolean', required: true },
+                  note: { type: 'string' },
+                },
+              },
+              render: (_args, value) => [{
+                type: 'text',
+                text: value.delivered
+                  ? 'Answer delivered to the subagent.'
+                  : `Could not deliver: ${value.note ?? 'question id not found (it may have timed out or the subagent settled)'}`,
+              }],
+            },
+            isConcurrencySafe: () => true,
+            async execute(args: { questionId: string; answer: string }): Promise<{ delivered: boolean; note?: string }> {
+              // fork（corum）：把答案包装成 AskUserQuestionAnswer 形态（子 Agent 的 ask 调用解包它）。
+              // 最小版：answer 是自由文本，塞进 custom 字段。
+              const answer = {
+                answers: [{ id: args.questionId, selected: [], custom: args.answer }],
+              }
+              const delivered = foregroundGate.resolveAnswer(args.questionId, answer)
+              return delivered
+                ? { delivered: true }
+                : { delivered: false, note: 'question id not found — the subagent may have settled or the question timed out' }
+            },
+          }))
+        : (() => {}) as () => void
       // 注册（research 只读实例不提供编排入口，toolName 为 subagent_research 时跳过）。
       const disposeOrchestrate = !isWorkerInstance
         ? (() => {}) as () => void
@@ -3973,7 +4400,7 @@ export function apply(ctx: Context, config: Config): void {
       const disposeToolWithGuard = (): void => {
         disposeTool()
       }
-      mounted = { subagentProvider, disposeTool: disposeToolWithGuard, disposeOrchestrate }
+      mounted = { subagentProvider, disposeTool: disposeToolWithGuard, disposeOrchestrate, disposeAnswerChildQuestion }
     }
 
     // Register listeners before checking presence so no synchronous change is missed.
@@ -3989,6 +4416,7 @@ export function apply(ctx: Context, config: Config): void {
       if (name !== config.provider || mounted === undefined) return
       mounted.disposeTool()
       mounted.disposeOrchestrate()
+      mounted.disposeAnswerChildQuestion()
       mounted = undefined
     })
     const present = runtimeCtx.subagents.getProvider(config.provider)
@@ -4023,7 +4451,7 @@ export function apply(ctx: Context, config: Config): void {
         order: runtimeCtx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
         text: context => mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined
           ? ''
-          : corumSchedulingSectionText({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch }, toolName, corumPtcPrefix(context.scope)),
+          : corumSchedulingSectionText({ backgroundEnabled, continuable, readonlyResearch: corumReadonlyResearch, pseudoForeground: pseudoForegroundEnabled }, toolName, corumPtcPrefix(context.scope)),
       })
     }
 
@@ -4062,9 +4490,13 @@ export function apply(ctx: Context, config: Config): void {
           // 三条并列在最前（只读 → 写 → 执行型验收）。只读是**条件**条目（research 实例缺席时
           // 不能提它），故用 push 逐条拼装而不是静态数组字面量。
           if (hasResearch) {
+            // fork（corum）2026-10-18（issue #75）：伪前台开启时 research 报告经 followup 送达。
+            const researchReportLine = pseudoForegroundEnabled
+              ? '  - It runs in the FOREGROUND but does NOT block you: the call returns `foreground-pending` and the report arrives as a followup notice — do NOT expect the findings in this tool result.'
+              : '  - It ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline.'
             lines.push(
               '- READ-ONLY work (research, search, fact-finding, summarization, JUDGING BY READING — checking an implementation against a spec, comparing output against expected values, or running read-only commands like `git log` / `ls`) → `subagent_research`.',
-              '  - It ALWAYS runs in the FOREGROUND: its report returns in this tool result, so you read the findings inline.',
+              researchReportLine,
               '  - It cannot be backgrounded: `run_in_background: true` is rejected.',
               '  - Its sandbox is pinned to `read-only` and write/edit are denied, so it can investigate freely and can never modify the repo.',
               '  - One or two questions: call it directly. Several angles: send them in ONE message.',
@@ -4260,6 +4692,14 @@ export function apply(ctx: Context, config: Config): void {
     installScoped(created)
   })
   ctx.on('agent/disposed', ({ agent: disposed }) => { removeScoped(disposed) })
+  // fork（corum）2026-10-18（issue #75 #5/#14）：父 Agent dispose 时清理其全部前台子 Agent。
+  // 伪前台下父 Agent idle 时 cancel 是 no-op、interrupt 对一次性 run 静默 no-op（5.6 问题 1），
+  // 故 gate 持有 run 引用；父 Agent 被 dispose 时 gate.disposeAllFor 直接杀掉所有在飞前台子 Agent。
+  ctx.on('agent/disposed', ({ agent: disposed }) => {
+    if (foregroundGate.isBlocking(disposed.id)) {
+      foregroundGate.disposeAllFor(disposed.id)
+    }
+  })
   // Reparenting an Agent between standing presets changes its inherited tool
   // set and emits `tools/change`; reconcile the Agent-owned override with the
   // new ancestry. Other registry changes are idempotent no-ops here.
