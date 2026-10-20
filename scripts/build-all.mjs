@@ -88,6 +88,17 @@ function readPackages() {
     if (!existsSync(groupDir)) continue
     for (const name of readdirSync(groupDir)) dirs.push(join(groupDir, name))
   }
+  // 非插件但同样要构建的 workspace 分组：
+  //  - `packages/tooling/*`：构建工具（`@corum/plugin-build`）—— 每个插件的 tsdown.config.ts
+  //    都 import 它的**产物**，所以它必须参与构建、而且必须排在前面；
+  //  - `packages/sdk/*`：对外发布的 SDK 与 UI 契约。
+  // 2026-10-20 CI 实测：漏掉它们 ⇒ 全新 checkout 上插件构建报
+  // `Cannot find module '…/node_modules/@corum/plugin-build/lib/index.js'`。
+  for (const group of ['tooling', 'sdk']) {
+    const groupDir = join(ROOT, 'packages', group)
+    if (!existsSync(groupDir)) continue
+    for (const name of readdirSync(groupDir)) dirs.push(join(groupDir, name))
+  }
   for (const pkgDir of dirs) {
     const manifest = join(pkgDir, 'package.json')
     if (!existsSync(manifest)) continue
@@ -112,12 +123,57 @@ function readPackages() {
   return out
 }
 
+/**
+ * 读 `pnpm-workspace.yaml` 的 `overrides`，把**别名依赖**翻译成工作区包名。
+ *
+ * 本仓大量依赖走 override 顶替：包声明的是官方名（`@deepseek-ai/dsh-tools`），实际解析到
+ * fork（`@corum/corum-tools`）。只看声明名，拓扑排序就看不见这条边 —— `--clean` 删掉 fork 的
+ * `lib/` 后，消费者可能先构建，于是报 `Cannot find module '@deepseek-ai/dsh-tools/types'`
+ * （2026-10-20 本地 `--clean` 实测）。
+ *
+ * @returns 别名 → 工作区包名（只收指向本仓路径的 override）
+ */
+function readOverrideAliases() {
+  const aliases = new Map()
+  const file = join(ROOT, 'pnpm-workspace.yaml')
+  if (!existsSync(file)) return aliases
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    // 形如：  '@deepseek-ai/dsh-tools': 'workspace:@corum/corum-tools@*'
+    const match = line.match(/^\s{2,}'?([@\w./-]+)'?:\s*'?([^'#\n]+?)'?\s*$/)
+    if (match === null) continue
+    const [, alias, spec] = match
+    let target
+    if (spec.startsWith('workspace:')) {
+      // `workspace:<包名>@<范围>` —— 注意**这一步不能跳过**：本仓正是用
+      // `'@deepseek-ai/dsh-tools': 'workspace:@corum/corum-tools@*'` 把官方包名顶替成 fork。
+      target = spec.slice('workspace:'.length).replace(/@[^@/]*$/, '')
+      if (!target.includes('/')) continue // `workspace:*` / `workspace:^` 这类是「同包」，不是别名
+    } else if (spec.startsWith('link:') || spec.startsWith('file:')) {
+      const pkgDir = join(ROOT, spec.slice(spec.indexOf(':') + 1))
+      if (!existsSync(join(pkgDir, 'package.json'))) continue
+      try {
+        const manifest = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+        target = typeof manifest.name === 'string' ? manifest.name : undefined
+      } catch { continue }
+    }
+    if (target !== undefined && target !== alias) aliases.set(alias, target)
+  }
+  return aliases
+}
+
 /** 由一个包的依赖里，挑出同 workspace 的兄弟包（决定构建顺序）。 */
-function workspaceDepsOf(pkg, byName) {
+function workspaceDepsOf(pkg, byName, aliases) {
   const out = []
   for (const [dep, spec] of Object.entries(pkg.deps ?? {})) {
-    if (!String(spec).startsWith('workspace:') && !String(spec).startsWith('link:')) continue
-    const found = byName.get(dep)
+    const declared = String(spec)
+    if (declared.startsWith('workspace:') || declared.startsWith('link:')) {
+      const found = byName.get(dep)
+      if (found !== undefined) out.push(found)
+      continue
+    }
+    // 别名：声明的是官方名/版本，override 指向本仓 fork。
+    const aliased = aliases.get(dep)
+    const found = aliased === undefined ? undefined : byName.get(aliased)
     if (found !== undefined) out.push(found)
   }
   return out
@@ -132,6 +188,7 @@ function workspaceDepsOf(pkg, byName) {
  */
 function topoSort(packages) {
   const byName = new Map(packages.map(p => [p.name, p]))
+  const aliases = readOverrideAliases()
   const order = []
   const state = new Map() // name -> 'visiting' | 'done'
   const visit = (pkg, chain) => {
@@ -141,7 +198,7 @@ function topoSort(packages) {
       throw new Error(`依赖成环：${[...chain, pkg.name].join(' → ')}`)
     }
     state.set(pkg.name, 'visiting')
-    for (const dep of workspaceDepsOf(pkg, byName)) visit(dep, [...chain, pkg.name])
+    for (const dep of workspaceDepsOf(pkg, byName, aliases)) visit(dep, [...chain, pkg.name])
     state.set(pkg.name, 'done')
     order.push(pkg)
   }
@@ -233,9 +290,26 @@ function cleanArtifacts(packages) {
   }
 
   log('  清理中…')
-  // 每个 workspace 包的整个 lib/（含 tsconfig.tsbuildinfo 增量缓存 —— 两者同目录，
-  // 这正是「删 lib 就够」的原因：不会留下让 tsc -b 误判为最新的缓存）。
-  for (const pkg of packages) removeDir(join(pkg.dir, 'lib'))
+  // 每个 workspace 包的整个 lib/，**外加根目录上的 tsbuildinfo**。
+  //
+  // ⚠️ 只删 lib/ 不够：有些包为了不让缓存文件混进 npm 产物（`files: ["lib"]` 会把
+  // `lib/tsconfig.tsbuildinfo` 一起发出去），把 `tsBuildInfoFile` 指到了包根的
+  // `.tsbuildinfo`。此时删 lib/ 会留下这份缓存 ⇒ `tsc -b` 判定「已是最新」不产出 ⇒
+  // 紧接着的 tsdown 报 `Cannot resolve entry module lib/types/index.js`
+  // （2026-10-20 `--clean` 实测，@corum/plugin-sdk）。
+  for (const pkg of packages) {
+    removeDir(join(pkg.dir, 'lib'))
+    for (const name of readdirSync(pkg.dir)) {
+      if (!/^(\.|tsconfig\.(spec\.)?)tsbuildinfo$/.test(name) && name !== '.tsbuildinfo') continue
+      const path = join(pkg.dir, name)
+      try {
+        if (!statSync(path).isFile()) continue
+        bytes += statSync(path).size
+        rmSync(path, { force: true })
+        count++
+      } catch { /* 忽略不可读 */ }
+    }
+  }
 
   // desktop 壳自己的产物。
   //
