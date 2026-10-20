@@ -277,7 +277,7 @@ export class SessionFactsService extends TypertRemoteService {
 }
 
 /** 投影值 → 契约类型（字段全 optional，类型不符就当缺省）。 */
-function asTokens(value: unknown): SessionFactsTokens | undefined {
+export function asTokens(value: unknown): SessionFactsTokens | undefined {
   if (value === null || typeof value !== 'object') return undefined
   const raw = value as Record<string, unknown>
   if (typeof raw.uncachedInputTokens !== 'number' || typeof raw.outputTokens !== 'number') return undefined
@@ -289,7 +289,7 @@ function asTokens(value: unknown): SessionFactsTokens | undefined {
   }
 }
 
-function asContext(value: unknown): SessionFactsContext | undefined {
+export function asContext(value: unknown): SessionFactsContext | undefined {
   if (value === null || typeof value !== 'object') return undefined
   const raw = value as Record<string, unknown>
   const context: SessionFactsContext = {}
@@ -302,7 +302,7 @@ function asContext(value: unknown): SessionFactsContext | undefined {
   return Object.keys(context).length === 0 ? undefined : context
 }
 
-function asStats(value: unknown): SessionFactsStats | undefined {
+export function asStats(value: unknown): SessionFactsStats | undefined {
   if (value === null || typeof value !== 'object') return undefined
   const raw = value as Record<string, unknown>
   if (typeof raw.turns !== 'number' || typeof raw.steps !== 'number') return undefined
