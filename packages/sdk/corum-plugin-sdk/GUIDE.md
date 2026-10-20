@@ -142,9 +142,11 @@ export function apply(ctx) {
 
 ## 4. 装进应用
 
-> 公开层已发布（2026-10-20，`0.6.0`）：`@corum/plugin-sdk`、`@corum/plugin-ui-contract`、
-> `@corum/plugin-build`、`@corum/corum-ui-base`、`@corum/corum-rpc-client`、`@corum/corum-platform`。
-> **正常情况下只看 4.2 就够。**
+> 公开层 6 个包已于 2026-10-20 全部发布（`0.6.0`）：`@corum/plugin-sdk`、
+> `@corum/plugin-ui-contract`、`@corum/plugin-build`、`@corum/corum-ui-base`、
+> `@corum/corum-rpc-client`、`@corum/corum-platform`。
+> **正常情况下只看 4.2 就够。** 已实测：干净工程 `pnpm add @corum/plugin-sdk`（自动带出
+> ui-base + rpc-client）→ `npx corum-plugin-init`（k1/k2 两种）→ `pnpm install && pnpm build && pnpm test` 全通。
 
 ### 4.0 前提：仓库/镜像必须能解析 `@corum`
 
