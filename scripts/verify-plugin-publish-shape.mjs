@@ -97,6 +97,19 @@ const packed = []
 const deps = {}
 for (const rel of TARGETS) {
   const dir = join(ROOT, 'packages', 'plugins', rel)
+  // 预检（fail-loud）：`exports` 改指 lib 产物之后，**类型面**从「直读 TS 源码」变成
+  // 「读 lib 里的 .d.ts」⇒ 没建过就打包，第三方装到的包缺声明，而错误会以
+  // 「consumer 里莫名其妙的 TS2307」出现在很远的地方。先在这里指名道姓。
+  const pkgJson = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  const required = Object.entries(pkgJson.exports ?? {})
+    .flatMap(([, value]) => Object.values(typeof value === 'string' ? { default: value } : value))
+    .filter(target => typeof target === 'string' && target.startsWith('./lib/'))
+    .map(target => join(dir, target.replace(/^\.\//, '')))
+  const missing = required.filter(file => !existsSync(file))
+  if (missing.length > 0) {
+    fail(`${rel}: 先构建该包（缺产物：${missing.map(f => f.slice(dir.length + 1)).join(', ')}）`)
+    continue
+  }
   let out
   try {
     out = run(pnpmBin(), ['pack', '--pack-destination', PACKS], dir)
