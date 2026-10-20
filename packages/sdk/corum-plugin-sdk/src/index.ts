@@ -62,3 +62,19 @@ export interface HostPlugin<Config = void> {
 export function definePlugin<Config = void>(plugin: HostPlugin<Config>): HostPlugin<Config> {
   return plugin
 }
+
+// ── 会话资源契约（类型与读取 helper 的单一家；corum-platform 反向 import 这里） ──
+export { readSessionFacts } from './session-facts.ts'
+export type {
+  ReadSessionFactsArgs,
+  SessionFactsContext,
+  SessionFactsSnapshot,
+  SessionFactsStats,
+  SessionFactsSubagent,
+  SessionFactsTokens,
+} from './session-facts.ts'
+
+// ── 工具注入（第三方插件让 Agent「真的能用它」）────────────────────────────────
+export { defineAgentTool, registerAgentTool } from './tools.ts'
+export type { ToolsFace } from './tools.ts'
+export type { ToolDefinition } from './tools.ts'

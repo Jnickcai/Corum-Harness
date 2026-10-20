@@ -34,6 +34,11 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
+import { SessionFactsService } from './session-facts.ts'
+
+// 会话资源服务与契约类型：第三方插件宿主半可 `ctx.get('corumSessionFacts')` 直调，
+// 客户端半用 `@corum/plugin-sdk` 的 `readSessionFacts()`（类型单一家在 SDK）。
+export { SessionFactsService } from './session-facts.ts'
 
 // Windows 的 git dubious-ownership 对策（cordis-free 纯函数）。
 // **从 index 再导出**是刻意的：本包 tsdown 只把 `lib/types/index.js` 当入口打包，
@@ -121,4 +126,7 @@ export class PlatformService extends TypertRemoteService {
  */
 export function apply(ctx: Context): void {
   new PlatformService(ctx)
+  // 会话资源是**另一条轴**（「这个会话里发生了什么」），与平台事实（「我跑在哪」）分开命名，
+  // 但同包提供 —— 见 session-facts.ts 头注的服务命名纪律。
+  new SessionFactsService(ctx)
 }

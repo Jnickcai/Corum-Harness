@@ -21,7 +21,8 @@
  */
 
 import type { Context } from '@corum/plugin-sdk/client'
-import { makeCorumRpcCall } from '@corum/plugin-sdk/client'
+import { makeCorumRpcCall, readSessionFacts } from '@corum/plugin-sdk/client'
+import type { SessionFactsSnapshot } from '@corum/plugin-sdk/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import {
   registerRegionOverride as registerRegion,
@@ -53,12 +54,24 @@ export function apply(ctx: Context): void {
   })
   registerRegion(ctx.slots, { slot: 'corum.panel', Component: TerminalReplacement })
 
-  // ② 设置 ›「扩展」里的一页。
+  // ② 设置 ›「扩展」里的一页。注入面把「读会话资源」与「列工具面」的能力交给页面，
+  // 页面本身不碰 connection（组件可复用、可单测）。
+  const readFacts = async (): Promise<SessionFactsSnapshot> => {
+    if (connection === undefined) throw new Error('connection 服务不可用')
+    return await readSessionFacts(connection as never)
+  }
+  const listTools = async (): Promise<readonly string[]> => {
+    if (callRemote === undefined) return []
+    const result = await callRemote<{ names: readonly string[] }>('corumSessionFacts', 'toolNames', {})
+    return result.names
+  }
+
   registerSettings(ctx.slots, {
     id: SETTINGS_SECTION_ID,
     label: () => '测试插件 · 区域替换',
     order: 500,
     Component: RegionReplacementSettings,
+    inject: () => ({ readFacts, listTools }),
   })
 
   ctx.logger?.info?.('region-replacement: 已注册 2 条区域覆盖 + 1 条设置页（setup 契约）')

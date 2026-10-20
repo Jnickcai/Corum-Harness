@@ -96,3 +96,43 @@ j.dsh.profile.bundles.push("@corum-examples/region-replacement");fs.writeFileSyn
 - 冲烟：4 通过 / 0 失败 / 零 console 错误
 - 卸载 + 重启 + 点亮编辑器：宿主原 occupant 回来（`选择或打开一个文件开始编辑 资源管理器…`），
   `[data-replacement]` 消失 ⇒ **宿主文件真的没被改**
+
+
+---
+
+## 追加能力（2026-10-21 下半场）
+
+### ① 读当前会话资源（token / 轮次 / 子 Agent）
+
+宿主侧 `@corum/corum-platform` 新增服务 **`corumSessionFacts`**（与 `platform` 同包不同轴）：
+
+- RPC `/api/corumSessionFacts/snapshot` → `{ tokens, context, stats, subagents, warnings }`
+- RPC `/api/corumSessionFacts/toolNames` → 当前模型可见的工具名清单
+- 客户端 helper：`@corum/plugin-sdk` 的 `readSessionFacts(connection)`
+
+数据全部来自官方投影（`tokenUsage` / `contextPressure` / `sessionStats`）与 corum 子 Agent
+血缘目录；**一次一致切**（同 `asOfSeq`）、**永不抛**（读不到进 `warnings`）。
+
+### ② 给 Agent 注入工具
+
+```ts
+export const inject = ['tools']
+export function apply(ctx) {
+  ctx.effect(() => registerAgentTool(ctx.tools, defineAgentTool({ name: 'demo_session_report', … })))
+}
+```
+
+本插件注入的 `demo_session_report`：Agent 自查「当前会话花了多少 token、跑了几轮、
+派了几个子 Agent」。注册随 fiber 撤销 ⇒ 卸载插件工具即消失。
+
+### 实机验证（verify :9334）
+
+| 项 | 结果 |
+|---|---|
+| `corumSessionFacts/snapshot` | 返回契约形状；本实例无会话 ⇒ `warnings: ["没有可用会话"]`（fail-soft 生效） |
+| `corumSessionFacts/toolNames` | `共 1 条：demo_session_report` ⇒ **插件注入的工具确实进了模型可见的工具面** |
+| 设置 › 扩展 › 本插件 | 两个新卡片：会话资源（含刷新）+ Agent 工具面（含「✓ 在清单里」）；截图 `/tmp/corum-cdp/shots/rr-session-facts-tools.png` |
+| 冲烟 | 4 通过 / 0 失败 / 零 console 错误 |
+
+**未验证**：真实会话的 token/轮次数值 —— verify home 是干净 home，里面没有会话（也就不可能
+有轮次）。要验数值需在有历史会话的 home 上跑，或真跑一轮 Agent（需要模型）。

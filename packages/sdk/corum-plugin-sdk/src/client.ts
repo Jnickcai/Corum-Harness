@@ -52,6 +52,17 @@ export type {
   MosaicWallProps,
 } from '@corum/corum-ui-base/client'
 
+// ── 会话资源（第三方读「当前会话发生了什么」）─────────────────────────────────
+export { readSessionFacts } from './session-facts.ts'
+export type {
+  ReadSessionFactsArgs,
+  SessionFactsContext,
+  SessionFactsSnapshot,
+  SessionFactsStats,
+  SessionFactsSubagent,
+  SessionFactsTokens,
+} from './session-facts.ts'
+
 // ── RPC（来自 @corum/corum-rpc-client 的客户端半） ───────────────────────────
 export { makeCorumRpcCall } from '@corum/corum-rpc-client/client'
 export type { CorumRpcCall } from '@corum/corum-rpc-client/client'

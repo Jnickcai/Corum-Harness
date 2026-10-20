@@ -48,5 +48,8 @@
     "type": "git",
     "url": "git+https://github.com/kukucaiCndy/Corum-Harness.git",
     "directory": "packages/plugins/agent/corum-platform"
+  },
+  "dependencies": {
+    "@corum/plugin-sdk": "workspace:*"
   }
 }

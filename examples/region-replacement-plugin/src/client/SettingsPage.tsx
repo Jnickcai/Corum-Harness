@@ -10,8 +10,9 @@
  * @module @corum-examples/region-replacement/client/SettingsPage
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { SettingsSectionOwnerProps } from '@corum/plugin-ui-contract'
+import type { SessionFactsSnapshot } from '@corum/plugin-sdk/client'
 
 /** 偏好键（编辑器面板读同一键）。 */
 export const SHOW_TOKENS_KEY = 'region-replacement.showThemeTokens'
@@ -50,11 +51,32 @@ const S = {
  * @param props - 壳下发的 owner props（`close`）+ 本插件注入面（本页不用）。
  * @returns 设置页内容。
  */
-export function RegionReplacementSettings(_props: SettingsSectionOwnerProps): React.JSX.Element {
+/** 设置页的注入面（由 client/index.ts 提供：读会话资源 + 列工具面）。 */
+export interface SettingsInjected {
+  readFacts: () => Promise<SessionFactsSnapshot>
+  listTools: () => Promise<readonly string[]>
+}
+
+export function RegionReplacementSettings(props: SettingsSectionOwnerProps & Partial<SettingsInjected>): React.JSX.Element {
   const [showTokens, setShowTokens] = useState<boolean>(() => {
     try { return window.localStorage.getItem(SHOW_TOKENS_KEY) === '1' } catch { return false }
   })
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined)
+  const [facts, setFacts] = useState<SessionFactsSnapshot | undefined>(undefined)
+  const [factsError, setFactsError] = useState<string | undefined>(undefined)
+  const [tools, setTools] = useState<readonly string[] | undefined>(undefined)
+
+  const refresh = useCallback(async () => {
+    try {
+      setFactsError(undefined)
+      if (props.readFacts !== undefined) setFacts(await props.readFacts())
+      if (props.listTools !== undefined) setTools(await props.listTools())
+    } catch (error) {
+      setFactsError(error instanceof Error ? error.message : String(error))
+    }
+  }, [props.readFacts, props.listTools])
+
+  useEffect(() => { void refresh() }, [refresh])
   const platform = bridge()?.getPlatform?.() ?? 'unknown'
 
   useEffect(() => {
@@ -68,6 +90,24 @@ export function RegionReplacementSettings(_props: SettingsSectionOwnerProps): Re
 
   return (
     <div style={S.page} data-settings-page="region-replacement">
+      <div style={S.card}>
+        <h3 style={S.h}>本会话资源（corumSessionFacts/snapshot）</h3>
+        {factsError !== undefined && <p style={S.p}>读取失败：{factsError}</p>}
+        <div style={S.row}><span style={S.mono}>会话</span><span>{facts?.sessionId !== undefined && facts.sessionId !== '' ? facts.sessionId : '—'}</span></div>
+        <div style={S.row}><span style={S.mono}>轮次 / 步</span><span>{facts?.stats === undefined ? '—' : `${facts.stats.turns} / ${facts.stats.steps}`}</span></div>
+        <div style={S.row}><span style={S.mono}>tokens</span><span>{facts?.tokens === undefined ? '—' : `输入 ${facts.tokens.uncachedInputTokens} · 输出 ${facts.tokens.outputTokens} · 缓存读 ${facts.tokens.cacheReadTokens}`}</span></div>
+        <div style={S.row}><span style={S.mono}>上下文占用</span><span>{facts?.context?.usedRatio === undefined ? '—' : `${Math.round(facts.context.usedRatio * 100)}%${facts.context.contextWindow === undefined ? '' : `（${facts.context.pressureTokens ?? '?'} / ${facts.context.contextWindow}）`}`}</span></div>
+        <div style={S.row}><span style={S.mono}>子 Agent</span><span>{facts === undefined ? '—' : `${facts.subagents.length} 个`}</span></div>
+        {facts?.warnings !== undefined && <p style={S.hint}>降级说明：{facts.warnings.join('；')}</p>}
+        <button type="button" onClick={() => { void refresh() }} style={{ ...S.mono, alignSelf: 'flex-start', padding: '3px 10px', borderRadius: '8px', border: '1px solid var(--corum-glass-border)', background: 'var(--corum-glass-2)', color: 'var(--dsw-alias-label-secondary)', cursor: 'pointer' }}>刷新</button>
+      </div>
+
+      <div style={S.card}>
+        <h3 style={S.h}>Agent 工具面（本插件注入了 demo_session_report）</h3>
+        <p style={S.p}>{tools === undefined ? '读取中…' : `共 ${tools.length} 条：${tools.slice(0, 8).join(' / ')}${tools.length > 8 ? ' …' : ''}`}</p>
+        <p style={S.hint}>本插件自己注册的工具：{tools?.includes('demo_session_report') === true ? '✓ demo_session_report 在清单里' : '（尚未出现，宿主工具面可能有延迟）'}</p>
+      </div>
+
       <div style={S.card}>
         <h3 style={S.h}>测试插件 · 区域替换</h3>
         <p style={S.p}>
