@@ -45,6 +45,8 @@ interface SessionsFace {
 /** 一个会话对象的最小能力面（只要 header 与 id）。 */
 interface SessionLike {
   readonly id: string
+  /** true = 已在宿主 store 里（投影可读）；false = 只从磁盘 header 认出来的。 */
+  readonly attached?: boolean
   readonly header?: {
     readonly title?: string
     readonly origin?: 'subagent'
@@ -121,9 +123,23 @@ export class SessionFactsService extends TypertRemoteService {
     //    不能被 SRC 静态解析成字段表，网关就把 args 当空对象，传任何字段都被拒。
     //    所以这里用「扁平的唯一标识符」而不是对象参数：`{ sessionId }` → 一个 string 形参。
     const warnings: string[] = []
-    const session = this.resolveSession(sessionId, warnings)
+    const session = await this.resolveSession(sessionId, warnings)
     if (session === undefined) {
-      return { sessionId: '', running: false, isSubagent: false, subagents: [], warnings: [...warnings, '没有可用会话'] }
+      return { sessionId: '', running: false, attached: false, isSubagent: false, subagents: [], warnings: [...warnings, '没有可用会话'] }
+    }
+
+    if (!session.attached) {
+      return {
+        sessionId: session.id,
+        ...(session.header?.title === undefined ? {} : { title: session.header.title }),
+        running: false,
+        attached: false,
+        isSubagent: session.header?.origin === 'subagent',
+        ...(session.header?.parentSession === undefined ? {} : { parentSessionId: session.header.parentSession }),
+        ...(session.header?.delegationDepth === undefined ? {} : { delegationDepth: session.header.delegationDepth }),
+        subagents: await this.readSubagents(session.id, warnings),
+        warnings: [...warnings, '会话未打开（只读磁盘 header）：token/轮次要在会话打开后读'],
+      }
     }
 
     const projections = this.projections()
@@ -139,6 +155,7 @@ export class SessionFactsService extends TypertRemoteService {
       sessionId: session.id,
       ...(session.header?.title === undefined ? {} : { title: session.header.title }),
       running: this.isRunning(session.id),
+      attached: true,
       isSubagent: session.header?.origin === 'subagent',
       ...(session.header?.parentSession === undefined ? {} : { parentSessionId: session.header.parentSession }),
       ...(session.header?.delegationDepth === undefined ? {} : { delegationDepth: session.header.delegationDepth }),
@@ -191,7 +208,7 @@ export class SessionFactsService extends TypertRemoteService {
    * @param sessionId - 显式 id。
    * @param warnings - 降级说明收集器。
    */
-  private resolveSession(sessionId: string | undefined, warnings: string[]): SessionLike | undefined {
+  private async resolveSession(sessionId: string | undefined, warnings: string[]): Promise<SessionLike | undefined> {
     const sessions = this.sessions()
     if (sessions === undefined) {
       warnings.push('sessions 服务不可用')
@@ -199,12 +216,53 @@ export class SessionFactsService extends TypertRemoteService {
     }
     if (sessionId !== undefined) {
       const hit = sessions.get(sessionId)
-      if (hit === undefined) warnings.push(`会话 ${sessionId} 不存在`)
-      return hit
+      if (hit !== undefined) return hit
+      // 未 attach：退回磁盘 header（`session/inspect` 明说「不看 Agent 也能读持久化 header」）。
+      // 这恰好是第三方最常见的场景之一：插件想展示「这条会话是什么」，而用户没打开它。
+      const persisted = await this.persistedHeader(sessionId)
+      if (persisted !== undefined) return persisted
+      warnings.push(`会话 ${sessionId} 不存在`)
+      return undefined
     }
     const all = sessions.list()
     if (all.length === 0) return undefined
     return all.reduce((latest, current) => ((current.header?.updatedAt ?? 0) >= (latest.header?.updatedAt ?? 0) ? current : latest))
+  }
+
+  /**
+   * 从持久化存里读一个会话的 header（不激活 Agent）。
+   * @param sessionId - durable 会话 id。
+   * @returns 最小 SessionLike（`attached: false`）或 undefined。
+   */
+  /**
+   * ⚠️ 未实机验证的兜底路径（2026-10-21）：`sessionController.inspect` 读磁盘 header 这条
+   * 分支在 verify 环境里没能跑到（复制的会话无法 resume：先缺 preset、补 preset 后 zstd 帧
+   * 校验失败）。代码保持 fail-soft（拿不到就当会话不存在，行为与不写这段一致），
+   * 但**下个 session 应在有真实会话的 home 上验一次**再把它写进契约文档。
+   */
+  private async persistedHeader(sessionId: string): Promise<SessionLike | undefined> {
+    try {
+      const controller = this.ctx.get('sessionController' as never) as {
+        inspect?: (id: string) => Promise<{ header?: { id?: string; title?: string; origin?: 'subagent'; parentSession?: string; delegationDepth?: number; updatedAt?: number } }>
+      } | undefined
+      if (controller?.inspect === undefined) return undefined
+      const value = await controller.inspect(sessionId)
+      const header = value?.header
+      if (header?.id === undefined) return undefined
+      return {
+        id: header.id,
+        attached: false,
+        header: {
+          ...(header.title === undefined ? {} : { title: header.title }),
+          ...(header.origin === undefined ? {} : { origin: header.origin }),
+          ...(header.parentSession === undefined ? {} : { parentSession: header.parentSession }),
+          ...(header.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth }),
+          ...(header.updatedAt === undefined ? {} : { updatedAt: header.updatedAt }),
+        },
+      }
+    } catch {
+      return undefined
+    }
   }
 
   /** 一次一致切读三个投影。 */

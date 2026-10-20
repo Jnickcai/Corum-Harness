@@ -80,6 +80,11 @@ export interface SessionFactsSnapshot {
   title?: string
   /** 宿主认为该会话是否正在跑（宿主 agent registry 的 status，不是「会话是否存在」）。 */
   running: boolean
+  /**
+   * 会话是否**已 attach 到宿主**。`false` = 只存在于磁盘（用户没打开它）：
+   * 此时只有身份信息（id/title），token/轮次读不到（投影要在 attach 的 Session 上折叠）。
+   */
+  attached: boolean
   /** 该会话是否是子 Agent 会话（`header.origin === 'subagent'`）。 */
   isSubagent: boolean
   /** 父会话 id（子 Agent 会话才有）。 */
