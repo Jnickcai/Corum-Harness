@@ -4,6 +4,9 @@ packages:
   - packages/plugins/ui/*
   - packages/plugins/session/*
   - packages/plugins/agent/*
+  # 构建工具包（`@corum/plugin-build`：插件构建契约的唯一载体，见 docs/PLUGIN-SPEC.md §7）。
+  # 它不是插件（不挂载、不进 plugin-manager），所以不在 packages/plugins/** 下。
+  - packages/tooling/*
   # 未来按需扩展的分组（复用官方/社区插件为主，只有差异化的才收录）：
   #   - packages/plugins/context/*
   #   - packages/plugins/workflow/*

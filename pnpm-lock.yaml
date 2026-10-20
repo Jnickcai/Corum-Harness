@@ -1136,6 +1136,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1164,6 +1167,9 @@ importers:
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1276,6 +1282,9 @@ importers:
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1316,6 +1325,9 @@ importers:
         specifier: ^2.9.0
         version: 2.9.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1335,6 +1347,9 @@ importers:
         specifier: ^3.3.3
         version: 3.3.3
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1366,6 +1381,9 @@ importers:
       '@corum/corum-api-remotes':
         specifier: workspace:*
         version: link:../corum-api-remotes
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1396,6 +1414,9 @@ importers:
 
   packages/plugins/agent/corum-goal-round-driver:
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1451,6 +1472,9 @@ importers:
         specifier: ^1.30.0
         version: 1.32.1(zod@4.6.7)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1500,6 +1524,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/dsh-storage-json':
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-storage@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))
@@ -1546,6 +1573,9 @@ importers:
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1580,6 +1610,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/dsh-agent':
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(e6766538ccdc5c528e656f345ee2793e)
@@ -1604,6 +1637,9 @@ importers:
 
   packages/plugins/agent/corum-platform:
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1638,6 +1674,9 @@ importers:
         specifier: ^0.8.2
         version: 0.8.3
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1669,6 +1708,9 @@ importers:
         specifier: 3.18.2
         version: 3.18.2
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1706,6 +1748,9 @@ importers:
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
@@ -1731,6 +1776,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1833,6 +1881,9 @@ importers:
 
   packages/plugins/agent/corum-todo-guard:
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1867,6 +1918,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1934,6 +1988,9 @@ importers:
         specifier: 3.18.2
         version: 3.18.2
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -1985,6 +2042,9 @@ importers:
 
   packages/plugins/agent/corum-update-checker:
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -2049,6 +2109,9 @@ importers:
         specifier: 3.18.2
         version: 3.18.2
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/dsh-api-remotes':
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)))
@@ -2110,6 +2173,9 @@ importers:
         specifier: ~4.4.7
         version: 4.4.7(@types/react@18.3.31)(immer@10.2.0)(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2147,6 +2213,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -2208,6 +2277,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2353,6 +2425,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2426,6 +2501,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2577,6 +2655,9 @@ importers:
       '@corum/corum-agent':
         specifier: workspace:*
         version: link:../../agent/corum-agent
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2641,6 +2722,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2717,6 +2801,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2787,6 +2874,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2851,6 +2941,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -2869,6 +2962,9 @@ importers:
 
   packages/plugins/session/corum-ui-settings-plugins:
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
@@ -2975,6 +3071,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@deepseek-ai/dsh-agent':
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(e6766538ccdc5c528e656f345ee2793e)
@@ -3027,6 +3126,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3073,6 +3175,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3119,6 +3224,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3171,6 +3279,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3217,6 +3328,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3284,6 +3398,9 @@ importers:
       '@corum/corum-agent':
         specifier: workspace:*
         version: link:../../agent/corum-agent
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3324,6 +3441,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3355,6 +3475,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3386,6 +3509,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3417,6 +3543,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3484,6 +3613,9 @@ importers:
       '@corum/corum-ui-conversation':
         specifier: workspace:*
         version: link:../../session/corum-ui-conversation
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3527,6 +3659,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3571,6 +3706,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3623,6 +3761,9 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -3641,6 +3782,21 @@ importers:
       vitest:
         specifier: ^5.0.0
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.19.1)(vite@7.3.7(@types/node@24.19.1)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
+
+  packages/tooling/corum-plugin-build:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.5
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(@tsdown/css@0.22.14)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
 
 packages:
 
