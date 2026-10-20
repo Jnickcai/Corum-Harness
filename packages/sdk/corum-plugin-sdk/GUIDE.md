@@ -142,7 +142,23 @@ export function apply(ctx) {
 
 ## 4. 装进应用
 
-### 4.1 现在（`@corum` 公开层尚未发布）
+> 公开层已发布（2026-10-20，`0.6.0`）：`@corum/plugin-sdk`、`@corum/plugin-ui-contract`、
+> `@corum/plugin-build`、`@corum/corum-ui-base`、`@corum/corum-rpc-client`、`@corum/corum-platform`。
+> **正常情况下只看 4.2 就够。**
+
+### 4.0 前提：仓库/镜像必须能解析 `@corum`
+
+国内常用 npmmirror 做默认 registry 时，`@corum` 这类新 scope 往往还没同步 ⇒ `404 Not Found`。
+在自己的 `.npmrc` 里单独把这一个 scope 指向官方：
+
+```ini
+@corum:registry=https://registry.npmjs.org/
+```
+
+（本仓 2026-10-20 实测：不配这一行，`pnpm add @corum/plugin-sdk` 会报
+`ERR_PNPM_FETCH_404 … @corum%2Fplugin-sdk`。）
+
+### 4.1 历史做法（发布之前才需要，保留供参考）
 
 ```bash
 # 1) 打包插件 + 它依赖的未发布 @corum 包
@@ -171,11 +187,17 @@ j.dsh.profile.bundles.push("@you/my-plugin");fs.writeFileSync("package.json",JSO
 # 4) 重启应用（host 插件必须重启；renderer 才走 HMR）
 ```
 
-### 4.2 发布之后
+### 4.2 正常路径（已发布）
 
 ```bash
-cd ~/.corum/profiles/web && pnpm add @you/my-plugin    # 然后在插件里重启
+# 你的插件从 npm 装进 profile，然后在应用里重启
+cd ~/.corum/profiles/web && pnpm add @you/my-plugin
 ```
+
+插件自己的依赖同理：`@corum/plugin-sdk` / `@corum/plugin-ui-contract` 进 `dependencies`，
+`@corum/plugin-build` 进 `devDependencies`，**不需要任何 overrides**。
+（本仓 2026-10-20 用干净工程实测：`pnpm add @corum/plugin-sdk` → `npx corum-plugin-init` →
+`pnpm install && pnpm build && pnpm test` 全通。）
 
 ---
 

@@ -196,16 +196,32 @@ function topologicalOrder(packages) {
  * @returns true / false / undefined（网络不可达 = 未知，不阻断干跑）
  */
 async function publishedVersion(manifest) {
-  const url = `https://registry.npmjs.org/${manifest.name.replace('/', '%2f')}`
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
-    if (response.status === 404) return false
-    if (!response.ok) return undefined
-    const body = await response.json()
-    return body.versions?.[manifest.version] !== undefined
-  } catch {
-    return undefined
+  const encoded = manifest.name.replace('/', '%2F')
+  const check = async (url) => {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
+      return response.status
+    } catch {
+      return undefined
+    }
   }
+  const docStatus = await check(`https://registry.npmjs.org/${encoded}`)
+  if (docStatus === 200) {
+    try {
+      const body = await (await fetch(`https://registry.npmjs.org/${encoded}`, { signal: AbortSignal.timeout(5000) })).json()
+      return body.versions?.[manifest.version] !== undefined
+    } catch {
+      return undefined
+    }
+  }
+  if (docStatus === 404) {
+    // 新包的 **文档快照**可能还没生成（doc 404），但**版本端点**已经是权威事实。
+    // 只看 doc 会把「已发布」误判成「待发布」⇒ 重发同版本 ⇒ 409/403 打断整批。
+    const versionStatus = await check(`https://registry.npmjs.org/${encoded}/${encodeURIComponent(manifest.version)}`)
+    if (versionStatus === 200) return true
+    if (versionStatus === 404) return false
+  }
+  return undefined
 }
 
 // ── 关 1：规范守卫 ──────────────────────────────────────────────────────

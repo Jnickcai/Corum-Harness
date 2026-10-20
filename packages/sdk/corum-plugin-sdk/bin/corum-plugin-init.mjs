@@ -142,6 +142,9 @@ write('tsconfig.json', `${JSON.stringify({
     ...baseCompilerOptions,
     rootDir: 'src',
     outDir: 'lib/types',
+    // 构建缓存别落进 lib/：否则它会跟着 `files: ["lib"]` 一起发到 npm（实测产物里出现过
+    // tsconfig.tsbuildinfo）。放到包根、由一个点文件承载即可。
+    tsBuildInfoFile: '.tsbuildinfo',
     ...(kind === 'k2' ? { jsx: 'react-jsx', lib: ['ES2024', 'DOM', 'DOM.Iterable'] } : { lib: ['ES2024'] }),
     types: [],
   },
