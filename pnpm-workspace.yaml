@@ -10,6 +10,9 @@ packages:
   # SDK（`@corum/plugin-sdk`：第三方插件的最小依赖面 —— 零运行时逻辑，只聚合类型与
   # 公开层 API。见方案 §A.2 / docs/PLUGIN-SPEC.md）。
   - packages/sdk/*
+  # 第三方插件的最小可运行样例（P6）。它**不是** corum 自己的插件：
+  # 只依赖 @corum/plugin-sdk + @corum/plugin-build，用来证明「第三方能独立写出可挂载插件」。
+  - examples/*
   # 未来按需扩展的分组（复用官方/社区插件为主，只有差异化的才收录）：
   #   - packages/plugins/context/*
   #   - packages/plugins/workflow/*

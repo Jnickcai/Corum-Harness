@@ -1,0 +1,5 @@
+# 第三方插件的挂载层（方案 §H.2）。`insert` 不带 id ⇒ 直接追加到组件树根，
+# **不需要知道宿主的任何 row id** —— 这是 dsh.bundle 形态的关键优点。
+- insert:
+    - id: hello-plugin
+      name: '@corum-examples/hello-plugin'

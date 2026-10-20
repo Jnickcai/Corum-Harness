@@ -1,0 +1,48 @@
+{
+  "name": "@corum-examples/hello-plugin",
+  "version": "0.6.0",
+  "private": true,
+  "description": "第三方插件的最小可运行样例：只依赖 @corum/plugin-sdk（运行时）与 @corum/plugin-build（构建），既不含也不改宿主文件。hello 在启动时挂载，贡献一条 titlebar 槽内容与一个 host 侧服务方法。",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    },
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown && corum-inline-css",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@corum/plugin-sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@types/react": "~18.3.31",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  }
+}
