@@ -37,6 +37,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { readSync } from 'node:fs'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -51,8 +52,16 @@ const argValue = (name, fallback) => {
   return inline === undefined ? fallback : inline.slice(name.length + 3)
 }
 const DO_PUBLISH = args.has('--publish')
-/** 一次性验证码：账号开了 2FA 又没有 automation token 时，本机发布需要它（30 秒有效）。 */
-const OTP = argValue('otp', undefined)
+/** 一次性验证码（显式给一个，6 个包共用；过期再给一个新的）。 */
+let OTP = argValue('otp', undefined)
+/**
+ * `--ask-otp`：由**本脚本**逐包提问，而不是让 pnpm 自己弹。
+ *
+ * 为什么不用 pnpm 自己的提示：npm 2FA 对**每一次写操作**都要验证（发布 N 个包 = N 次写），
+ * pnpm 在每个包上单独挑战；它内部的「等待 OTP → 重试」循环在终端里表现为**验证完就卡住**
+ * （2026-10-20 实测）。改成：脚本先问码 → `pnpm publish --otp=CODE` → 只在真的过期时才再问一次。
+ */
+const ASK_OTP = args.has('--ask-otp')
 /** CI 专用：`--provenance` 需要 workflow 的 `id-token: write`，让 npm 页面出现来源声明。 */
 const PROVENANCE = args.has('--provenance')
 /**
@@ -98,11 +107,26 @@ function fail(message) {
  * 却 "已发 0 个" 且台账里错误信息为空 —— 真因就是脚本吞掉了 stdin）。
  */
 function runInteractive(command, commandArgs, cwd) {
-  execFileSync(command, commandArgs, { cwd, stdio: 'inherit' })
+  // 给个上限：pnpm 的 OTP 重试循环在终端里可能**永久等待**（2026-10-20 实测「验证完就卡住」）。
+  // 超时宁可失败并报出来，也不要让发布流程无声挂着。
+  execFileSync(command, commandArgs, { cwd, stdio: 'inherit', timeout: 240_000 })
 }
 
 function run(command, commandArgs, cwd) {
   return execFileSync(command, commandArgs, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+}
+
+/**
+ * 从**终端**读一个 6 位验证码（同步读 stdin：这个脚本本来就是交互式发布用的）。
+ * @param prompt - 提示语。
+ * @returns 用户输入的验证码（去掉空白）。
+ */
+function askOtp(prompt) {
+  process.stdout.write(prompt)
+  const buffer = Buffer.alloc(64)
+  const bytes = readSync(0, buffer, 0, buffer.length, null)
+  const text = buffer.subarray(0, bytes).toString('utf8').trim()
+  return text
 }
 
 function pnpmBin() {
@@ -227,6 +251,9 @@ console.log(`\n── 4. 发布（${todo.length} 个包）`)
 const done = []
 for (const pkg of todo) {
   process.stdout.write(`  → ${pkg.manifest.name}@${pkg.manifest.version} … `)
+  if (ASK_OTP && OTP === undefined) {
+    OTP = askOtp('\n    需要 OTP（6 位，30 秒有效，可给一个复用；过期会再问）：')
+  }
   try {
     if (VIA === 'npm') {
       // pnpm 打包（改写 workspace:*）→ npm 上传（OIDC/OTP 都由 npm 处理）
@@ -246,6 +273,13 @@ for (const pkg of todo) {
     console.log('ok')
     done.push(pkg.manifest)
   } catch (error) {
+    // OTP 过期/被拒：清掉旧码，让下一轮重新问（最常见的就是输码慢了）。
+    const text = `${error?.message ?? ''}`
+    if (ASK_OTP && /EOTP|one-time password|OTP/i.test(text)) {
+      console.log('OTP 过期或被拒，重试该包')
+      OTP = undefined
+      continue
+    }
     console.log('FAILED')
     // stdio 是 inherit ⇒ 详细原因已经打在**终端上**，这里只记退出码与最后一句话。
     const detail = typeof error.status === 'number' ? `exit ${error.status}` : (error.message ?? 'unknown')
