@@ -1,7 +1,7 @@
 {
   "name": "@corum/plugin-sdk",
   "version": "0.6.0",
-  "description": "第三方插件的最小依赖面：把「写一个 corum 插件要 8 个包」收敛成 1 个。零运行时逻辑 —— 只做类型聚合 + 两个薄 helper（definePlugin / defineClientPlugin）+ 公开层 API 的再导出（ui-base 的槽与布局、rpc-client 的 RPC 调用）。注意：本包必须放进插件包的 dependencies（不是 peer）—— 宿主只把 corum-desktop 的安装闭包链进 profile，peer 会 ERR_MODULE_NOT_FOUND（方案 §A.2 C-2b）。",
+  "description": "corum 插件的运行时唯一入口：类型聚合 + definePlugin/defineClientPlugin + 给 Agent 加工具的 defineAgentTool/registerAgentTool + 读会话资源的 readSessionFacts + 公开层 API 转发。零运行时状态；完整开发指南见包内 GUIDE.md，脚手架 CLI 为 corum-plugin-init。",
   "type": "module",
   "exports": {
     ".": {
@@ -15,7 +15,9 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "bin",
+    "GUIDE.md"
   ],
   "publishConfig": {
     "access": "public",
@@ -52,5 +54,8 @@
     "type": "git",
     "url": "git+https://github.com/kukucaiCndy/Corum-Harness.git",
     "directory": "packages/sdk/corum-plugin-sdk"
+  },
+  "bin": {
+    "corum-plugin-init": "./bin/corum-plugin-init.mjs"
   }
 }
