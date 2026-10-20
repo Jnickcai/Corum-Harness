@@ -47,6 +47,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/dsh-storage-json": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "@types/react": "^18.0.0",

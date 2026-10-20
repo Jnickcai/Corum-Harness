@@ -6,65 +6,15 @@
  * tsdown's own css pipeline: importing `x.module.css` yields the hashed class
  * map and the stylesheet text is inlined into client.js as an injected <style>.
  */
-import { defineConfig } from 'tsdown'
+import { definePluginBundle } from '@corum/plugin-build'
 
-/** Module-table entries the desktop seed answers: kept external in the browser bundle. */
-const CLIENT_EXTERNALS: readonly string[] = [
-  'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-store',
-]
-
-const CLIENT_ID = '@corum/corum-ui-settings-models'
-
-export default defineConfig(() => [
-  // Node library entries (tsc-emitted from lib/types). The settings-registrar
-  // is the host-side boot row that keeps the `ui-onboarding` namespace
-  // registered when the IDE overlay disables the official registrar
-  // (mirrors corum-subagent-settings / corum-memory-settings).
-  {
-    name: CLIENT_ID,
-    entry: ['lib/types/index.js', 'lib/types/settings-registrar.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-    external: [
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/schemastery',
-    ],
+export default definePluginBundle({
+  id: '@corum/corum-ui-settings-models',
+  host: {
+    entries: ['lib/types/index.js', 'lib/types/settings-registrar.js'],
+    external: ['@deepseek-ai/cordis', '@deepseek-ai/schemastery'],
   },
-  // Browser bundle: the fork's client half.
-  {
-    name: `${CLIENT_ID}/client`,
-    entry: { client: 'src/client/index.ts' },
-    outDir: 'lib',
-    format: 'cjs',
-    platform: 'browser',
-    dts: false,
-    sourcemap: true,
-    clean: false,
-    external: [...CLIENT_EXTERNALS],
-    define: {
-      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
-      'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
-      'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
-    },
-    noExternal: (id: string) => (CLIENT_EXTERNALS.includes(id) ? undefined : true),
-    // tsdown extracts the stylesheets to lib/style.css; the post-build step
-    // scripts/inline-css.mjs folds that stylesheet into client.js as an
-    // injected <style>.
-    css: { splitting: false },
-    outputOptions: {
-      entryFileNames: 'client.js',
-      inlineDynamicImports: true,
-      banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(CLIENT_ID)}, factory: (require) => {`,
-      footer: 'return module.exports; } });',
-      intro: 'var module = { exports: {} }; var exports = module.exports;',
-    },
+  client: {
+    extraExternals: ['@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-client-store'],
   },
-])
+})

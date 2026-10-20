@@ -22,7 +22,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "build": "tsc -b && tsdown && corum-inline-css",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false"
   },
@@ -42,6 +42,7 @@
     "zustand": "~4.4.7"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@tsdown/css": "^0.22.14",
     "@types/react": "~18.3.31",
     "tsdown": "^0.22.2",

@@ -28,6 +28,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.3",

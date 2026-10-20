@@ -25,6 +25,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"

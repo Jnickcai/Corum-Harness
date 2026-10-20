@@ -26,10 +26,11 @@
     }
   },
   "scripts": {
-    "build": "tsc -b && tsdown && node scripts/inline-css.mjs",
+    "build": "tsc -b && tsdown && corum-inline-css",
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.3",
