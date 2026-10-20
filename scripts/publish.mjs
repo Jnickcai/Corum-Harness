@@ -89,6 +89,18 @@ function fail(message) {
   process.exit(1)
 }
 
+/**
+ * 交互式执行：**继承 stdio**。
+ *
+ * 发布是唯一需要 TTY 的步骤 —— 账号开了 2FA 时 `pnpm publish` 会**当场提问要 OTP**。
+ * 如果这里像其它步骤那样 `stdio: ['ignore','pipe','pipe']` 把 stdin 关掉，pnpm 就没有终端可问，
+ * 直接报 `ERR_PNPM_OTP_NON_INTERACTIVE`（本仓 2026-10-20 实测：用户在终端里跑，
+ * 却 "已发 0 个" 且台账里错误信息为空 —— 真因就是脚本吞掉了 stdin）。
+ */
+function runInteractive(command, commandArgs, cwd) {
+  execFileSync(command, commandArgs, { cwd, stdio: 'inherit' })
+}
+
 function run(command, commandArgs, cwd) {
   return execFileSync(command, commandArgs, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
@@ -224,19 +236,22 @@ for (const pkg of todo) {
       const npmArgs = ['publish', tgz, '--access', 'public']
       if (OTP !== undefined) npmArgs.push(`--otp=${OTP}`)
       if (PROVENANCE) npmArgs.push('--provenance')
-      run('npm', npmArgs, pkg.dir)
+      runInteractive('npm', npmArgs, pkg.dir)
     } else {
       const publishArgs = ['publish', '--access', 'public', '--no-git-checks']
       if (OTP !== undefined) publishArgs.push(`--otp=${OTP}`)
       if (PROVENANCE) publishArgs.push('--provenance')
-      run(pnpmBin(), publishArgs, pkg.dir)
+      runInteractive(pnpmBin(), publishArgs, pkg.dir)
     }
     console.log('ok')
     done.push(pkg.manifest)
   } catch (error) {
     console.log('FAILED')
-    appendLedger(done, `中断于 ${pkg.manifest.name}@${pkg.manifest.version}：${(error.stderr ?? error.message).split('\n')[0]}`)
-    fail(`发布失败并已停止（已发 ${done.length} 个，记录在 ${LEDGER}）`)
+    // stdio 是 inherit ⇒ 详细原因已经打在**终端上**，这里只记退出码与最后一句话。
+    const detail = typeof error.status === 'number' ? `exit ${error.status}` : (error.message ?? 'unknown')
+    appendLedger(done, `中断于 ${pkg.manifest.name}@${pkg.manifest.version}（${detail}；详细原因见终端输出）`)
+    fail(`发布失败并已停止（已发 ${done.length} 个，记录在 ${LEDGER}；终端上方的 pnpm/npm 输出就是真因）`)
+    process.exit(1)
   }
 }
 appendLedger(done, '全部成功')

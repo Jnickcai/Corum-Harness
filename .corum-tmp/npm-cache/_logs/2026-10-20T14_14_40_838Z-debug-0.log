@@ -1,0 +1,27 @@
+0 verbose cli /opt/homebrew/Cellar/node/26.4.0/bin/node /opt/homebrew/bin/npm
+1 info using npm@11.17.0
+2 info using node@v26.4.0
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/kukucai/work/kkc-desktop/.npmrc
+5 silly config load:file:/Users/kukucai/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm org ls corum
+8 verbose argv "org" "ls" "corum"
+9 verbose logfile logs-max:10 dir:/Users/kukucai/work/kkc-desktop/.corum-tmp/npm-cache/_logs/2026-10-20T14_14_40_838Z-
+10 verbose logfile /Users/kukucai/work/kkc-desktop/.corum-tmp/npm-cache/_logs/2026-10-20T14_14_40_838Z-debug-0.log
+11 warn Unknown user config "electron_mirror". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+12 silly logfile done cleaning log files
+13 http fetch GET 404 https://registry.npmmirror.com/-/org/corum/user 161ms (cache skip)
+14 verbose stack HttpErrorGeneral: 404 Not Found - GET https://registry.npmmirror.com/-/org/corum/user - [NOT_FOUND] /-/org/corum/user not found
+14 verbose stack     at /opt/homebrew/lib/node_modules/npm/node_modules/npm-registry-fetch/lib/check-response.js:103:15
+14 verbose stack     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+15 verbose statusCode 404
+16 error code E404
+17 error 404 Not Found - GET https://registry.npmmirror.com/-/org/corum/user - [NOT_FOUND] /-/org/corum/user not found
+18 verbose cwd /Users/kukucai/work/kkc-desktop
+19 verbose os Darwin 27.0.0
+20 verbose node v26.4.0
+21 verbose npm  v11.17.0
+22 verbose exit 1
+23 verbose code 1
+24 error A complete log of this run can be found in: /Users/kukucai/work/kkc-desktop/.corum-tmp/npm-cache/_logs/2026-10-20T14_14_40_838Z-debug-0.log

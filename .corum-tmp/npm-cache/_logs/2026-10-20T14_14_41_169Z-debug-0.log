@@ -1,0 +1,31 @@
+0 verbose cli /opt/homebrew/Cellar/node/26.4.0/bin/node /opt/homebrew/bin/npm
+1 info using npm@11.17.0
+2 info using node@v26.4.0
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/kukucai/work/kkc-desktop/.npmrc
+5 silly config load:file:/Users/kukucai/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm whoami
+8 verbose argv "whoami"
+9 verbose logfile logs-max:10 dir:/Users/kukucai/work/kkc-desktop/.corum-tmp/npm-cache/_logs/2026-10-20T14_14_41_169Z-
+10 verbose logfile /Users/kukucai/work/kkc-desktop/.corum-tmp/npm-cache/_logs/2026-10-20T14_14_41_169Z-debug-0.log
+11 warn Unknown user config "electron_mirror". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+12 silly logfile done cleaning log files
+13 verbose stack Error: This command requires you to be logged in.
+13 verbose stack     at module.exports (/opt/homebrew/lib/node_modules/npm/lib/utils/get-identity.js:22:5)
+13 verbose stack     at Whoami.exec (/opt/homebrew/lib/node_modules/npm/lib/commands/whoami.js:11:28)
+13 verbose stack     at /opt/homebrew/lib/node_modules/npm/lib/npm.js:309:81
+13 verbose stack     at Object.start (/opt/homebrew/lib/node_modules/npm/node_modules/proc-log/lib/index.js:101:21)
+13 verbose stack     at Npm.execCommandClass (/opt/homebrew/lib/node_modules/npm/lib/npm.js:308:19)
+13 verbose stack     at async Npm.exec (/opt/homebrew/lib/node_modules/npm/lib/npm.js:193:9)
+13 verbose stack     at async module.exports (/opt/homebrew/lib/node_modules/npm/lib/cli/entry.js:67:5)
+14 error code ENEEDAUTH
+15 error need auth This command requires you to be logged in.
+16 error need auth You need to authorize this machine using `npm adduser`
+17 verbose cwd /Users/kukucai/work/kkc-desktop
+18 verbose os Darwin 27.0.0
+19 verbose node v26.4.0
+20 verbose npm  v11.17.0
+21 verbose exit 1
+22 verbose code 1
+23 error A complete log of this run can be found in: /Users/kukucai/work/kkc-desktop/.corum-tmp/npm-cache/_logs/2026-10-20T14_14_41_169Z-debug-0.log
