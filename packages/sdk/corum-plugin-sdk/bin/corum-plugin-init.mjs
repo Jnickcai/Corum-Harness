@@ -20,7 +20,7 @@
  * `--kind k1` = 只有宿主半（注册服务/工具，无 UI）。
  *
  * 两种模式：
- * - **standalone（缺省，第三方用）**：`dependencies` 写真实版本 `^0.6.0`，`tsconfig.json` 自包含
+ * - **standalone（缺省，第三方用）**：`dependencies` 写真实版本 `^0.6.1`，`tsconfig.json` 自包含
  *   （不 extends 本仓的 `tsconfig.base.json`）—— 生成的是能独立 `pnpm install && pnpm build` 的包；
  * - **repo（本仓内用，`--repo`）**：依赖用 `workspace:*`、tsconfig extends 仓库基座，
  *   生成到 `examples/<name>` 直接进 pnpm workspace。
@@ -103,7 +103,7 @@ const manifest = {
     test: 'vitest run',
   },
   dependencies: {
-    '@corum/plugin-sdk': STANDALONE ? '^0.6.0' : 'workspace:*',
+    '@corum/plugin-sdk': STANDALONE ? '^0.6.1' : 'workspace:*',
     // 双半插件要注册区域/设置页 ⇒ 必装 UI 契约（k1 不需要）。
     ...(kind === 'k2' ? { '@corum/plugin-ui-contract': STANDALONE ? '^0.6.0' : 'workspace:*' } : {}),
   },
