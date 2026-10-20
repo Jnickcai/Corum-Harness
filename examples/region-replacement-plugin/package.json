@@ -1,0 +1,71 @@
+{
+  "name": "@corum-examples/region-replacement",
+  "version": "0.6.0",
+  "private": true,
+  "description": "测试插件：用官方 slot 的 priority 遮蔽机制替换 IDE 右侧「编辑器」（corum.editor）与「终端」（corum.panel）两个区域。按第三方形态编写——只依赖 @corum/plugin-sdk（运行时）与 @corum/plugin-build（构建），不 import 任何 corum 内部层包、不改宿主文件。用途：验证插件 framework 的三条能力（区域遮蔽 / 主题 token / 客户端半装载）。",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kukucaiCndy/Corum-Harness.git",
+    "directory": "examples/region-replacement-plugin"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "immediately": true
+    },
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "bundle"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b && tsdown && corum-inline-css",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@corum/plugin-sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@types/react": "~18.3.31",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  }
+}
