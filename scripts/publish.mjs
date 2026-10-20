@@ -22,7 +22,7 @@
  *   node scripts/publish.mjs --layer=public      # 只干跑公开层
  *   node scripts/publish.mjs --publish --layer=public   # 真发
  *   node scripts/publish.mjs --publish --otp=123456     # 账号强制 2FA 且没有 automation token 时
- *   node scripts/publish.mjs --publish --provenance     # CI 里用（需 id-token: write）
+ *   node scripts/publish.mjs --publish --via=npm --provenance   # CI 里用可信发布（需 id-token: write）
  *   node scripts/publish.mjs --publish --layer=all
  *
  * **默认是干跑**：真发必须显式 `--publish`（发布不可逆，不该由「忘了加 --dry-run」触发）。
@@ -37,10 +37,13 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
+/** `--via=npm` 时 pnpm pack 的产物目录（CI 里用临时目录即可）。 */
+const PACK_DIR = process.env.CORUM_PACK_DIR ?? join(tmpdir(), 'corum-plugin-publish')
 const LEDGER = join(ROOT, 'docs', 'RELEASE-LEDGER.md')
 const args = new Set(process.argv.slice(2))
 const argValue = (name, fallback) => {
@@ -52,6 +55,14 @@ const DO_PUBLISH = args.has('--publish')
 const OTP = argValue('otp', undefined)
 /** CI 专用：`--provenance` 需要 workflow 的 `id-token: write`，让 npm 页面出现来源声明。 */
 const PROVENANCE = args.has('--provenance')
+/**
+ * 上传器：`pnpm`（本机首选用）或 `npm`（**Trusted Publishing 必须用它**）。
+ *
+ * 为什么 CI 里必须换 npm：npm 的 OIDC 可信发布（Trusted Publishing）是**npm CLI 的能力**，
+ * pnpm 目前不会交换 OIDC token。而依赖改写（`workspace:*` → 真版本）是 pnpm 的强项，
+ * 所以 `--via=npm` 的做法是：**用 pnpm 打包，用 npm 上传 tarball** —— 两件事各用对的工具。
+ */
+const VIA = argValue('via', 'pnpm')
 const LAYER = argValue('layer', 'public')
 
 /** 公开层：第三方插件开发真正需要的面（方案 §A.2）。 */
@@ -205,10 +216,21 @@ const done = []
 for (const pkg of todo) {
   process.stdout.write(`  → ${pkg.manifest.name}@${pkg.manifest.version} … `)
   try {
-    const publishArgs = ['publish', '--access', 'public', '--no-git-checks']
-    if (OTP !== undefined) publishArgs.push(`--otp=${OTP}`)
-    if (PROVENANCE) publishArgs.push('--provenance')
-    run(pnpmBin(), publishArgs, pkg.dir)
+    if (VIA === 'npm') {
+      // pnpm 打包（改写 workspace:*）→ npm 上传（OIDC/OTP 都由 npm 处理）
+      const packOut = run(pnpmBin(), ['pack', '--pack-destination', PACK_DIR], pkg.dir)
+      const tgz = packOut.split('\n').map(l => l.trim()).filter(l => l.endsWith('.tgz')).pop()
+      if (tgz === undefined) throw new Error('pnpm pack 没有产出 tarball')
+      const npmArgs = ['publish', tgz, '--access', 'public']
+      if (OTP !== undefined) npmArgs.push(`--otp=${OTP}`)
+      if (PROVENANCE) npmArgs.push('--provenance')
+      run('npm', npmArgs, pkg.dir)
+    } else {
+      const publishArgs = ['publish', '--access', 'public', '--no-git-checks']
+      if (OTP !== undefined) publishArgs.push(`--otp=${OTP}`)
+      if (PROVENANCE) publishArgs.push('--provenance')
+      run(pnpmBin(), publishArgs, pkg.dir)
+    }
     console.log('ok')
     done.push(pkg.manifest)
   } catch (error) {

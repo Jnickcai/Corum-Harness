@@ -7,12 +7,18 @@
 #
 #   git tag plugin-v0.6.1 && git push origin plugin-v0.6.1     # → 自动发布公开层
 #
-# ## 需要的仓库配置
+# ## 认证：Trusted Publishing（OIDC，**不需要任何长期 token**）
 #
-# 1. Secrets → `NPM_TOKEN`：**Classic Automation token**（有 2FA 的账号必须用 automation
-#    或带 2FA bypass 的 granular token，否则 CI 里没有交互终端可输 OTP，
-#    报 `ERR_PNPM_OTP_NON_INTERACTIVE`）。
-# 2. npm 上 `@corum` org 必须包含该 token 的所有者。
+# npm 官方已不建议给 CI 造 automation token（页面明确警告 "There are security risks with this
+# option. For automation or CI/CD uses, please use Trusted Publishing instead."），Classic token
+# 也在 2025 年底被吊销。所以本 workflow 走 OIDC：
+#
+# 1. **每个包**在 npm 页面 → Settings → Trusted publishing 里登记：
+#    GitHub Actions · owner=`kukucaiCndy` · repo=`Corum-Harness` · workflow=`publish-plugins.yml`
+#    （⚠️ Trusted Publishing 要求包**已存在** ⇒ 每个包的**首个版本必须先在本地交互发一次**）
+# 2. workflow 里 `permissions: id-token: write`（已配）—— npm 据此确认「是这个 workflow 在发」。
+# 3. 上传用 **npm CLI**（`--via=npm`：pnpm 负责打包改写 `workspace:*`，npm 负责 OIDC 上传）；
+#    pnpm publish 目前不会交换 OIDC token。
 #
 # ## 为什么先跑三道门禁再发
 #
@@ -56,9 +62,10 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          # 可信发布（OIDC）需要 npm ≥ 11.5 ⇒ Node 24 自带；Node 22 的 npm 版本可能不够。
+          node-version: '24'
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'   # 写入 .npmrc 的 registry
 
@@ -84,15 +91,13 @@ jobs:
 
       - name: Publish (dry run)
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish.mjs --layer=${{ inputs.layer }}
 
-      - name: Publish
+      # 可信发布：无 token。npm 凭 OIDC（id-token: write）确认本 workflow 有发布权；
+      # --via=npm 让它用 npm CLI 上传（pnpm 先 pack，把 workspace:* 改写成真实版本）。
+      - name: Publish (trusted publishing)
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/publish.mjs --publish --provenance --layer=${{ github.event_name == 'push' && 'public' || inputs.layer }}
+        run: node scripts/publish.mjs --publish --via=npm --provenance --layer=${{ github.event_name == 'push' && 'public' || inputs.layer }}
 
       - name: Upload ledger
         if: always()
