@@ -281,6 +281,15 @@ for (const pkg of todo) {
       continue
     }
     console.log('FAILED')
+    // 常见误诊：PUT 新包名返回 404 且该包「不存在」⇒ 不是 scope 没了，而是 **token 没有
+    // 创建新包的权限**（granular token 选了「Selected packages」时，只能更新已存在的包）。
+    const raw = `${error?.stderr ?? ''}${error?.stdout ?? ''}${error?.message ?? ''}`
+    if (/E404|404 Not Found/.test(raw) && !/Scope not found/i.test(raw)) {
+      console.log('    提示：这是「PUT 新包名 404」。若该包在 registry 上确实还不存在，')
+      console.log('    真因通常是 **token 没有创建新包的权限**（granular token 选了 Selected packages）。')
+      console.log('    修法：npmjs → Access Tokens → 新建 Granular token，Packages 选 **All packages**')
+      console.log('          （或含 @corum 且允许新建），Read and write；替换 ~/.npmrc 里对应的那一行。')
+    }
     // stdio 是 inherit ⇒ 详细原因已经打在**终端上**，这里只记退出码与最后一句话。
     const detail = typeof error.status === 'number' ? `exit ${error.status}` : (error.message ?? 'unknown')
     appendLedger(done, `中断于 ${pkg.manifest.name}@${pkg.manifest.version}（${detail}；详细原因见终端输出）`)
