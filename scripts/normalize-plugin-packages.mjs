@@ -117,6 +117,15 @@ for (const dir of packageDirs()) {
     delete pkg.main
   }
 
+  // `files`：不发源码与测试。**已存在的值不动**（个别包可能有 lib 之外的运行时资产）。
+  // 依据：48 包全量扫描只有 `lib/`、`src/`、`tests/`、`scripts/`（构建脚本）与配置文件，
+  // 无其它运行时资产；且已验证把 src/ 从包里移走后第三方类型解析仍成立
+  // （`.d.ts` 里的 `./x.ts` 说明符由 TS 的 bundler 解析映射到 `.d.ts`）。
+  if (publishable && pkg.files === undefined) {
+    notes.push('files → ["lib"]')
+    pkg.files = ['lib']
+  }
+
   // Not auto-fixable here — reported so a stale path never reads as "clean".
   const exportsText = JSON.stringify(pkg.exports ?? {})
   if (exportsText.includes('./src/')) {
