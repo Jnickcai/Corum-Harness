@@ -136,3 +136,35 @@ export function apply(ctx) {
 
 **未验证**：真实会话的 token/轮次数值 —— verify home 是干净 home，里面没有会话（也就不可能
 有轮次）。要验数值需在有历史会话的 home 上跑，或真跑一轮 Agent（需要模型）。
+
+---
+
+## 追加验证（2026-10-21 晚，第二轮）
+
+### ① 工具**真的能被执行**（真实 `ToolRuntime` 管线）
+
+`tests/tool-injection.spec.ts`（3 条）：用真 `Context` + 真 `@deepseek-ai/dsh-tools` 的
+`ToolRuntime`，调插件的 `apply` 注册工具，然后 `ctx.tools.execute({ name: 'demo_session_report', … })`：
+
+- 注册后出现在 `ctx.tools.schemas()`（模型可见面）
+- 执行返回的值可解析出 `tokens / stats.turns / subagents[].id`
+- `include_subagents: false` 时不含子 Agent
+
+**这条测试抓出一个真 bug**：插件原先按「RPC 形态」传 `snapshot({})`，而宿主半是**直调服务**
+（`snapshot(sessionId?: string)`）⇒ 输出里 `sessionId` 变成了 `{}`。已改成从 `exec.agent` 读
+会话 id、读不到再交给宿主自选。
+
+### ② 会话资源：`attached: false` 时仍能给真实数据
+
+把一条真实会话复制进验证 home 后 resume，`snapshot` 返回（实测原文）：
+
+```
+sessionId: "corum-task-b7de8347", delegationDepth: 0, attached: false,
+subagents: [{ id: "9d0721e4-…", label: "integrate", activity: "inactive",
+              mode: "one-shot", progress: { turn: 1, step: 25, done: true,
+              stopReason: "completed", todos: [ …6 条… ] } }],
+warnings: ["会话未打开（只读磁盘 header）：token/轮次要在会话打开后读"]
+```
+
+即：**身份 + 子 Agent 树 + 进度 + todo 全是真值**；`tokens`/`stats` 需要会话处于打开态
+（投影必须在 attach 的 Session 上折叠），这是设计边界，不是缺陷，并已用 `attached` 字段明说。

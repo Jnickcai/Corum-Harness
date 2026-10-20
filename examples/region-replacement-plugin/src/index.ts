@@ -22,7 +22,8 @@ export const inject: string[] = ['tools']
 
 /** 会话资源服务的最小能力面（`corum-platform` 提供，第三方按其公开契约读）。 */
 interface SessionFactsFace {
-  snapshot: (args: { sessionId?: string }) => Promise<{
+  /** 宿主半直调签名：**扁平**的会话 id（RPC 层同样是扁平字段）。 */
+  snapshot: (sessionId?: string) => Promise<{
     sessionId: string
     title?: string
     running: boolean
@@ -63,10 +64,13 @@ export function apply(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args, text) => [{ type: 'text', text }],
     },
-    async execute(args) {
+    async execute(args, exec) {
       const facts = ctx.get('corumSessionFacts' as never) as SessionFactsFace | undefined
       if (facts === undefined) return JSON.stringify({ error: 'corumSessionFacts 服务不可用' })
-      const snapshot = await facts.snapshot({})
+      // 宿主半是**直调**服务（不是 RPC）：参数是扁平的 `sessionId?: string`。
+      // 执行上下文里有本次调用所属的 Agent ⇒ 优先读它的会话，读不到就让宿主自己挑最近的。
+      const agent = exec.agent as unknown as { sessionId?: string; session?: { id?: string } } | undefined
+      const snapshot = await facts.snapshot(agent?.sessionId ?? agent?.session?.id)
       const includeSubagents = args.include_subagents !== false
       return JSON.stringify({
         sessionId: snapshot.sessionId,
