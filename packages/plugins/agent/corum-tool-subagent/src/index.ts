@@ -134,7 +134,7 @@ import type { CorumWorktreeEntry, CorumWorktreeLedgerFrame } from './orchestrati
 type CorumIntegrateRejectedWithRun = CorumIntegrateRejected & { runId?: string }
 
 export const name = 'corum-tool-subagent'
-export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections', 'userQuestions']
+export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
 
 /** Config: which registered provider this tool delegates to, plus child defaults. */
 export interface Config {
@@ -1735,87 +1735,6 @@ export function apply(ctx: Context, config: Config): void {
   const foregroundGate = acquireCorumForegroundGate(ctx)
   const pseudoForegroundEnabled = config.pseudoForeground === true
 
-  // fork（corum）2026-10-18（issue #75 #6/#8）：就地覆写 `userQuestions.ask`（不 fork）。
-  //
-  // 设计文档 §5.6 问题 10：`DELEGATED_CALLER` 在 waterfall 之前抛出 ⇒ 任何 listener 都
-  // 拦不到。覆写先例 `corum-session-queue-revert:146-196`（就地改写服务方法 + 幂等标记）。
-  //
-  // 覆写逻辑：
-  //   · 子 Agent（被拥有的）调 `ask_user_question` 时，官方会以 `DELEGATED_CALLER` 拒绝。
-  //   · 伪前台开启时，改为：转发提问给父 Agent（followup，带 `subagent-question` source kind），
-  //     父 Agent idle → 收到通知 → 作答 → gate.resolveAnswer → 子 Agent 继续。
-  //   · 父 Agent 答不了 → 上呈用户（复用官方 user-questions/request waterfall，以父 Agent 为载体重发）。
-  //   · 非伪前台（pseudoForeground !== true）或子 Agent 不在 gate 里 → 仍走官方原逻辑（DELEGATED_CALLER）。
-  //
-  // ⚠️ 仅在伪前台开启时覆写；否则完全不动官方行为（零影响）。
-  // 类型用 `unknown`（本包不直接依赖 @deepseek-ai/dsh-user-questions，类型经 ctx.userQuestions 环境增强可用）。
-  if (pseudoForegroundEnabled) {
-    const userQuestions = ctx.get('userQuestions')
-    if (userQuestions !== undefined) {
-      const askMethod = userQuestions.ask as ((request: unknown) => Promise<unknown>) & { __corumPseudoForegroundPatched?: boolean }
-      if (askMethod.__corumPseudoForegroundPatched !== true) {
-        const originalAsk = askMethod.bind(userQuestions) as (request: unknown) => Promise<unknown>
-        const patchedAsk = async (request: unknown): Promise<unknown> => {
-          // 拆解 request 的标准字段（AskUserQuestionRequest 形态）。
-          const req = request as { agent?: Agent; signal?: AbortSignal; questions: Array<{ id: string; question: string; header?: string; options?: Array<{ label: string; description?: string }> }> }
-          // 无 agent → 走官方原逻辑（非 Agent 上下文的提问，如 host 直接调）。
-          if (req.agent === undefined) return originalAsk(request)
-          // 检查是否为被拥有的子 Agent（非 root）。
-          const agents = ctx.get('agents')
-          if (agents === undefined) return originalAsk(request)
-          const agent = req.agent
-          if (agents.roots().includes(agent)) return originalAsk(request)
-          // 子 Agent 调 ask：查 gate 里有没有它的伪前台记录。
-          const parentAgentId = foregroundGate.parentOfChild(String(agent.id))
-          if (parentAgentId === undefined) {
-            // 子 Agent 不在伪前台门禁里（非伪前台委派）→ 走官方原逻辑（抛 DELEGATED_CALLER）。
-            return originalAsk(request)
-          }
-          const parent = agents.get(parentAgentId as unknown as import('@deepseek-ai/dsh-session').SessionId)
-          if (parent === undefined) {
-            // 父 Agent 已不在 → abort。
-            throw new Error('ask_user_question was aborted: the parent agent is no longer live (ASK_ABORTED)')
-          }
-          // 转发提问给父 Agent：用 followup 投递 subagent-settled notice（承载提问摘要）。
-          // 设计文档 §5.7：以「子 Agent 待澄清」消息投给父会话。
-          //
-          // ⚠️ 最小实现：暂用 `subagent-settled` source kind + 文本摘要承载提问
-          // （不新建 MessageSource kind，避免动 dsh-llm 的 MessageSourceMap）。
-          // 后续实施可升级为独立 `subagent-question` kind。
-          const questionId = req.questions[0]?.id ?? String((globalThis.crypto ?? require('node:crypto').webcrypto).randomUUID())
-          // 注册 pending question：等父 Agent 作答。
-          const answerPromise = new Promise<unknown>((resolve, reject) => {
-            foregroundGate.registerPendingQuestion(questionId, String(agent.id), resolve, reject)
-          })
-          // 构造提问摘要文本。
-          const questionTexts = req.questions.map(q => {
-            const opts = (q.options ?? []).map((o: { label: string; description?: string }) => `  - ${o.label}${o.description !== undefined ? ` (${o.description})` : ''}`).join('\n')
-            return `**${q.header ?? 'Question'}**: ${q.question}${opts.length > 0 ? '\n' + opts : ''}`
-          }).join('\n\n')
-          try {
-            parent.followup(createUserMessage({
-              content: [{ type: 'text', text: `Subagent (${String(agent.id).slice(0, 12)}) asks a question (id=${questionId}):\n\n${questionTexts}` }],
-              source: {
-                kind: 'subagent-settled',
-                form: 'notice',
-                summary: boundContextSummary(`Subagent question (${questionId})`),
-                senderSessionId: String(agent.id),
-              } as unknown as MessageSource,
-            }))
-          } catch (notifyError: unknown) {
-            foregroundGate.rejectQuestion(questionId, new Error(
-              `ask_user_question could not be forwarded to the parent agent: ${notifyError instanceof Error ? notifyError.message : String(notifyError)}`,
-            ))
-          }
-          // 等：父 Agent 作答（resolveAnswer）或 abort（reject）。
-          return answerPromise
-        }
-        ;(patchedAsk as { __corumPseudoForegroundPatched?: boolean }).__corumPseudoForegroundPatched = true
-        userQuestions.ask = patchedAsk as typeof userQuestions.ask
-      }
-    }
-  }
-
   // fork（corum）2026-10-18（issue #75）：伪前台门禁——`agent/pre-step` 钩子。
   //
   // 父 Agent 派出前台子 Agent 后，工具返回 `foreground-pending` + `concludeTurn()`，
@@ -2268,7 +2187,7 @@ export function apply(ctx: Context, config: Config): void {
     if (modelSelectionPolicy !== undefined) registerListSubagentModels(runtimeCtx, modelSelectionPolicy)
     // Load order and HMR replacement can change provider availability while
     // this fiber remains active.
-    let mounted: { subagentProvider: SubagentProvider; disposeTool: () => void; disposeOrchestrate: () => void; disposeAnswerChildQuestion: () => void } | undefined
+    let mounted: { subagentProvider: SubagentProvider; disposeTool: () => void; disposeOrchestrate: () => void } | undefined
 
     /**
      * fork（corum）：单任务隔离 spawn——subagent（单发）与 orchestrate（任务清单
@@ -3538,51 +3457,7 @@ export function apply(ctx: Context, config: Config): void {
           }, subagentProvider)
         },
       }))
-      // fork（corum）2026-10-18（issue #75 #6/#7）：`answer_child_question` 工具。
-      //
-      // 伪前台下子 Agent 调 `ask_user_question` → 覆写的 ask 转发提问给父 Agent（followup 通知，
-      // 带 questionId）→ 父 Agent 用**本工具**作答 → gate.resolveAnswer → 子 Agent 继续。
-      //
-      // 仅在伪前台开启 + worker 实例注册（research 实例不提供此工具——父 Agent 的作答通道由
-      // worker 实例垄断，避免双实例各注册一个同名工具冲突）。
-      const disposeAnswerChildQuestion = pseudoForegroundEnabled && isWorkerInstance
-        ? runtimeCtx.tools.register(defineTool({
-            name: 'answer_child_question',
-            description: 'Answer a question that a foreground subagent asked during its task. The question arrived as a subagent notice carrying a question id; pass that id and your answer here — the subagent receives it and continues. If you cannot answer from context, answer with what you know and the subagent will decide. This tool exists only in pseudo-foreground mode (foreground subagents do not block you; their questions reach you as notices).',
-            parameters: {
-              questionId: { type: 'string', required: true, description: 'The question id from the subagent notice (the line "Subagent (...) asks a question (id=...)")' },
-              answer: { type: 'string', required: true, description: 'Your answer to the subagent\'s question. If it was a multiple-choice question, name the chosen option label(s); otherwise write a free-text answer. The subagent will parse it and continue.' },
-            },
-            output: {
-              schema: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  delivered: { type: 'boolean', required: true },
-                  note: { type: 'string' },
-                },
-              },
-              render: (_args, value) => [{
-                type: 'text',
-                text: value.delivered
-                  ? 'Answer delivered to the subagent.'
-                  : `Could not deliver: ${value.note ?? 'question id not found (it may have timed out or the subagent settled)'}`,
-              }],
-            },
-            isConcurrencySafe: () => true,
-            async execute(args: { questionId: string; answer: string }): Promise<{ delivered: boolean; note?: string }> {
-              // fork（corum）：把答案包装成 AskUserQuestionAnswer 形态（子 Agent 的 ask 调用解包它）。
-              // 最小版：answer 是自由文本，塞进 custom 字段。
-              const answer = {
-                answers: [{ id: args.questionId, selected: [], custom: args.answer }],
-              }
-              const delivered = foregroundGate.resolveAnswer(args.questionId, answer)
-              return delivered
-                ? { delivered: true }
-                : { delivered: false, note: 'question id not found — the subagent may have settled or the question timed out' }
-            },
-          }))
-        : (() => {}) as () => void
+      // fork（corum）：orchestrate 工具（方案甲任务清单 fan-out）——仅在 worker 实例
       // 注册（research 只读实例不提供编排入口，toolName 为 subagent_research 时跳过）。
       const disposeOrchestrate = !isWorkerInstance
         ? (() => {}) as () => void
@@ -4362,7 +4237,7 @@ export function apply(ctx: Context, config: Config): void {
       const disposeToolWithGuard = (): void => {
         disposeTool()
       }
-      mounted = { subagentProvider, disposeTool: disposeToolWithGuard, disposeOrchestrate, disposeAnswerChildQuestion }
+      mounted = { subagentProvider, disposeTool: disposeToolWithGuard, disposeOrchestrate }
     }
 
     // Register listeners before checking presence so no synchronous change is missed.
@@ -4378,7 +4253,6 @@ export function apply(ctx: Context, config: Config): void {
       if (name !== config.provider || mounted === undefined) return
       mounted.disposeTool()
       mounted.disposeOrchestrate()
-      mounted.disposeAnswerChildQuestion()
       mounted = undefined
     })
     const present = runtimeCtx.subagents.getProvider(config.provider)
