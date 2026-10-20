@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-orchestration",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 子 Agent 编排器独立包：会话级隔离台账（CorumOrchestration cordis 根上下文单例）+ worktree 编排纯函数 + 台账持久化 domain（corum_orchestration）。从 @corum/corum-tool-subagent/orchestration.ts 整体迁出（docs/plan/PLAN-refactor-orchestration-package-and-settings-center.md 重构 1）。",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -33,5 +32,9 @@
     "tsdown": "^0.22.14",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

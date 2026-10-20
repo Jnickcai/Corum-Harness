@@ -1,6 +1,6 @@
 {
   "name": "@corum/corum-goal-round-driver",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "type": "module",
   "exports": {
     ".": {
@@ -32,5 +32,9 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

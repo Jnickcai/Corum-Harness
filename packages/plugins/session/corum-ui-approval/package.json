@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ui-approval",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 定制版审批呈现层（fork 官方 dsh-client-ui-approval）：scoped Remote Event waterfall 上的审批 composer takeover + pendingInteractions 数据通路。首版与官方行为完全一致，后续重构 ApprovalPanel 为 corum 审批卡。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -60,5 +59,9 @@
     "@types/react-dom": "~18.3.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

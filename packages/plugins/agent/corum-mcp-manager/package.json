@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-mcp-manager",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum MCP 服务管理插件：全局注册表 + Agent 授权访问控制",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -31,5 +30,9 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

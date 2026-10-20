@@ -1,6 +1,6 @@
 {
   "name": "@corum/corum-ide-test-statusbar-ui",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "S0 可行性测试插件：往壳的 corum.statusBar 槽注册占位条（「连接 · 项目 · 模型」占位文字），证明 list 型 bar 槽组合。S1 由 @corum/corum-ide-statusbar-ui 取代。",
   "private": true,
   "type": "module",

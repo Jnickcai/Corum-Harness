@@ -42,6 +42,9 @@ packages/desktop/.corum-ide-home/
 # 监督/排障的临时产物（可再生成，不入库）。项目产物请直接落项目目录，勿走 /tmp。
 .corum-scratch/
 
+# 发布形态验收（scripts/verify-plugin-publish-shape.mjs）的临时解包目录，跑完即删
+.publish-shape-check/
+
 # 监督/委派取证产物：规格、探针与 md 入库；二进制证据不入库（可再生成）
 .dbg-evidence/**/*.png
 .dbg-evidence/**/*.jpg

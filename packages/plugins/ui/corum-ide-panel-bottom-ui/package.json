@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ide-panel-bottom-ui",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum IDE 底部面板（design.pen ⑥ 150px）：tabs(终端/待办/队列) + 终端输出。注册进壳的 corum.panel 槽。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -49,5 +48,9 @@
     "@types/react": "~18.3.31",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

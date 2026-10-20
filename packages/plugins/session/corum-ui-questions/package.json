@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-ui-questions",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum 定制版用户提问渲染层：问题列表/单条提问的会话渲染组件。",
-  "private": true,
   "type": "module",
   "dsh": {
     "client": {
@@ -67,5 +66,9 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

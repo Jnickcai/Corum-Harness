@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-skill-manager",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "corum Skill 管理插件：导入 / 删除 / 版本追踪 / 绑定 skill，管理 ~/.dsh/skills/ 全局目录",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -25,5 +24,9 @@
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

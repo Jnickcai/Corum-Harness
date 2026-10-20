@@ -1,8 +1,7 @@
 {
   "name": "@corum/corum-preset-modules",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "Agent 预设模块化（P0）：模块格式导出/导入 + MCP 前置依赖探测。纯函数库（不注册 cordis 服务），RPC 端点挂在 @corum/corum-agent 上。",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -28,5 +27,9 @@
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   }
 }

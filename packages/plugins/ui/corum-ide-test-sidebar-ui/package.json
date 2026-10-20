@@ -1,6 +1,6 @@
 {
   "name": "@corum/corum-ide-test-sidebar-ui",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "S0 可行性测试插件：往壳的 corum.sidebar 槽注册一张占位玻璃卡（「会话列表槽」），证明内容插件能注册进壳的列槽。S1 由 @corum/corum-ide-sidebar-ui 取代。",
   "private": true,
   "type": "module",
