@@ -123,12 +123,16 @@ export class SessionFactsService extends TypertRemoteService {
     //    不能被 SRC 静态解析成字段表，网关就把 args 当空对象，传任何字段都被拒。
     //    所以这里用「扁平的唯一标识符」而不是对象参数：`{ sessionId }` → 一个 string 形参。
     const warnings: string[] = []
-    const session = await this.resolveSession(sessionId, warnings)
-    if (session === undefined) {
+    const resolved = await this.resolveSession(sessionId, warnings)
+    if (resolved === undefined) {
       return { sessionId: '', running: false, attached: false, isSubagent: false, subagents: [], warnings: [...warnings, '没有可用会话'] }
     }
 
-    if (!session.attached) {
+    const session = resolved.session
+    // ⚠️ 判据必须是 resolve 出来的 `attached`，**不能**读 session.attached：
+    // 真 Session 对象没有这个字段（它是我们契约里的概念），读它会让所有 attach 的会话
+    // 都掉进「只读磁盘 header」分支（本仓实测踩过：attached 恒为 false）。
+    if (!resolved.attached) {
       return {
         sessionId: session.id,
         ...(session.header?.title === undefined ? {} : { title: session.header.title }),
@@ -208,7 +212,10 @@ export class SessionFactsService extends TypertRemoteService {
    * @param sessionId - 显式 id。
    * @param warnings - 降级说明收集器。
    */
-  private async resolveSession(sessionId: string | undefined, warnings: string[]): Promise<SessionLike | undefined> {
+  private async resolveSession(
+    sessionId: string | undefined,
+    warnings: string[],
+  ): Promise<{ session: SessionLike; attached: boolean } | undefined> {
     const sessions = this.sessions()
     if (sessions === undefined) {
       warnings.push('sessions 服务不可用')
@@ -216,17 +223,17 @@ export class SessionFactsService extends TypertRemoteService {
     }
     if (sessionId !== undefined) {
       const hit = sessions.get(sessionId)
-      if (hit !== undefined) return hit
+      if (hit !== undefined) return { session: hit, attached: true }
       // 未 attach：退回磁盘 header（`session/inspect` 明说「不看 Agent 也能读持久化 header」）。
       // 这恰好是第三方最常见的场景之一：插件想展示「这条会话是什么」，而用户没打开它。
       const persisted = await this.persistedHeader(sessionId)
-      if (persisted !== undefined) return persisted
+      if (persisted !== undefined) return { session: persisted, attached: false }
       warnings.push(`会话 ${sessionId} 不存在`)
       return undefined
     }
     const all = sessions.list()
     if (all.length === 0) return undefined
-    return all.reduce((latest, current) => ((current.header?.updatedAt ?? 0) >= (latest.header?.updatedAt ?? 0) ? current : latest))
+    return { session: all.reduce((latest, current) => ((current.header?.updatedAt ?? 0) >= (latest.header?.updatedAt ?? 0) ? current : latest)), attached: true }
   }
 
   /**
