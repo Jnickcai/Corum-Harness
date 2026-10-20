@@ -48,9 +48,8 @@ import {
   ensureRepo,
   initRepo,
   isGitRepo,
-  hasEffectiveChanges,
-  effectiveChangeLines,
-  diffStatSummary,
+  captureEffectiveChanges,
+  hasOnlyBaselineChanges,
 } from './git-primitives.ts'
 // type-only：拉入 @corum/corum-api-remotes/corum-events 的 Events 声明
 // （corum/commit-card/request 的 waterfall 与 corum/commit-card/update 的 emit
@@ -191,6 +190,7 @@ function buildCommitSteerMessage(
   effectiveFiles: number,
   diffLines: readonly string[],
   sessionId: string,
+  paths: readonly string[],
 ): { type: 'text'; text: string }[] {
   const diffPreview = diffLines.length > 0
     ? `\n\n改动概览（diff --stat 摘要，产物路径已排除）：\n${diffLines.map(l => `  ${l}`).join('\n')}`
@@ -201,7 +201,9 @@ function buildCommitSteerMessage(
     '\n请审查改动，按逻辑主题分成一笔或多笔提交。每笔提交写语义化 conventional commit message',
     '（feat/fix/refactor/docs/chore/ci/build/perf/test + scope + 简短描述）。',
     '产物路径（lib/、dist/、build/、main.js、*.tsbuildinfo、node_modules/）已排除，不要提交它们。',
-    '用 bash 工具自己 git add / git commit（一笔或多笔）。提交干净后结束本 turn。',
+    `\n仅处理以下本轮文件：\n${paths.map(path => `  ${JSON.stringify(path)}`).join('\n')}\n`,
+    '工作区中其他既有改动不属于本轮，不要一并提交。同一文件若含轮前改动，先审查 diff，仅暂存本轮相关部分。',
+    '用终端工具按明确路径或 diff 分块 git add / git commit（一笔或多笔），不要 git add -A 或 git add .。本轮改动提交后结束本 turn。',
   ].join('')
   return [{ type: 'text', text }]
 }
@@ -235,6 +237,14 @@ function recentCommits(
   } catch {
     return []
   }
+}
+
+interface CommitTurnState {
+  turn: number
+  cwd: string
+  baseline: ReturnType<typeof captureEffectiveChanges>
+  carded: boolean
+  done: boolean
 }
 
 /**
@@ -271,8 +281,7 @@ async function handleTurnStoppingCommit(
   ctx: Context,
   agent: Agent,
   turn: number,
-  cardedTurns: Map<string, number>,
-  turnSnapshots: Map<string, string[]>,
+  turns: Map<string, CommitTurnState>,
 ): Promise<void> {
   // 作用域闸门（旧语义）：只收口主会话，子 Agent 一律放过。
   if (agent.session.header.origin === 'subagent') return
@@ -281,22 +290,19 @@ async function handleTurnStoppingCommit(
 
   const sessionId = String(agent.session.id)
 
-  // turn-scoped 快照对比（方案 A）：只算本 turn **新增**的有效改动，不算工作区
-  // 既有的改动（如 turn 开始前就存在的 untracked 文件）。快照在 turn/start 时存
-  // （见 apply 的 session/event 监听）；若无快照（如 resume/旧会话）则回退到扫
-  // 全工作区（旧行为，不误删既有收口逻辑）。
-  const currentChanges = effectiveChangeLines(cwd)
-  const snapshot = turnSnapshots.get(sessionId)
-  const turnScopedChanges = snapshot !== undefined
-    ? currentChanges.filter(line => !snapshot.includes(line))
-    : currentChanges
+  // 缺少同一轮、同一工作区的基线时，不把整棵树的旧改动冒充本轮工作。
+  const state = turns.get(sessionId)
+  if (state === undefined || state.turn !== turn || state.cwd !== cwd || state.done) return
+  const currentChanges = captureEffectiveChanges(cwd)
+  const turnScopedChanges = [...currentChanges.changes].filter(([path, change]) =>
+    !change.renameSource && state.baseline.changes.get(path)?.fingerprint !== change.fingerprint
+    && !hasOnlyBaselineChanges(cwd, path, state.baseline, currentChanges))
 
   // 幂等：已干净就放过——**这条路是提交成功的判据**（见下方「done 从哪来」）。
-  // 「干净」= 本 turn 无新增改动（turn-scoped）；无快照时回退到全工作区干净。
-  const hasTurnChanges = snapshot !== undefined ? turnScopedChanges.length > 0 : hasEffectiveChanges(cwd)
-  if (!hasTurnChanges) {
-    if (cardedTurns.get(sessionId) === turn) {
-      cardedTurns.delete(sessionId)
+  // 「干净」只看本轮，不要求把轮前已有的改动也提交。
+  if (turnScopedChanges.length === 0) {
+    if (state.carded && !state.done) {
+      state.done = true
       emitCommitCardUpdate(ctx, sessionId, turn, { status: 'done', commits: recentCommits(cwd) })
     }
     return
@@ -305,11 +311,10 @@ async function handleTurnStoppingCommit(
   // 本 turn 已出过卡片并 steer 过 ⇒ 不重复出卡（重复 steer 会因「每个 steer 一个锚点」而
   // 在会话流里堆出多张卡片，见 commit-card.ts 的 `id: String(event.seq)`）。
   // 此时 LLM 尚未提交：改动留在工作区可见（用户 2026-10-11 裁定：不 stash、不设重试上限）。
-  if (cardedTurns.get(sessionId) === turn) return
+  if (state.carded) return
 
-  const summary = diffStatSummary(cwd, 3)
-  const excludedArtifacts = Math.max(0, summary.totalFiles - summary.effectiveFiles)
-  cardedTurns.set(sessionId, turn)
+  const diffLines = turnScopedChanges.slice(0, 3).map(([, change]) => change.line)
+  state.carded = true
 
   // ①出卡片（waterfall，把 diff --stat 摘要带给 client）。
   // next 回退立即返回 shown——卡片无按钮（不依赖用户操作）。
@@ -318,10 +323,10 @@ async function handleTurnStoppingCommit(
     sessionId,
     turn,
     status: 'pending',
-    effectiveFiles: summary.effectiveFiles,
-    totalFiles: summary.totalFiles,
-    diffLines: summary.lines,
-    excludedArtifacts,
+    effectiveFiles: turnScopedChanges.length,
+    totalFiles: turnScopedChanges.length,
+    diffLines,
+    excludedArtifacts: 0,
   }
   try {
     await ctx.waterfall(
@@ -337,7 +342,7 @@ async function handleTurnStoppingCommit(
   }
 
   // ②同时 steer 注入指令让 LLM 自己处理。
-  const steerContent = buildCommitSteerMessage(summary.effectiveFiles, summary.lines, sessionId)
+  const steerContent = buildCommitSteerMessage(turnScopedChanges.length, diffLines, sessionId, turnScopedChanges.map(([path]) => path))
   try {
     agent.steer(createUserMessage({
       content: steerContent,
@@ -409,17 +414,8 @@ function emitCommitCardUpdate(
  */
 export function apply(ctx: Context): void {
   new GitCoreService(ctx)
-  // 「本 turn 已出过卡片」的登记（sessionId → turn）。
-  // 用途有二：①防同一 turn 重复出卡（每个 steer 会在会话流里锚出一张卡）；
-  // ②「重入时发现树已干净」是提交成功的判据，据此发 done。
-  // 只记最近一个 turn：turn 前进即覆盖，条目数与会话数同阶，不会长成日志。
-  const cardedTurns = new Map<string, number>()
-  // turn-scoped git status 快照（方案 A）：turn/start 时存一次 `git status --porcelain`
-  // 的 effective change lines；turn-stopping 时对比当前快照，只算本 turn **新增**的
-  // 改动——工作区里 turn 开始前就存在的 untracked 文件不算本 turn 改动，不触发
-  // 提交卡片（修「发个你好就触发 git commit 既有文件」的 bug）。
-  // key = sessionId（只存最近一次 turn 的快照，turn 前进即覆盖）。
-  const turnSnapshots = new Map<string, string[]>()
+  // 每个会话只保留最近一轮；完成后仍保留出卡标记，防止同轮再次产生卡片。
+  const turns = new Map<string, CommitTurnState>()
   // turn/start 时存快照：只记主会话（子 Agent 的提交收口在 worktree 通路，
   // 见 handleTurnStoppingCommit 的作用域闸门）。
   ctx.on('session/event', (session, event) => {
@@ -427,11 +423,13 @@ export function apply(ctx: Context): void {
     if (event.type !== 'turn/start') return
     const cwd = session.header.cwd
     if (typeof cwd !== 'string' || cwd === '') return
+    const sessionId = String(session.id)
+    const turn = event.data.turn
+    if (turns.get(sessionId)?.turn === turn && turns.get(sessionId)?.cwd === cwd) return
     try {
-      turnSnapshots.set(String(session.id), effectiveChangeLines(cwd))
+      turns.set(sessionId, { turn, cwd, baseline: captureEffectiveChanges(cwd), carded: false, done: false })
     } catch {
-      // git status 失败（非 git 仓库/权限问题）⇒ 不存快照；
-      // turn-stopping 时回退到扫全工作区（旧行为）。
+      turns.delete(sessionId)
     }
   })
   // turn-stopping 提交卡片：turn 将关时检查 git 改动，有改动则出卡片 + steer LLM。
@@ -440,7 +438,7 @@ export function apply(ctx: Context): void {
   // {@link handleTurnStoppingCommit} 的「为什么不阻塞」）。
   ctx.on('agent/turn-stopping', async ({ agent, turn }) => {
     try {
-      await handleTurnStoppingCommit(ctx, agent, turn, cardedTurns, turnSnapshots)
+      await handleTurnStoppingCommit(ctx, agent, turn, turns)
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error)
       ctx.logger.warn(`git-core: turn-stopping commit handler failed: ${detail}`)

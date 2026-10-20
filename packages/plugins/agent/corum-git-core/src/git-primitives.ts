@@ -20,8 +20,11 @@
  * @module corum-git-core/git-primitives
  */
 
-import { realpathSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { realpathSync, existsSync, readFileSync, writeFileSync, lstatSync, readlinkSync, mkdtempSync, unlinkSync, rmdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { isUtf8 } from 'node:buffer'
+import { tmpdir } from 'node:os'
+import { join, relative, isAbsolute, sep } from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
 import { gitSafeDirectoryArgs } from '@corum/corum-platform'
 
@@ -230,8 +233,7 @@ function isArtifactPath(filePath: string): boolean {
   for (const pattern of ARTIFACT_EXCLUDE_PATTERNS) {
     if (pattern.endsWith('/')) {
       // 目录模式：路径以 `dir/` 开头（任意深度），或路径等于 `dir`
-      if (normalized === pattern.slice(0, -1)) return true
-      if (normalized.startsWith(pattern) || normalized.startsWith(pattern.slice(0, -1) + '/')) return true
+      if (normalized.split('/').includes(pattern.slice(0, -1))) return true
     } else {
       // 文件/后缀模式：路径以该模式结尾
       if (normalized.endsWith(pattern)) return true
@@ -268,6 +270,100 @@ export function effectiveChangeLines(path: string): string[] {
       : pathPart
     return !isArtifactPath(filePath)
   })
+}
+
+interface ChangedFile {
+  fingerprint: string
+  line: string
+  repoPath: string
+  content?: Buffer
+  renameSource?: boolean
+}
+
+export interface EffectiveChangeSnapshot {
+  head: string
+  changes: Map<string, ChangedFile>
+}
+
+/** 本轮提交提醒的快照：按真实路径和内容比较，不把暂存状态变化当成编辑。 */
+export function captureEffectiveChanges(cwd: string): EffectiveChangeSnapshot {
+  const workspace = realpathSync(cwd)
+  const root = realpathSync(runGitSync(cwd, ['rev-parse', '--show-toplevel']).stdout)
+  const head = runGitSync(cwd, ['rev-parse', '--verify', 'HEAD']).stdout
+  // 不 trim：porcelain 的前两列和文件名中的空白都必须保留。NUL 分隔兼容中文、空格和重命名。
+  const output = execFileSync('git', [...gitSafeDirectoryArgs(cwd), 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', '.'], {
+    cwd, encoding: 'utf8', stdio: 'pipe',
+  })
+  const records = output.split('\0')
+  const changes = new Map<string, ChangedFile>()
+  const add = (repoPath: string, status: string, renameSource = false): void => {
+    const absolute = join(root, repoPath)
+    const file = relative(workspace, absolute)
+    if (file === '..' || file.startsWith('..' + sep) || isAbsolute(file) || isArtifactPath(repoPath)) return
+    const path = file.replace(/\\/g, '/')
+    let fingerprint: string
+    let content: Buffer | undefined
+    try {
+      const stat = lstatSync(absolute)
+      if (stat.isSymbolicLink()) fingerprint = `link:${readlinkSync(absolute)}`
+      else if (stat.isDirectory()) fingerprint = `gitlink:${runGitSync(absolute, ['rev-parse', 'HEAD']).stdout}`
+      else {
+        content = readFileSync(absolute)
+        fingerprint = `${stat.mode & 0o111}:${createHash('sha256').update(content).digest('hex')}`
+      }
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      fingerprint = 'deleted'
+    }
+    changes.set(path, { fingerprint, line: `${status} ${path}`, repoPath, renameSource, ...(content === undefined ? {} : { content }) })
+  }
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i]
+    if (record === '') continue
+    const status = record.slice(0, 2)
+    const file = record.slice(3)
+    if (/[RC]/.test(status)) {
+      const source = records[++i]
+      // 保留 rename 的删除源以抵消取消暂存后的 D + ??；展示时只算目标一次。
+      if (status.includes('R')) add(source, ' D', !isArtifactPath(file))
+    }
+    add(file, status)
+  }
+  return { head, changes }
+}
+
+/** HEAD 前进后，检查剩余内容是否只是轮前旧改动；不写工作树、索引或 Git 对象。 */
+export function hasOnlyBaselineChanges(cwd: string, file: string, baseline: EffectiveChangeSnapshot, current: EffectiveChangeSnapshot): boolean {
+  if (baseline.head === '' || baseline.head === current.head) return false
+  const before = baseline.changes.get(file)
+  const after = current.changes.get(file)
+  if (before?.content === undefined || after?.content === undefined) return false
+  if (before.fingerprint.split(':')[0] !== after.fingerprint.split(':')[0]) return false
+  let dir: string | undefined
+  try {
+    const gitFile = (head: string) => execFileSync('git', [...gitSafeDirectoryArgs(cwd), 'show', `${head}:${before.repoPath}`], { cwd, stdio: 'pipe' })
+    const inputs = [gitFile(current.head), gitFile(baseline.head), before.content]
+    if ([...inputs, after.content].some(buffer => buffer.includes(0) || !isUtf8(buffer))) return false
+    dir = mkdtempSync(join(tmpdir(), 'corum-commit-compare-'))
+    const paths = inputs.map((buffer, i) => {
+      const path = join(dir!, String(i))
+      writeFileSync(path, buffer.toString('utf8').replace(/\r\n/g, '\n'))
+      return path
+    })
+    const expected = execFileSync('git', ['merge-file', '-p', ...paths], { encoding: 'utf8', stdio: 'pipe' })
+    return expected === after.content.toString('utf8').replace(/\r\n/g, '\n')
+  } catch {
+    // 冲突、二进制或历史文件不可读时，不能据此把卡片结算为完成。
+    return false
+  } finally {
+    if (dir !== undefined) {
+      for (const name of ['0', '1', '2']) {
+        const path = join(dir, name)
+        if (existsSync(path)) unlinkSync(path)
+      }
+      rmdirSync(dir)
+    }
+  }
 }
 
 /**

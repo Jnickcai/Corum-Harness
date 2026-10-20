@@ -48,8 +48,8 @@ const scratch = mkdtempSync(join(tmpdir(), 'corum-turn-stopping-scope-'))
 afterAll(() => { rmSync(scratch, { recursive: true, force: true }) })
 
 let seq = 0
-/** 建一个**有未提交改动**的临时 git 仓库（机制的必要触发条件）。 */
-function makeDirtyRepo(): string {
+/** 建一个干净的临时 git 仓库；改动在 turn/start 后制造。 */
+function makeRepo(): string {
   const repo = join(scratch, `repo-${seq++}`)
   mkdirSync(repo, { recursive: true })
   const git = (...args: string[]): void => {
@@ -61,9 +61,12 @@ function makeDirtyRepo(): string {
   writeFileSync(join(repo, 'tracked.txt'), 'one\n')
   git('add', '-A')
   git('commit', '-q', '--no-verify', '-m', 'init')
-  // 有效修改（未跟踪新文件）——与 hasEffectiveChanges 同口径。
-  writeFileSync(join(repo, 'dirty-new-file.ts'), 'export const x = 1\n')
   return repo
+}
+
+function startTurn(ctx: Context, agent: unknown, repo: string): void {
+  ctx.emit('session/event' as never, (agent as { session: never }).session, { type: 'turn/start', data: { turn: 1 } } as never)
+  writeFileSync(join(repo, 'dirty-new-file.ts'), 'export const x = 1\n')
 }
 
 /** 造一个只够本机制使用的最小 Agent 桩（只需要 session.header + steer）。 */
@@ -106,10 +109,11 @@ async function dispatchTurnStopping(ctx: Context, agent: unknown): Promise<void>
 
 describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复的旧语义）', () => {
   it('★ 子会话（origin=subagent）→ 完全不进机制：不 steer（实测事故会话 8927c635 的复现闸门）', async () => {
-    const repo = makeDirtyRepo()
+    const repo = makeRepo()
     const { agent, steered } = stubAgent(repo, 'subagent')
     const ctx = new Context()
     apply(ctx)
+    startTurn(ctx, agent, repo)
 
     await dispatchTurnStopping(ctx, agent)
 
@@ -121,7 +125,7 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
   })
 
   it('主会话（origin 缺省）→ 机制照常启动：steer 注入提交指令（反向对照，防「整体改坏成空跑」）', async () => {
-    const repo = makeDirtyRepo()
+    const repo = makeRepo()
     // 桩的 steer 模拟「LLM 收到指令后把改动提交干净」——这是机制的正常收敛路径。
     // 注意：机制**不再**在钩子里等它提交（2026-10-11 去阻塞），所以这个回调用途变了——
     // 它只用来把树做成干净态，供下一个用例断言「重入即结算」。
@@ -131,6 +135,7 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
     })
     const ctx = new Context()
     apply(ctx)
+    startTurn(ctx, agent, repo)
 
     await dispatchTurnStopping(ctx, agent)
 
@@ -140,12 +145,13 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
   })
 
   it('★ 不阻塞（2026-10-11 去阻塞）：钩子**不等** LLM 提交就返回', async () => {
-    const repo = makeDirtyRepo()
+    const repo = makeRepo()
     // steer 回调**什么都不做**（模拟 LLM 这一轮还没提交）。旧实现在这里会死等满
     // 5 分钟超时（实测 300.6s）；新实现必须立刻返回。用 2 秒上界做判据。
     const { agent, steered } = stubAgent(repo)
     const ctx = new Context()
     apply(ctx)
+    startTurn(ctx, agent, repo)
 
     const t0 = Date.now()
     await dispatchTurnStopping(ctx, agent)
@@ -161,7 +167,7 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
   })
 
   it('★ 重入时树已干净 → 发 done 结算卡片（轮询删除后，这是 done 的唯一来源）', async () => {
-    const repo = makeDirtyRepo()
+    const repo = makeRepo()
     const { agent } = stubAgent(repo)
     const ctx = new Context()
     const seen: string[] = []
@@ -169,6 +175,7 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
       seen.push(update.status)
     }) as never)
     apply(ctx)
+    startTurn(ctx, agent, repo)
 
     // 第一次：出卡 + steer，并推 progress。
     await dispatchTurnStopping(ctx, agent)
@@ -184,10 +191,11 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
   })
 
   it('★ 同一 turn 重入 → 不重复出卡、不重复 steer；树干净后放过', async () => {
-    const repo = makeDirtyRepo()
+    const repo = makeRepo()
     const { agent, steered } = stubAgent(repo)
     const ctx = new Context()
     apply(ctx)
+    startTurn(ctx, agent, repo)
 
     // 第一次：出卡 + steer。
     await dispatchTurnStopping(ctx, agent)
@@ -198,13 +206,11 @@ describe('turn-stopping 作用域 —— 只收口主会话（2026-10-10 恢复�
   })
 
   it('主会话但工作树干净 → 幂等放过（不 steer）', async () => {
-    const repo = makeDirtyRepo()
-    // 手动作成干净态：把刚才那个未跟踪文件提交掉。
-    execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' })
-    execFileSync('git', ['-C', repo, 'commit', '-q', '--no-verify', '-m', 'clean'], { stdio: 'pipe' })
+    const repo = makeRepo()
     const { agent, steered } = stubAgent(repo)
     const ctx = new Context()
     apply(ctx)
+    ctx.emit('session/event' as never, (agent as { session: never }).session, { type: 'turn/start', data: { turn: 1 } } as never)
 
     await dispatchTurnStopping(ctx, agent)
 
