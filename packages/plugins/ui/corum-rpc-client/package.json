@@ -34,5 +34,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kukucaiCndy/Corum-Harness.git",
+    "directory": "packages/plugins/ui/corum-rpc-client"
   }
 }
