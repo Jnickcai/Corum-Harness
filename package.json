@@ -15,6 +15,7 @@
     "verify:plugin-spec": "node scripts/verify-plugin-spec.mjs",
     "verify:plugin-spec:strict": "node scripts/verify-plugin-spec.mjs --strict",
     "verify:publish-shape": "node scripts/verify-plugin-publish-shape.mjs",
+    "verify:plugin-install": "node scripts/verify-plugin-install-e2e.mjs",
     "typecheck": "pnpm -r run typecheck",
     "shell:dev": "pnpm --filter corum-desktop run start",
     "shell:smoke": "pnpm --filter corum-desktop run smoke",
