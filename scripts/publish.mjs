@@ -21,6 +21,8 @@
  *   node scripts/publish.mjs                    # 干跑（默认）：列包 + 拓扑序 + 已发布判定
  *   node scripts/publish.mjs --layer=public      # 只干跑公开层
  *   node scripts/publish.mjs --publish --layer=public   # 真发
+ *   node scripts/publish.mjs --publish --otp=123456     # 账号强制 2FA 且没有 automation token 时
+ *   node scripts/publish.mjs --publish --provenance     # CI 里用（需 id-token: write）
  *   node scripts/publish.mjs --publish --layer=all
  *
  * **默认是干跑**：真发必须显式 `--publish`（发布不可逆，不该由「忘了加 --dry-run」触发）。
@@ -46,6 +48,10 @@ const argValue = (name, fallback) => {
   return inline === undefined ? fallback : inline.slice(name.length + 3)
 }
 const DO_PUBLISH = args.has('--publish')
+/** 一次性验证码：账号开了 2FA 又没有 automation token 时，本机发布需要它（30 秒有效）。 */
+const OTP = argValue('otp', undefined)
+/** CI 专用：`--provenance` 需要 workflow 的 `id-token: write`，让 npm 页面出现来源声明。 */
+const PROVENANCE = args.has('--provenance')
 const LAYER = argValue('layer', 'public')
 
 /** 公开层：第三方插件开发真正需要的面（方案 §A.2）。 */
@@ -199,7 +205,10 @@ const done = []
 for (const pkg of todo) {
   process.stdout.write(`  → ${pkg.manifest.name}@${pkg.manifest.version} … `)
   try {
-    run(pnpmBin(), ['publish', '--access', 'public', '--no-git-checks'], pkg.dir)
+    const publishArgs = ['publish', '--access', 'public', '--no-git-checks']
+    if (OTP !== undefined) publishArgs.push(`--otp=${OTP}`)
+    if (PROVENANCE) publishArgs.push('--provenance')
+    run(pnpmBin(), publishArgs, pkg.dir)
     console.log('ok')
     done.push(pkg.manifest)
   } catch (error) {
