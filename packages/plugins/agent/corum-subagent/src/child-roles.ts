@@ -80,7 +80,7 @@ export const CHILD_WORK_STYLE = [
  *
  * ## 为什么必须有（2026-09-21 用户实测）
  *
- * 用户让子 Agent 自报模型，两个子 Agent 都答「You are an AI agent powered by DeepSeek Harness」
+ * 用户让子 Agent 自报模型，两个子 Agent 都答「You are an AI agent powered by the harness」
  * ——**报不出模型名**。实测确认根因不是占位符替换失败（子提示词里未插值的 `{{…}}` 数量为
  * **0**），而是**那段含 `{{model}}` 的模板根本没进子 Agent 的组装**：
  *
