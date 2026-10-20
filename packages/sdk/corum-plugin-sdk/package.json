@@ -1,0 +1,48 @@
+{
+  "name": "@corum/plugin-sdk",
+  "version": "0.6.0",
+  "description": "第三方插件的最小依赖面：把「写一个 corum 插件要 8 个包」收敛成 1 个。零运行时逻辑 —— 只做类型聚合 + 两个薄 helper（definePlugin / defineClientPlugin）+ 公开层 API 的再导出（ui-base 的槽与布局、rpc-client 的 RPC 调用）。注意：本包必须放进插件包的 dependencies（不是 peer）—— 宿主只把 corum-desktop 的安装闭包链进 profile，peer 会 ERR_MODULE_NOT_FOUND（方案 §A.2 C-2b）。",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.spec.json --noEmit --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@corum/corum-rpc-client": "workspace:*",
+    "@corum/corum-ui-base": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.3",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.31",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.0"
+  }
+}

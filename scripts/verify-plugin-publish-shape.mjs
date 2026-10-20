@@ -43,10 +43,12 @@ const CONSUMER = join(WORK, 'consumer')
 
 /** 受 P0 影响的四个包（path 相对 packages/plugins）。 */
 const TARGETS = [
-  'ui/corum-ui-base',
-  'ui/corum-rpc-client',
-  'agent/corum-tools',
-  'agent/corum-fs-local',
+  'packages/plugins/ui/corum-ui-base',
+  'packages/plugins/ui/corum-rpc-client',
+  'packages/plugins/agent/corum-tools',
+  'packages/plugins/agent/corum-fs-local',
+  // 第三方插件的最小依赖面：它的「1 个 SDK」承诺必须在这里被证，而不是靠文档。
+  'packages/sdk/corum-plugin-sdk',
 ]
 
 const failures = []
@@ -81,7 +83,7 @@ function pnpmBin() {
 /** 工作区里任一包的本地 tsc（根 node_modules 没有 typescript）。 */
 function tscBin() {
   for (const rel of TARGETS) {
-    const candidate = join(ROOT, 'packages', 'plugins', rel, 'node_modules', '.bin', 'tsc')
+    const candidate = join(ROOT, rel, 'node_modules', '.bin', 'tsc')
     if (existsSync(candidate)) return candidate
   }
   return undefined
@@ -96,7 +98,7 @@ console.log('── 1. pnpm pack（发布形态）')
 const packed = []
 const deps = {}
 for (const rel of TARGETS) {
-  const dir = join(ROOT, 'packages', 'plugins', rel)
+  const dir = join(ROOT, rel)
   // 预检（fail-loud）：`exports` 改指 lib 产物之后，**类型面**从「直读 TS 源码」变成
   // 「读 lib 里的 .d.ts」⇒ 没建过就打包，第三方装到的包缺声明，而错误会以
   // 「consumer 里莫名其妙的 TS2307」出现在很远的地方。先在这里指名道姓。
@@ -142,13 +144,19 @@ writeFileSync(join(CONSUMER, 'package.json'), `${JSON.stringify({
   },
 }, null, 2)}\n`)
 
+// `pnpm pack` 会把 `workspace:*` 换成 `0.6.0` —— 那是**还没发布**的版本号。第三方在真实
+// registry 上装时不会遇到这问题；探针工程必须把这两条重定向到本地 tgz，否则测的就不是
+// 发布形态而是「有没有发布」。注意 pnpm v11 已不再读 package.json 的 `pnpm` 字段
+// （实测告警：The "pnpm" field in package.json is no longer read by pnpm），要写这里。
+writeFileSync(join(CONSUMER, 'pnpm-workspace.yaml'), `overrides:\n  '@corum/corum-ui-base': '${deps['@corum/corum-ui-base']}'\n  '@corum/corum-rpc-client': '${deps['@corum/corum-rpc-client']}'\n`)
+
 let installed = false
 try {
   run(pnpmBin(), ['install', '--ignore-scripts'], CONSUMER)
   installed = true
   ok('pnpm install 成功 —— 以下断言都跑在「真实第三方安装」的 node_modules 上')
 } catch (error) {
-  skip(`pnpm install 失败（可能是 registry 不可达/版本未发布），跳过安装态断言：${(error.stderr ?? error.message).split('\n')[0]}`)
+  fail(`pnpm install 失败（探针工程装不起来，安装态断言无从谈起）：${(error.stderr ?? error.message).split('\n').slice(0, 3).join(' / ')}`)
 }
 
 const installedPkgs = () => packed.map(({ rel, pkgName, tgz }) => {
@@ -252,8 +260,23 @@ if (installed) {
       lib: ['ES2024', 'DOM', 'DOM.Iterable'],
       types: [],
     },
-    include: ['consumer.ts'],
+    include: ['consumer.ts', 'consumer-sdk.ts'],
   }, null, 2)}\n`)
+
+  // 「1 个 SDK」的判据：只 import @corum/plugin-sdk（及其 /client）就能拿到槽 API
+  // 与 RPC helper，不需要知道 ui-base / rpc-client 的存在。
+  writeFileSync(join(CONSUMER, 'consumer-sdk.ts'), [
+    "import { definePlugin } from '@corum/plugin-sdk'",
+    "import type { Context } from '@corum/plugin-sdk'",
+    "import { defineClientPlugin, registerSlot, RegionCard, makeCorumRpcCall } from '@corum/plugin-sdk/client'",
+    "import type { SlotMeta, CorumRpcCall } from '@corum/plugin-sdk/client'",
+    '',
+    'export const hostPlugin = definePlugin({ name: "probe", inject: [], apply: (_ctx: Context) => undefined })',
+    'export const clientPlugin = defineClientPlugin({ inject: ["slots"], apply: () => undefined })',
+    'export const probe = { registerSlot, RegionCard, makeCorumRpcCall }',
+    'export type Probe = [SlotMeta, CorumRpcCall]',
+    '',
+  ].join('\n'))
 
   const tsc = tscBin()
   if (tsc === undefined) {
