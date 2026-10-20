@@ -20,13 +20,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
     "@corum/plugin-build": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
@@ -45,5 +45,10 @@
       "host": ">=0.6.0 <0.7.0",
       "kind": "builtin"
     }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3"
   }
 }

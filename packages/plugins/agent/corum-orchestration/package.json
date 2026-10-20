@@ -18,17 +18,16 @@
   "dependencies": {
     "@corum/corum-git-core": "workspace:*",
     "@corum/corum-platform": "workspace:*",
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-storage-domain": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-subagent": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.14",
     "typescript": "^6.0.3",
@@ -47,5 +46,10 @@
       "host": ">=0.6.0 <0.7.0",
       "kind": "builtin"
     }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-scope": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.3"
   }
 }

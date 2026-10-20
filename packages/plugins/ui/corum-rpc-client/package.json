@@ -14,10 +14,8 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false"
   },
-  "dependencies": {
-    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3"
-  },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
     "typescript": "^6.0.3"
   },
   "publishConfig": {
@@ -33,5 +31,8 @@
       "host": ">=0.6.0 <0.7.0",
       "kind": "builtin"
     }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3"
   }
 }
