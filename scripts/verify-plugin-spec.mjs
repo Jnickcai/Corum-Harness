@@ -252,6 +252,22 @@ for (const dir of packageDirs()) {
     }
   }
 
+  // ── 兼容声明（§C.1）────────────────────────────────────────────────
+  const compat = pkg.corum?.plugin
+  if (compat === undefined) {
+    if (publishable) record('warn', name, 'C.1-NO-COMPAT-DECL', '缺 corum.plugin 兼容声明（api / host / kind）')
+  } else {
+    if (typeof compat.api !== 'number') record('error', name, 'C.1-API-MISSING', 'corum.plugin.api 必须是数字')
+    if (typeof compat.host !== 'string' || compat.host === '') record('error', name, 'C.1-HOST-MISSING', 'corum.plugin.host 必须是 semver range')
+    if (!['bundle', 'builtin'].includes(compat.kind)) {
+      record('error', name, 'C.1-KIND-INVALID', `corum.plugin.kind 只能是 bundle / builtin，实际 ${JSON.stringify(compat.kind)}`)
+    }
+    // corum 自己的包由 desktop 的 patch 统一挂载，不该声明成第三方 bundle 形态。
+    if (compat.kind === 'bundle' && name.startsWith('@corum/')) {
+      record('warn', name, 'C.1-KIND-BUNDLE', 'corum 自带包统一由 desktop patch 挂载，kind 应为 builtin（方案 §A.4）')
+    }
+  }
+
   // ── 依赖分层（§B.5）—— 已登记债，warn ────────────────────────────────
   const dshInDeps = Object.keys(pkg.dependencies ?? {}).filter(d => d.startsWith('@deepseek-ai/'))
   if (dshInDeps.length > 0) {

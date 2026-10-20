@@ -33,6 +33,14 @@ const PLUGIN_ROOT = join(ROOT, 'packages', 'plugins')
 const PUBLISH_CONFIG = { access: 'public', registry: 'https://registry.npmjs.org' }
 
 /**
+ * 兼容声明（方案 §C.1）。corum 自己的 48 个包全部 `kind: "builtin"` —— 它们随应用一起
+ * 发布、由 `packages/desktop/cordis.patch.yml` 统一挂载，不是第三方 bundle。
+ * `api: 1` 覆盖的面见 `docs/PLUGIN-SPEC.md` §11 / 方案 §C.4：改 `definePlugin` 签名、
+ * 改 manifest 语义、改公开层导出面、改 slot 注册协议 —— 任一即 `api + 1`。
+ */
+const COMPAT_DECLARATION = { api: 1, host: '>=0.6.0 <0.7.0', kind: 'builtin' }
+
+/**
  * Packages that stay out of npm forever (§A.2 「不发布」). They keep
  * `private: true` and get no `publishConfig`.
  *
@@ -124,6 +132,11 @@ for (const dir of packageDirs()) {
   if (publishable && pkg.files === undefined) {
     notes.push('files → ["lib"]')
     pkg.files = ['lib']
+  }
+
+  if (JSON.stringify(pkg.corum?.plugin) !== JSON.stringify(COMPAT_DECLARATION)) {
+    notes.push(`corum.plugin → ${JSON.stringify(COMPAT_DECLARATION)}`)
+    pkg.corum = { ...(pkg.corum ?? {}), plugin: { ...COMPAT_DECLARATION } }
   }
 
   // Not auto-fixable here — reported so a stale path never reads as "clean".

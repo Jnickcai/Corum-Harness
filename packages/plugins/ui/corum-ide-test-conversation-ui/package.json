@@ -42,5 +42,12 @@
     "@types/react": "~18.3.31",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
+  },
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
   }
 }

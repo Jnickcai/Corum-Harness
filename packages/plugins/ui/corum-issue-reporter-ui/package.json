@@ -52,5 +52,12 @@
   },
   "files": [
     "lib"
-  ]
+  ],
+  "corum": {
+    "plugin": {
+      "api": 1,
+      "host": ">=0.6.0 <0.7.0",
+      "kind": "builtin"
+    }
+  }
 }
