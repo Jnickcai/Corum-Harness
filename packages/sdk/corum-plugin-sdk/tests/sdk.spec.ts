@@ -23,7 +23,8 @@ describe('defineClientPlugin（客户端半）', () => {
 
 describe('聚合面（第三方只依赖一个包）', () => {
   it('槽 API 与布局基件从 SDK 的 client 入口可见', async () => {
-    const sdk = await import('../src/client.ts')
+    // 动态按名字取导出：命名空间对象要收窄成索引签名，否则 tsc 报 TS7053。
+    const sdk = await import('../src/client.ts') as unknown as Record<string, unknown>
     for (const name of ['registerSlot', 'getSlotMeta', 'GridView', 'RegionCard', 'MosaicWall', 'joinPath', 'makeCorumRpcCall']) {
       expect(sdk[name], `SDK/client 未聚合 ${name}`).toBeDefined()
     }

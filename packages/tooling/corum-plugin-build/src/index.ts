@@ -84,8 +84,28 @@ export interface ClientConfigOptions {
   cssMode?: 'single' | 'default'
 }
 
-/** 宿主半配置。 */
-export function hostConfig(options: HostConfigOptions): UserConfig {
+/**
+ * 宿主半配置的**精确形状**。
+ *
+ * 为什么不直接标 `UserConfig`：tsdown 的 `UserConfig['outputOptions']` / `noExternal` /
+ * `inputOptions` 都是「字面量 **|** 工厂函数」的联合类型，标成宽类型会让消费方（以及本包的测试）
+ * 每读一个字段都要先窄化 —— CI 的 `pnpm -r run typecheck` 就是这样抓出 7 处 TS2339/TS2349 的。
+ * 这里把「我们实际产出的形状」写成独立接口，赋值给 `defineConfig` 时结构兼容即可。
+ */
+export interface HostBundleConfig {
+  name: string
+  entry: string[] | Record<string, string>
+  outDir: string
+  format: string[]
+  platform: string
+  target: string
+  fixedExtension: boolean
+  dts: boolean
+  clean: boolean
+  external?: string[]
+}
+
+export function hostConfig(options: HostConfigOptions): HostBundleConfig {
   return {
     name: options.id,
     entry: options.entries ?? ['lib/types/index.js'],
@@ -100,11 +120,34 @@ export function hostConfig(options: HostConfigOptions): UserConfig {
   }
 }
 
-/** 客户端半配置（`__ModuleLoader__` 闭包工厂）。 */
-export function clientConfig(options: ClientConfigOptions): UserConfig {
+/** 客户端半配置的精确形状（理由同 {@link HostBundleConfig}）。 */
+export interface ClientBundleConfig {
+  name: string
+  entry: Record<string, string>
+  outDir: string
+  format: string
+  platform: string
+  dts: boolean
+  sourcemap: boolean
+  clean: boolean
+  external: string[]
+  define: Record<string, string>
+  noExternal: (id: string) => true | undefined
+  css?: { splitting: boolean }
+  inputOptions?: { resolve: { conditionNames: string[] } }
+  outputOptions: {
+    entryFileNames: string
+    inlineDynamicImports: boolean
+    banner: string
+    footer: string
+    intro: string
+  }
+}
+
+export function clientConfig(options: ClientConfigOptions): ClientBundleConfig {
   const externals = [...CLIENT_EXTERNALS_BASE, ...(options.extraExternals ?? [])]
   const mode = process.env.NODE_ENV ?? 'production'
-  const config: UserConfig = {
+  const config: ClientBundleConfig = {
     name: `${options.id}/client`,
     entry: { client: options.entry ?? 'src/client/index.ts' },
     outDir: 'lib',
@@ -155,9 +198,9 @@ export function definePluginBundle(parts: {
 }): () => UserConfig[] {
   return defineConfig(() => {
     const configs: UserConfig[] = []
-    if (parts.host !== false) configs.push(hostConfig({ id: parts.id, ...parts.host }))
+    if (parts.host !== false) configs.push(hostConfig({ id: parts.id, ...parts.host }) as unknown as UserConfig)
     if (parts.client !== false && parts.client !== undefined) {
-      configs.push(clientConfig({ id: parts.id, ...parts.client }))
+      configs.push(clientConfig({ id: parts.id, ...parts.client }) as unknown as UserConfig)
     }
     return configs
   }) as unknown as () => UserConfig[]

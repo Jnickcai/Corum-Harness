@@ -9,14 +9,15 @@ import { CLIENT_EXTERNALS_BASE, clientConfig, definePluginBundle, hostConfig } f
 describe('clientConfig — 闭包工厂契约', () => {
   it('banner/footer/intro 构成可直接执行的 CJS 闭包', () => {
     const config = clientConfig({ id: '@corum/x' })
+    // 返回类型是精确的 `ClientBundleConfig`（见 src/index.ts 的注释），这里可以直接读字段。
     const output = config.outputOptions
-    expect(output?.entryFileNames).toBe('client.js')
-    expect(output?.inlineDynamicImports).toBe(true)
-    expect(output?.banner).toContain('window.__ModuleLoader__.load(')
-    expect(output?.banner).toContain('"@corum/x"')
-    expect(output?.banner).toContain('factory: (require) => {')
-    expect(output?.footer).toContain('return module.exports;')
-    expect(output?.intro).toContain('var module = { exports: {} }')
+    expect(output.entryFileNames).toBe('client.js')
+    expect(output.inlineDynamicImports).toBe(true)
+    expect(output.banner).toContain('window.__ModuleLoader__.load(')
+    expect(output.banner).toContain('"@corum/x"')
+    expect(output.banner).toContain('factory: (require) => {')
+    expect(output.footer).toContain('return module.exports;')
+    expect(output.intro).toContain('var module = { exports: {} }')
   })
 
   it('基础 externals 全部被 external 且 noExternal 对其返回 undefined', () => {
