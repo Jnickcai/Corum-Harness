@@ -53,15 +53,6 @@ export const InputBar = memo(function InputBar({
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
-  // fork（corum）2026-10-18（issue #75 #9）：伪前台 busy 语义——父 Agent idle 但有前台子 Agent
-  // 在跑时，projection `corumForegroundBusy` = true。将其并入 `running`，使 UI 在伪前台
-  // 等待期仍判「忙碌」（用户插话排队、停止按钮有效、队列坞可见）。
-  // 设计文档 §5.6 问题 13：不补此条则定调 D「排队保持现状」自动失效。
-  // ⚠️ 客户端包不直接依赖 @deepseek-ai/dsh-session-projection/types，projection key
-  // 的 SessionProjectionMap 声明在 host 侧 corum-tool-subagent/foreground-busy-projection.ts。
-  // 此处用 `as keyof` 收窄（运行期 useProjection 按 string key 查表，值是 boolean|null）。
-  const foregroundBusy = useProjection('corumForegroundBusy' as never, busy => busy === true) ?? false
-  const effectiveRunning = running || foregroundBusy
   const subagent = useSession(s => s.subagent) ?? null
   const removed = useSession(s => s.removed) ?? false
   // Plan mode swaps the composer placeholder (the projection is the folded
@@ -146,7 +137,7 @@ export const InputBar = memo(function InputBar({
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const editorDisabled = removed || (locked && !workspaceTrigger)
   const editable = live && !locked && !machineBusy
-  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && effectiveRunning && subagent === null
+  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
     && input.queue.some(row => row.placement === 'queued')
 
   useEffect(() => {
@@ -270,11 +261,11 @@ export const InputBar = memo(function InputBar({
   // The keymap handlers read live bar state through this ref so the editor
   // registration survives re-renders without re-arming per keystroke.
   const gate = useRef({
-    locked, machineBusy, canSteerQueue, running: effectiveRunning, subagent, resolveSubmitMode,
+    locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode,
     intakeFiles, uploadsPending, showToast, t,
   })
   gate.current = {
-    locked, machineBusy, canSteerQueue, running: effectiveRunning, subagent, resolveSubmitMode,
+    locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode,
     intakeFiles, uploadsPending, showToast, t,
   }
 
@@ -341,8 +332,8 @@ export const InputBar = memo(function InputBar({
   // An ordinary running session keeps Stop while the composer is empty or
   // owner-blocked; an actionable draft gets the existing Queue action. A
   // continuable child keeps Send primary and exposes Stop independently.
-  const primaryStops = effectiveRunning && subagent === null && (empty || blocked !== undefined)
-  const interruptible = effectiveRunning && continuable
+  const primaryStops = running && subagent === null && (empty || blocked !== undefined)
+  const interruptible = running && continuable
   const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
   const onPrimary = (): void => {
     if (primaryStops) {

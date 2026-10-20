@@ -3,7 +3,7 @@
  *
  * ## 缺陷现场（2026-09-21 用户实测）
  *
- * 用户让两个子 Agent 自报模型，两者都答「You are an AI agent powered by DeepSeek Harness」
+ * 用户让两个子 Agent 自报模型，两者都答「You are an AI agent powered by the harness」
  * ——**报不出模型名**。实测确认根因**不是**占位符替换失败（子提示词里未插值的 `{{…}}` 数量为
  * **0**），而是那段含 `{{model}}` 的模板**根本没进子 Agent 的组装**：
  * 含它的是 `corum-agent/compile.ts` 的角色预设 persona，而子 Agent 不注入父的 persona

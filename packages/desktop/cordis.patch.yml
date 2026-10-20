@@ -233,8 +233,6 @@
     persona: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
-      You are running inside the DeepSeek Harness desktop application.
-
 # ── the desktop rows ────────────────────────────────────────────────────────
 
 - insert:

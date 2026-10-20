@@ -98,11 +98,6 @@ function corumSubagentConfig(
     toolName: role === 'worker' ? 'subagent' : 'subagent_research',
     modelSelectionSettings: false,
     backgroundMode: 'continuable',
-    // fork（corum）2026-10-18（issue #75）：伪前台开关——验证期由 preset 显式开。
-    // 启用后前台子 Agent 不阻塞父 Agent（工具立即返回 foreground-pending + concludeTurn，
-    // 子 Agent settle 后经 followup 通知唤醒父 Agent）。仅对 root 会话生效。
-    // 设计文档：docs/PENDING-foreground-subagent-pseudo-foreground.md。
-    pseudoForeground: true,
   }
   // fork（corum）：orchestrator 模式收紧 worker 的 maxDepth 为 1——子 Agent 只执行、
   // 不再派孙 Agent（编排职责完全收归主 Agent，避免多层嵌套失控 + 省 token）。
@@ -340,7 +335,7 @@ const BASE_MODE_PERSONA: Record<BaseMode, string> = {
   // 指挥模式：无用户身份段时用指挥者人格（+ 模型/目录占位行）。
   conductor: `${CONDUCTOR_PERSONA}\n\nYou are powered by the {{model}} model. Your working directory is {{cwd}}.`,
   minimal: 'You are a helpful software engineer assistant.',
-  cordis: 'You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.\n'
+  cordis: 'You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.\n'
     + '\nYou can read and modify the harness you run on. Its composition is Cordis:\n'
     + '- Every capability is a plugin row in a `cordis.yml`.\n'
     + '- An agent preset is one such file, mounted for a single session.',
