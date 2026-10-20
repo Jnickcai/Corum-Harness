@@ -50,6 +50,15 @@ import { CorumFsService } from './corum-fs.ts'
 import { CorumTerminalService } from './corum-terminal.ts'
 import { CorumGitService } from './corum-git.ts'
 import { CorumReviewService } from './corum-review.ts'
+import {
+  loadProfileWithSkip,
+  writeBootDiagnostics,
+  clearBootDiagnostics,
+  SUPPORTED_PLUGIN_APIS,
+  BOOT_DIAGNOSTICS_FILENAME,
+} from './profile-precheck.ts'
+
+export { BOOT_DIAGNOSTICS_FILENAME }
 
 /**
  * Resolve the desktop UI mode. The shell injects `CORUM_DESKTOP_MODE` per
@@ -186,6 +195,19 @@ const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tre
 # --patch overlays. Edit cordis.patch.yml, not this file.
 []
 `
+
+/** 宿主应用版本（从安装锚点的 package.json 读，不手填）。 */
+let cachedDesktopVersion: string | undefined
+function desktopVersion(): string {
+  if (cachedDesktopVersion === undefined) {
+    try {
+      cachedDesktopVersion = String((JSON.parse(readFileSync(INSTALL_ANCHOR, 'utf8')) as { version?: string }).version ?? '0.0.0')
+    } catch {
+      cachedDesktopVersion = '0.0.0'
+    }
+  }
+  return cachedDesktopVersion
+}
 
 /** Root config filename inside a profile directory. */
 const PROFILE_ROOT_FILENAME = 'cordis.yml'
@@ -327,7 +349,36 @@ export async function bootDesktop(): Promise<Context> {
   // the .pnpm isolated-layout symlinks from a symlinked anchor.
   healProfilesModuleFallbackRegistry(INSTALL_ANCHOR)
   t('healProfilesModuleFallbackRegistry')
-  const profile = loadProfile(NAME, profileName(), INSTALL_ANCHOR, undefined, { userLayer: true })
+  // 预检层（方案 §C.2.1）：官方 `loadProfile` 对坏 bundle **fail-hard**，而第三方
+  // 插件装错一个包不该让整个应用起不来（实测：host exit 1、renderer 卡在启动页、
+  // 零错误提示）。这里先筛：坏 bundle 记进 skipped[] 并从装载列表里剔除，其余照常。
+  const loaded = loadProfileWithSkip({
+    binName: NAME,
+    profileName: profileName(),
+    installAnchor: INSTALL_ANCHOR,
+    hostVersion: desktopVersion(),
+    supportedApis: SUPPORTED_PLUGIN_APIS,
+  })
+  const profile = loaded.profile
+  // 干净启动必须清掉上一次留下的诊断，否则「旧错误」会一直是「当前错误」——
+  // 启动页读的是这个文件，留着它就等于永远报同一条。
+  if (loaded.skipped.length === 0) clearBootDiagnostics(resolveDshHome())
+  if (loaded.skipped.length > 0) {
+    // 诊断落盘必须在 boot() 之前：host 若仍死在这里，renderer 也还有东西可读。
+    const path = writeBootDiagnostics(resolveDshHome(), {
+      generatedAt: new Date().toISOString(),
+      hostVersion: desktopVersion(),
+      profileName: profileName(),
+      supportedApis: SUPPORTED_PLUGIN_APIS,
+      skipped: loaded.skipped,
+      undeclared: loaded.undeclared,
+    })
+    process.stderr.write(
+      `[corum-desktop] ⚠️ ${loaded.skipped.length} 个 profile bundle 被跳过（不兼容/装坏了），其余照常启动：\n` +
+      loaded.skipped.map(item => `    · ${item.packageName} [${item.reason}] ${item.detail}`).join('\n') +
+      (path === undefined ? '' : `\n    诊断：${path}`) + '\n',
+    )
+  }
   t('loadProfile')
   // The root is always rewritten: the whole composition is patch layers, and
   // the vendored Loader's tree write-back can bake composed rows into this

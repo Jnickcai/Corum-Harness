@@ -189,7 +189,6 @@
     "@corum/corum-subagent": "workspace:*",
     "@corum/corum-todo-guard": "workspace:*",
     "@corum/corum-tool-subagent": "workspace:*",
-    "@corum/corum-update-checker": "workspace:*",
     "@corum/corum-ui-approval": "workspace:*",
     "@corum/corum-ui-base": "workspace:*",
     "@corum/corum-ui-chat": "workspace:*",
@@ -202,6 +201,7 @@
     "@corum/corum-ui-settings-plugins": "workspace:*",
     "@corum/corum-ui-titlebar": "workspace:*",
     "@corum/corum-ui-trajectory": "workspace:*",
+    "@corum/corum-update-checker": "workspace:*",
     "@corum/corum-web-search": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-include": "^1.0.6",
@@ -271,7 +271,8 @@
     "koffi": "^3.3.3",
     "lucide-react": "^0.460.0",
     "monaco-editor": "0.56.0",
-    "node-pty": "1.2.0-beta.15"
+    "node-pty": "1.2.0-beta.15",
+    "semver": "^7.6.3"
   },
   "peerDependencies": {
     "react": "^18.2.0",
@@ -282,6 +283,7 @@
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.31",
     "@types/react-dom": "~18.3.0",
+    "@types/semver": "^7.7.0",
     "electron": "43.4.1",
     "electron-builder": "^25.1.8",
     "tsdown": "^0.22.2",
