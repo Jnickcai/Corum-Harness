@@ -1149,3 +1149,67 @@ body[data-ds-dark-theme] .cardLogoLight { display: none; }
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ── 启动时被跳过的插件（host 预检跳过、从未进 loader 的那批）─────────────────
+ * 它们不在「已装」卡片格里，所以单独一段、语气比普通提示重：这是用户真实遇到的
+ * 「装了但没生效」，不给入口就会变成沉默故障。
+ */
+.skippedBlock {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--corum-density-scale, 1));
+  padding: calc(12px * var(--corum-density-scale, 1));
+  margin-bottom: calc(10px * var(--corum-density-scale, 1));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent);
+}
+
+.skippedTitle {
+  margin: 0;
+  font-size: calc(12.5px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.skippedList { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+
+.skippedItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(10px * var(--corum-density-scale, 1));
+}
+
+.skippedInfo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.skippedName {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(11.5px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.skippedReason { font-size: calc(11.5px * var(--corum-ui-font-scale, 1)); color: var(--dsw-alias-state-error-primary); }
+
+.skippedDetail {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.skippedRemove {
+  flex: none;
+  padding: calc(4px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1));
+  border-radius: 8px;
+  border: 1px solid var(--corum-glass-border);
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: calc(11.5px * var(--corum-ui-font-scale, 1));
+  cursor: pointer;
+}
+
+.skippedRemove:hover:not(:disabled) { color: var(--dsw-alias-state-error-primary); border-color: var(--dsw-alias-state-error-primary); }
+.skippedRemove:disabled { opacity: 0.6; cursor: default; }
+
+.skippedHint { margin: 0; font-size: calc(11px * var(--corum-ui-font-scale, 1)); color: var(--dsw-alias-label-tertiary); }

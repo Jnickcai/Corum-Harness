@@ -177,6 +177,26 @@ interface DesktopBridge {
   restartHost?: () => Promise<{ ok: boolean }>
   /** 应用版本号（主进程读 packages/desktop/package.json）：「Corum 内置」卡的版本行用。 */
   getAppVersion?: () => Promise<string>
+  /**
+   * 启动诊断：host 侧 profile 预检跳过了哪些 plugin bundle（`$CORUM_HOME/boot-diagnostics.json`）。
+   * 这些包**不在** `pluginManager/list` 里 —— 它们从未进入 loader，所以已装页原本看不见它们，
+   * 用户只会遇到「我装了但没生效」。这条通道把它们显式暴露出来（方案 §C.3）。
+   */
+  getBootDiagnostics?: () => Promise<BootDiagnostics | undefined>
+}
+
+/** 与 host 侧 `BootDiagnostics` 同形（这里只关心展示需要的字段）。 */
+interface BootDiagnostics {
+  readonly hostVersion: string
+  readonly skipped: ReadonlyArray<{ readonly packageName: string; readonly reason: string; readonly detail: string }>
+}
+
+/** 跳过原因的人话（host 侧的四关码 → 用户能懂的说法）。 */
+const SKIP_REASON_TEXT: Record<string, string> = {
+  unresolved: '找不到这个包（没装成功或已被移除）',
+  'not-a-bundle': '不是可装载的插件（缺 dsh.bundle 声明）',
+  'bad-patch': '挂载配置读不了（cordis.patch.yml 缺失或格式错）',
+  incompatible: '与当前应用版本不兼容',
 }
 
 /** 取 preload 桥（非桌面壳 / 老 preload 下返回 undefined，调用方静默降级）。 */
@@ -500,6 +520,8 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
   const [searchError, setSearchError] = useState<string | null>(null)
   // 已装清单（已装 tab 的数据源；市场「个人」范围也用它）。
   const [entries, setEntries] = useState<readonly InstalledEntry[] | null>(null)
+  /** 启动时被跳过的插件（host 预检结果；不在 entries 里，单独一段呈现）。 */
+  const [skipped, setSkipped] = useState<ReadonlyArray<{ packageName: string; reason: string; detail: string }>>([])
   /** dsh 底座版本（host `list` 的顶层字段）：「dsh 基座插件」卡的版本行用它，不逐条取。 */
   const [dshVersion, setDshVersion] = useState<string | undefined>(undefined)
   /** Corum 应用版本（preload 桥的 getAppVersion）：「Corum 内置」卡的版本行用它。 */
@@ -548,6 +570,39 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
 
   // 挂载：拉已装清单（市场磁贴要标已装、个人范围要用）+ 检索一次默认词。
   useEffect(() => { void refreshList() }, [refreshList])
+
+  // 挂载：读启动诊断。非桌面壳 / 老 preload 下静默降级（没有这段也不影响插件管理本身）。
+  useEffect(() => {
+    const bridge = desktopBridge()
+    if (typeof bridge?.getBootDiagnostics !== 'function') return
+    let cancelled = false
+    void bridge.getBootDiagnostics()
+      .then((diagnostics) => { if (!cancelled) setSkipped(diagnostics?.skipped ?? []) })
+      .catch(() => { /* 诊断读不到不该把页面弄挂 */ })
+    return () => { cancelled = true }
+  }, [])
+
+  /**
+   * 移除一个被跳过的插件：它从未进过 loader，`setEnabled` 那条 `loader.resolve(entryId)`
+   * 走不通，所以走 host 的 `removeBundle`（直接改 profile manifest 的 bundles 数组）。
+   * 结果需要重启才生效（与安装/卸载同口径）。
+   */
+  const removeSkipped = useCallback(async (packageName: string) => {
+    setBusy(prev => new Set(prev).add(packageName))
+    try {
+      const result = await callRemote<{ ok: boolean; removed: boolean }>('removeBundle', { packageName })
+      if (!result.ok) throw new Error('移除失败：host 未确认')
+      setSkipped(prev => prev.filter(item => item.packageName !== packageName))
+      setNotice(result.removed
+        ? `已从启动列表移除 ${packageName}，重启后生效`
+        : `${packageName} 不在启动列表里（可能已被移除）`)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(prev => { const next = new Set(prev); next.delete(packageName); return next })
+    }
+  }, [callRemote])
   useEffect(() => { void runSearch(INITIAL_QUERY) }, [runSearch])
 
   // 挂载：取应用版本（「Corum 内置」卡的版本行）。非桌面壳 / 老 preload 下静默降级
@@ -1456,6 +1511,37 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
 
           {tab === 'installed' && (
             <>
+              {/* 启动时被跳过的插件：它们不在 entries 里（从未进 loader），必须单独一段，
+                  否则用户只看到「装了但没生效」。每条给「原因 + 处理办法 + 移除入口」。 */}
+              {skipped.length > 0 && (
+                <div className={css.skippedBlock} role="alert">
+                  <p className={css.skippedTitle}>
+                    {skipped.length} 个插件在启动时被跳过（应用已跳过它们继续运行）
+                  </p>
+                  <ul className={css.skippedList}>
+                    {skipped.map(item => (
+                      <li key={item.packageName} className={css.skippedItem}>
+                        <div className={css.skippedInfo}>
+                          <code className={css.skippedName}>{item.packageName}</code>
+                          <span className={css.skippedReason}>
+                            {SKIP_REASON_TEXT[item.reason] ?? item.reason}
+                          </span>
+                          <span className={css.skippedDetail}>{item.detail}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className={css.skippedRemove}
+                          disabled={busy.has(item.packageName)}
+                          onClick={() => { void removeSkipped(item.packageName) }}
+                        >{busy.has(item.packageName) ? '移除中…' : '移除'}</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className={css.skippedHint}>
+                    移除后重启应用即可；若是版本不兼容，升级插件到支持的版本再重启。
+                  </p>
+                </div>
+              )}
               {error !== null && entries === null && <p className={css.errorText}>加载失败：{error}</p>}
               {entries === null && error === null && <p className={css.hintText}>加载中…</p>}
               {entries !== null && (
