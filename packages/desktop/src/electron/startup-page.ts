@@ -12,13 +12,30 @@ export function renderStartupPageHtml({ theme, animationEnabled, preview, platfo
 body{background:${theme.background ?? '#0A0612'}}
 main{position:absolute;inset:0;display:grid;place-items:center}iframe,video{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none;object-fit:contain}
 #waiting{padding:28px;text-align:center;line-height:1.8;color:#B98CFF;font:14px Inter,-apple-system,'PingFang SC',sans-serif}#status{white-space:pre-wrap;overflow-wrap:anywhere}
+#diagnostics{max-width:620px;margin:18px auto 0;padding:14px 16px;border-radius:12px;text-align:left;background:rgba(255,120,120,.08);border:1px solid rgba(255,120,120,.35);color:#FFD9D9;font:13px/1.7 Inter,-apple-system,'PingFang SC',sans-serif}
+#diagnostics h2{font-size:13px;font-weight:600;color:#FFB4B4;margin-bottom:8px}#diagnostics ul{list-style:none;display:grid;gap:6px}
+#diagnostics li{overflow-wrap:anywhere}#diagnostics code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#FFF}
+#diagnostics .reason{opacity:.75;margin-left:6px}#diagnostics .hint{opacity:.75;margin-top:8px;font-size:12px}
 [hidden]{display:none!important}@media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style></head><body>
-<main id="stage"><div id="waiting" role="status"><h1>Corum Harness</h1><p id="status">正在初始化后台服务…</p><button id="retry" hidden>重试启动</button></div></main>
+<main id="stage"><div id="waiting" role="status"><h1>Corum Harness</h1><p id="status">正在初始化后台服务…</p><div id="diagnostics" hidden></div><button id="retry" hidden>重试启动</button></div></main>
 <script>
 const config=${config};
 const bridge=window.corumDesktop;
-const stage=document.getElementById('stage'),status=document.getElementById('status'),retry=document.getElementById('retry');
+const stage=document.getElementById('stage'),status=document.getElementById('status'),retry=document.getElementById('retry'),diagnosticsEl=document.getElementById('diagnostics');
+/**
+ * 被跳过的插件必须**看得见**：host 侧的预检会跳过坏 bundle 让其余照常启动，
+ * 但「静默跳过」等于把问题埋起来。这里把 包名 + 原因 + 处理建议 直接摆在启动页上
+ * （启动页有完整画布，方案 §C.3 的落点就是它）。
+ * 文本一律走 textContent，绝不拼 innerHTML —— 包名来自第三方，不能当 HTML。
+ */
+function renderBootDiagnostics(d){if(!d||!Array.isArray(d.skipped)||d.skipped.length===0)return;
+ const h=document.createElement('h2');h.textContent='有 '+d.skipped.length+' 个插件被跳过，应用已跳过它们继续启动';
+ const ul=document.createElement('ul');
+ for(const item of d.skipped){const li=document.createElement('li');const code=document.createElement('code');code.textContent=item.packageName;const r=document.createElement('span');r.className='reason';r.textContent='['+item.reason+'] '+item.detail;li.appendChild(code);li.appendChild(r);ul.appendChild(li);}
+ const hint=document.createElement('p');hint.className='hint';hint.textContent='处理办法：在插件中心停用或卸载该插件后重启；诊断详情见 '+d.profileName+' profile 的 boot-diagnostics.json';
+ diagnosticsEl.textContent='';diagnosticsEl.appendChild(h);diagnosticsEl.appendChild(ul);diagnosticsEl.appendChild(hint);diagnosticsEl.hidden=false;}
+try{if(bridge&&typeof bridge.getBootDiagnostics==='function'){bridge.getBootDiagnostics().then(renderBootDiagnostics).catch(()=>{})}}catch{}
 let frame=null,video=null,holding=false,finished=false,failed=false,watchdog,startupGuard;
 // 分段视频：segments 存在时按启动阶段切换播放；否则回退单个 entry。
 const segs=config.theme.segments;

@@ -28,7 +28,8 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Loader } from '@deepseek-ai/cordis-plugin-loader'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { PROFILES_DIR } from '@deepseek-ai/dsh-app-boot'
+import { PROFILES_DIR, readProfileManifest, writeProfileManifest } from '@deepseek-ai/dsh-app-boot'
+import { removeBundleFromManifest } from './profile-precheck.ts'
 import { resolveDesktopHome } from './home.ts'
 
 /** 禁用清单文件名（$CORUM_HOME/plugins.disabled.json），boot 时作 patch 层叠加。 */
@@ -270,6 +271,25 @@ export class CorumPluginManager extends TypertRemoteService {
    * 启停一个条目：entry.update({disabled}) 带持久化与回滚（loader 内建），
    * 再写禁用清单文件让状态跨重启保留。
    */
+  /**
+   * 从 profile 的 bundle 列表里摘掉一个包装（**被跳过的 bundle 唯一可用的摘除通道**）。
+   *
+   * 背景（方案 §C.2.3）：启动预检会跳过装坏/不兼容的 bundle，让其余照常启动；被跳过的
+   * 那个**从未进入 loader**，所以 `setEnabled` 那条 `loader.resolve(entryId)` 的路走不通。
+   * 这里直接改 profile manifest 的 `dsh.profile.bundles` 数组 —— 下次启动它就不会再被装载。
+   * @param packageName - profile manifest 里的包名（不是 entryId）。
+   */
+  @Remote('removeBundle')
+  async removeBundle(packageName: string): Promise<{ ok: boolean; removed: boolean }> {
+    const home = resolveDesktopHome()
+    const profileDir = join(home, 'profiles', process.env.CORUM_DESKTOP_PROFILE ?? 'web')
+    const manifest = readProfileManifest('corum-desktop', profileDir) as Record<string, unknown>
+    const result = removeBundleFromManifest(manifest, packageName)
+    if (!result.removed) return { ok: true, removed: false }
+    writeProfileManifest(profileDir, result.manifest as Parameters<typeof writeProfileManifest>[1])
+    return { ok: true, removed: true }
+  }
+
   @Remote('setEnabled')
   async setEnabled(entryId: string, enabled: boolean): Promise<{ ok: boolean }> {
     const entry = this.loader().resolve(entryId)

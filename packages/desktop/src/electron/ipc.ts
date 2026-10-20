@@ -25,6 +25,30 @@ import type { createStartupScreen } from './startup-screen.ts'
 import { listStartupThemes, importStartupTheme, selectStartupTheme, deleteStartupTheme, resolveStartupTheme } from './startup-themes.ts'
 import { performInstallUpdate } from './update-install.ts'
 import { openStartupPreview } from './startup-preview.ts'
+import { homedir } from 'node:os'
+import type { BootDiagnostics } from '../host/profile-precheck.ts'
+
+/**
+ * 读 `$CORUM_HOME/boot-diagnostics.json`。
+ *
+ * 为什么要单独一条通道：bundle 装坏时 **host 进程会死在装载阶段**，此时任何经 host
+ * RPC 的面都不可用；而 renderer 与 main 进程都还活着。所以诊断必须是**文件**，
+ * 由 main 进程读、经 IPC 交给启动页（方案 §C.3 的结论）。
+ * @returns 解析后的诊断；文件不存在/为空/损坏一律返回 undefined（不抛）。
+ */
+function readBootDiagnostics(): BootDiagnostics | undefined {
+  const configured = process.env.CORUM_HOME
+  const home = configured !== undefined && configured.trim() !== '' ? configured : join(homedir(), '.corum')
+  const path = join(home, 'boot-diagnostics.json')
+  try {
+    const raw = readFileSync(path, 'utf8')
+    if (raw.trim() === '') return undefined   // 干净启动会把文件清空
+    const parsed = JSON.parse(raw) as BootDiagnostics
+    return parsed.skipped.length > 0 ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Register the transport IPC handlers. Run once after app ready; the bridge
@@ -82,6 +106,10 @@ export function registerIpc(
     if (theme.info.id !== id) throw new Error('主题不存在或已损坏')
     openStartupPreview(win, theme)
   })
+  // 启动诊断（host 侧的 profile 预检结果）。host 若死在装载阶段，renderer 仍活着，
+  // 这条 IPC 是它唯一能拿到「哪个插件坏了、为什么」的通道 —— 读的是落在
+  // $CORUM_HOME/boot-diagnostics.json 的文件，不依赖 host 存活。
+  ipcMain.handle('corum:boot-diagnostics', () => readBootDiagnostics())
   ipcMain.handle('corum:startup-animation-get', () => readStartupAnimationEnabled())
   ipcMain.handle('corum:startup-animation-set', (event, enabled: unknown) => {
     if (event.sender.id !== getWindow()?.webContents.id || typeof enabled !== 'boolean') throw new Error('无效的启动设置请求')
