@@ -22,7 +22,7 @@
   gap: calc(6px * var(--corum-density-scale, 1));
   /* height + padding 对齐 Editor Tabs 行（53px 高、padding [10,*,6,*]），使
      titlebar 按钮与 tabs 行折叠态按钮的垂直位置完全一致。 */
-  height: 53px;
+  height: 48px;
   box-sizing: border-box;
   padding: calc(10px * var(--corum-density-scale, 1)) calc(4px * var(--corum-density-scale, 1)) calc(6px * var(--corum-density-scale, 1));
 }
@@ -100,8 +100,8 @@
 .headerRoot {
   flex: 1;
   min-width: 0;
-  font-size: calc(16px * var(--corum-ui-font-scale, 1));
-  font-weight: 700;
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -131,7 +131,7 @@
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
-  font-size: calc(16px * var(--corum-ui-font-scale, 1));
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
   font-weight: normal;
   text-align: left;
   cursor: pointer;

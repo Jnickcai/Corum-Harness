@@ -57,15 +57,13 @@ async function fetchWorkerBlob(scriptName: string): Promise<string> {
 
 /**
  * The one Monaco environment hook: answer every worker request with a Worker.
- * Because blob fetching is async and Monaco's `getWorker` is sync, we kick off
- * the fetch on the first call and return undefined — Monaco retries, and the
- * cached blob URL is ready by then (workers are requested lazily, well after
- * page load, so the first undefined return doesn't block rendering).
+ * Monaco accepts a Promise<Worker>. Await the first fetch instead of returning
+ * undefined, which would select Monaco's bundler fallback in the client loader.
  * @param workerId - `workerMain.js` (Monaco's fixed worker entry id).
  * @param label - the worker descriptor label (see {@link WORKER_SCRIPTS}).
- * @returns a Worker for the label, or undefined when the fetch is still pending.
+ * @returns a Worker once its script is available.
  */
-export function getWorker(workerId: string, label: string): Worker | undefined {
+export async function getWorker(_workerId: string, label: string): Promise<Worker> {
   const script = WORKER_SCRIPTS[label] ?? WORKER_SCRIPTS.editorWorkerService
   // If the blob URL is already cached, create the Worker immediately.
   const cached = blobUrlCache.get(script)
@@ -74,14 +72,12 @@ export function getWorker(workerId: string, label: string): Worker | undefined {
   }
   // Kick off the fetch (idempotent — same script won't be fetched twice).
   if (!pending.has(script)) {
-    pending.set(script, fetchWorkerBlob(script).catch((err) => {
-      console.error('[corum-desktop] monaco worker fetch failed:', script, err)
+    pending.set(script, fetchWorkerBlob(script).finally(() => {
       pending.delete(script)
-      throw err
     }))
   }
-  // Return undefined — Monaco will call getWorker again after a microtask.
-  return undefined
+  const url = await pending.get(script)!
+  return new Worker(url, { type: 'classic', name: `monaco-${label}` })
 }
 
 /**

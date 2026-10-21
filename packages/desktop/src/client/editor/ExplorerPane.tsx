@@ -129,7 +129,7 @@ function joinPath(parent: string, name: string): string {
 }
 
 /** 文件扩展名 → 类型着色图标（design ④ 文件图标着色规则）。 */
-function FileTypeIcon({ name }: { name: string }) {
+export function FileTypeIcon({ name }: { name: string }) {
   const lower = name.toLowerCase()
   const dot = lower.lastIndexOf('.')
   const base = dot > 0 ? lower.slice(0, dot) : lower

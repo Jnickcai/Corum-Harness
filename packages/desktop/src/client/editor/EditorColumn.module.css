@@ -73,23 +73,75 @@
   min-width: 0;
   /* 固定高度对齐 ExplorerPane titlebar（同 53px），消除子像素取整导致的
      折叠/展开两态按钮 Y 差 1px。 */
-  height: 53px;
+  height: 48px;
   box-sizing: border-box;
+  border-bottom: 1px solid var(--corum-glass-border);
+}
+.tabList {
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--corum-density-scale, 1));
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.editorActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.editorAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.editorAction:hover:not(:disabled) {
+  background: var(--corum-glass-2);
+  color: var(--dsw-alias-label-primary);
+}
+.editorAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.editorAction:focus-visible,
+.tabCloseBtn:focus-visible,
+.tabViewModeBtn:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+.tabFileIcon {
+  display: inline-flex;
+  flex: none;
+}
+.tabFileIcon svg {
+  width: 14px;
+  height: 14px;
 }
 /* tab-file（s9GKh5：r12 pad[9,10,9,12] gap8）。 */
 .tab {
   flex: none;
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--corum-density-scale, 1));
-  padding: calc(9px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1)) calc(9px * var(--corum-density-scale, 1)) calc(12px * var(--corum-density-scale, 1));
+  gap: calc(6px * var(--corum-density-scale, 1));
+  padding: calc(7px * var(--corum-density-scale, 1)) calc(9px * var(--corum-density-scale, 1));
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 8px;
   background: transparent;
   font-size: calc(12px * var(--corum-ui-font-scale, 1));
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
-  max-width: 160px;
+  max-width: 200px;
   overflow: hidden;
   cursor: pointer;
 }
@@ -180,21 +232,65 @@
 
 .crumb {
   flex: none;
-  padding: 0 calc(14px * var(--corum-density-scale, 1)) calc(8px * var(--corum-density-scale, 1));
-  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  padding: calc(7px * var(--corum-density-scale, 1)) calc(14px * var(--corum-density-scale, 1));
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
   color: var(--dsw-alias-label-tertiary);
   font-family: 'JetBrains Mono', 'SFMono-Regular', 'Menlo', monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  border-bottom: 1px solid var(--corum-glass-border);
 }
 
 /* ── NIgux Code（Monaco，flex:1 pad[0,14,14,14]） ──────────────────── */
 
 .code {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 0 calc(14px * var(--corum-density-scale, 1)) calc(14px * var(--corum-density-scale, 1));
+  padding: calc(10px * var(--corum-density-scale, 1)) calc(12px * var(--corum-density-scale, 1));
+  container-type: inline-size;
+}
+
+.previewToolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--corum-glass-border);
+}
+.markdownLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+.markdownLayout[data-markdown-mode='split'] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.markdownSource,
+.markdownRendered {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.markdownLayout[data-markdown-mode='split'] .markdownRendered {
+  border-left: 1px solid var(--corum-glass-border);
+  padding-left: 12px;
+}
+@container (max-width: 560px) {
+  .markdownLayout[data-markdown-mode='split'] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .markdownLayout[data-markdown-mode='split'] .markdownRendered {
+    border-left: 0;
+    border-top: 1px solid var(--corum-glass-border);
+    padding-left: 0;
+    padding-top: 12px;
+  }
 }
 
 /* Review 卡 diff tab 的「重建不完整」提示横幅（见 EditorColumn 的 openContentDiff）。
@@ -215,10 +311,71 @@
 .diffBar {
   display: flex;
   flex: none;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
   gap: calc(6px * var(--corum-density-scale, 1));
   padding-bottom: calc(6px * var(--corum-density-scale, 1));
 }
+
+.diffView {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.diffSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-secondary);
+}
+.diffAdded { color: var(--dsw-alias-state-success-primary); }
+.diffRemoved { color: var(--dsw-alias-state-error-primary); }
+.diffCanvas { flex: 1; min-height: 0; min-width: 0; }
+.diffHeadings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 4px;
+  border-block: 1px solid var(--corum-glass-border);
+  color: var(--dsw-alias-label-secondary);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+}
+.diffHeadings > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.diffHeadings span span { color: var(--dsw-alias-label-tertiary); }
+.diffHeadings[data-side-by-side='false'] { display: flex; flex-wrap: wrap; }
+.comparisonSidebar { height: 100%; padding: 0 8px 10px; overflow-y: auto; }
+.comparisonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  gap: 4px;
+  color: var(--dsw-alias-label-primary);
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+}
+.comparisonCount { color: var(--dsw-alias-label-tertiary); }
+.comparisonFile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.comparisonFile:hover { background: var(--corum-glass-3); }
+.comparisonFile[aria-pressed='true'] { background: var(--corum-glass-2); border-color: var(--corum-glass-border); color: var(--dsw-alias-label-primary); }
+.comparisonFile > span { display: flex; align-items: center; gap: 6px; width: 100%; overflow-wrap: anywhere; font-size: calc(12px * var(--corum-ui-font-scale, 1)); }
+.comparisonFile svg { width: 14px; height: 14px; flex: none; }
+.comparisonFile small { font-size: calc(11px * var(--corum-ui-font-scale, 1)); color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
 
 .diffToggle {
   padding: calc(2px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1));
@@ -250,9 +407,11 @@
   align-items: center;
   gap: calc(10px * var(--corum-density-scale, 1));
   padding: calc(6px * var(--corum-density-scale, 1)) calc(14px * var(--corum-density-scale, 1)) calc(8px * var(--corum-density-scale, 1));
-  font-size: calc(9px * var(--corum-ui-font-scale, 1));
-  color: var(--dsw-alias-label-tertiary);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-secondary);
   font-family: 'JetBrains Mono', 'SFMono-Regular', 'Menlo', monospace;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--corum-glass-border);
 }
 .statusSpacer {
   flex: 1;
