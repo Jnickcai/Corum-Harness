@@ -1,0 +1,258 @@
+/* fork（corum）2026-10-21：ask_user_question 行（可读提问卡）。
+   与终端卡/文件卡同族：r14 + 1px glass 边 + glass-1 底 + padding 12 + gap 8。
+   状态色走 --corum-state-*，文字用 --dsw-alias-label-*，零硬编码 hex。 */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--corum-density-scale, 1));
+  padding: calc(10px * var(--corum-density-scale, 1)) calc(12px * var(--corum-density-scale, 1));
+  background: var(--corum-glass-1, rgba(29, 17, 43, 0.85));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  border-radius: 14px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ── 头行 ── */
+.head {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--corum-density-scale, 1));
+  min-height: 24px;
+  min-width: 0;
+}
+
+.iconBox {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.62));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  color: var(--dsw-alias-label-secondary);
+}
+
+.title {
+  flex: none;
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.state {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+.stateRunning {
+  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 12%, transparent);
+}
+
+.stateOk {
+  color: var(--corum-state-success, var(--dsw-alias-label-secondary));
+  background: color-mix(in srgb, var(--corum-state-success, #37d67a) 14%, transparent);
+}
+
+.stateBlocked {
+  color: var(--corum-state-danger, var(--dsw-alias-label-secondary));
+  background: color-mix(in srgb, var(--corum-state-danger, #ff6b6b) 14%, transparent);
+}
+
+.stateMuted {
+  color: var(--dsw-alias-label-tertiary);
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 12%, transparent);
+}
+
+.chip {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent);
+  font-size: calc(10.5px * var(--corum-ui-font-scale, 1));
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11.5px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.chevronBtn {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.chevronBtn:hover {
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chevronBtn:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, var(--corum-state-running));
+  outline-offset: 1px;
+}
+
+/* ── 展开体 ── */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--corum-density-scale, 1));
+  min-width: 0;
+}
+
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--corum-density-scale, 1));
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);
+  min-width: 0;
+}
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.itemHeader {
+  font-size: calc(10.5px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+  text-transform: none;
+}
+
+.itemBadge {
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: calc(10px * var(--corum-ui-font-scale, 1));
+  line-height: 15px;
+  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4ea1ff) 12%, transparent);
+}
+
+.itemQuestion {
+  font-size: calc(12.5px * var(--corum-ui-font-scale, 1));
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.options {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 8px;
+  border-left: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary, #4ea1ff) 40%, transparent);
+  min-width: 0;
+}
+
+.optionLabel {
+  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.optionDesc {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.freeHint {
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── 参数不完整：一句人话 + 折叠的原始参数 ── */
+.malformed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.malformedHint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(11.5px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-secondary);
+}
+
+.raw {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: calc(10.5px * var(--corum-ui-font-scale, 1));
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  color: var(--dsw-alias-label-tertiary);
+}
