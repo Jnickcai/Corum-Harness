@@ -48,6 +48,7 @@ import type { ComposerBlock } from './contract/composer-blocks.ts'
 import { InputHub } from './input/hub.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { queueDockEntry } from './queue/QueueDock.tsx'
+import { goalDockEntry } from './goal/GoalDock.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
 import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
@@ -789,5 +790,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     maxConcurrentFileUploads,
   })
   ctx.plugin(todoDockEntry)
+  ctx.plugin(goalDockEntry)
   ctx.plugin(queueDockEntry)
 }

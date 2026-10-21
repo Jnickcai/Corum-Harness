@@ -1,0 +1,57 @@
+.root {
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--dsh-composer-side-clearance) - 4 * var(--dsh-composer-dock-inset));
+  max-width: calc(var(--dsh-composer-card-max-width) - 4 * var(--dsh-composer-dock-inset));
+  margin: 0 auto;
+  padding: 8px calc(16px * var(--corum-density-scale, 1));
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 14px;
+  background: var(--corum-glass-1);
+  backdrop-filter: var(--corum-glass-blur, blur(20px) saturate(140%));
+  color: var(--dsw-alias-label-primary);
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
+  line-height: 20px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.header strong { font-weight: 500; }
+.activation, .metadata { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.actions { display: flex; gap: 4px; margin-left: auto; }
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.actions button:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.actions button:disabled { opacity: .4; cursor: default; }
+.objective, .blocked, .error { margin: 4px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.objective { max-height: 100px; overflow-y: auto; }
+.metadata { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 2px; }
+.blocked { display: flex; flex-wrap: wrap; column-gap: 8px; color: var(--dsw-alias-state-warn-primary); }
+.blocked code { font-size: 12px; }
+.error { color: var(--dsw-alias-state-error-primary); }
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 60px;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--corum-glass-border);
+  border-radius: 8px;
+  background: var(--corum-glass-1);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
