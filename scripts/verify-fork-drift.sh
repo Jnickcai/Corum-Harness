@@ -470,6 +470,27 @@ else
   skip "找不到领域事件声明（既无 ${CLOSED_PROJECT_SRC}/events.ts 也无 ${AGENT_EVENTS}）"
 fi
 
+# ── 3b. 会话日志事件纪律（2026-10-21 事故）────────────────────────────────────
+# **corum 不得往会话日志写自有事件类型。** 真因链：
+#   ① 官方读路径（`validateStoredEvents`）遇到「本 build 不认识且未标 `ignorable`」
+#      的事件会**整条会话拒读**（不猜、不丢）；
+#   ② 官方的 `KNOWN_SESSION_EVENT_TYPES` 是**生成集**（只含官方 `SessionEventMap`），
+#      corum 再怎么 `declare module` 也进不去；
+#   ③ `Session.append()` **没有** `ignorable` 入参 ⇒ 自有事件只能写成 required。
+# 事故现场：`corum/foreground-busy`（issue #75 伪前台）在特性 revert 后毒化 8 条会话，
+# 打开即 `unknown to this harness and not marked ignorable; refusing to interpret`。
+# 需要往会话持久化自有状态时走 `appendPluginRecord`（`plugin:` 命名，天然 ignorable）。
+bad_session_events=$(grep -rn --include=*.ts -E "\.append\([\"']corum/" \
+  "$REPO_ROOT/packages" 2>/dev/null \
+  | grep -v "/node_modules/" | grep -v "/lib/" | grep -v "/tests/" || true)
+if [ -n "$bad_session_events" ]; then
+  fail "有代码在往会话日志 append 自有事件（会被退版后的 harness 拒读）："
+  printf '%s\n' "$bad_session_events" | sed 's/^/       /'
+  info "改用 appendPluginRecord + 'plugin:<pkg>/<name>' 命名；详见 dev-conventions §18"
+else
+  pass "会话日志未写自有事件类型（plugin: 命名纪律）"
+fi
+
 # ── 4. 宿主 emit 面 ↔ 声明（防「声明了但 host 从不 emit」）──────────────────
 fi  # ← select_section 3
 if select_section 4; then
