@@ -47,6 +47,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -385,15 +386,19 @@ if (CLEAN_FIRST) {
 }
 
 // 被改动的包 + 所有依赖它们的包（下游必须重建：上游产物变了）。
+// `--changed` 原先这里调 `workspaceDepsOf(pkg, byName)` **漏了 aliases 参数** ⇒
+// `aliases.get` 抛 TypeError，整个 `--changed` 模式一跑就崩（2026-10-22 实测：
+// 与 Windows 修复无关的既有缺陷）。别名表与拓扑排序用同一份。
 const targets = new Set()
 if (touched !== null) {
+  const aliases = readOverrideAliases()
   for (const pkg of packages) if (isTouched(pkg, touched)) targets.add(pkg)
   let grew = true
   while (grew) {
     grew = false
     for (const pkg of packages) {
       if (targets.has(pkg)) continue
-      if (workspaceDepsOf(pkg, byName).some(d => targets.has(d))) { targets.add(pkg); grew = true }
+      if (workspaceDepsOf(pkg, byName, aliases).some(d => targets.has(d))) { targets.add(pkg); grew = true }
     }
   }
 }
@@ -405,6 +410,84 @@ const plan = topoSort(packages).filter(p => (CLEAN_FIRST || touched === null ? t
 
 log(`→ 目标平台 ${PLATFORM}；待构建 ${plan.length} / ${packages.length} 个 workspace 包`)
 
+/**
+ * npm 的可执行入口（**不**走 `npm` 这个名字，见下）。
+ *
+ * 为什么不能直接 `execFileSync('npm', …)`：Windows 上 `npm` 不是可执行文件，而是
+ * `npm.cmd` / `npm.ps1`（shim）。`execFileSync` 不经过 shell，也不做 PATHEXT 补全，
+ * 于是直接 ENOENT —— 而 `error.stdout/stderr` 都是空的，表现出来是
+ * 「52 个包全部失败，但每个包的错误信息都是空行」（2026-10-22 Win10 实测）。
+ * 这是「只在本机能跑」的典型：darwin/linux 上 `npm` 是真脚本，永远发现不了。
+ *
+ * 修法 = 用**当前这个 node**去跑 npm 的 cli.js：跨平台同一份代码，不依赖 shell、
+ * 不依赖 PATHEXT、也不怕 shim。解析顺序：
+ *   1. 由 `process.execPath` 反推（node 与 npm 通常同前缀，见下方候选表）
+ *   2. 交给 node 自己 require.resolve（npm 被全局装到别处时可用）
+ *   3. 都不成立 → **fail loud 并给出处置**（不静默退回裸 `npm`：那在 Windows 上
+ *      必然全红且错误信息为空，比直接说清楚更糟）
+ */
+function npmCliEntry() {
+  const nodeDir = dirname(process.execPath)
+  // 不枚举发行版布局，而是**从 node 所在目录逐层向上**找 `lib/node_modules/npm`。
+  // 这样同时覆盖三种实测形态：
+  //   linux/darwin 官方包： <prefix>/bin/node        → <prefix>/lib/node_modules/npm
+  //   Homebrew（macOS）：    …/Cellar/node/x/bin/node → …/Cellar/node/x/libexec/lib/node_modules/npm
+  //   Windows 官方包：       <prefix>/node.exe        → <prefix>/node_modules/npm
+  // 每层都试 `lib/node_modules`、`libexec/lib/node_modules`、`node_modules` 三个位置；
+  // 命中第一个存在的即用。找不到再交给 node 自己 resolve（npm 被全局装到别处时）。
+  const relCandidates = [
+    join('lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join('libexec', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join('node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]
+  let dir = nodeDir
+  for (let depth = 0; depth < 5; depth++) {
+    for (const rel of relCandidates) {
+      const candidate = resolve(dir, rel)
+      if (existsSync(candidate)) return candidate
+    }
+    const parent = resolve(dir, '..')
+    if (parent === dir) break
+    dir = parent
+  }
+  try {
+    return createRequire(import.meta.url).resolve('npm/bin/npm-cli.js')
+  } catch {
+    return null
+  }
+}
+
+const NPM_CLI = npmCliEntry()
+if (NPM_CLI === null) {
+  // 不静默退回裸 `npm`：那在 Windows 上必然全红且错误信息为空，比直接说清楚更糟。
+  log('✗ 找不到 npm 的 cli.js（node 与 npm 不在同一前缀，且 require.resolve 也没命中）。')
+  log(`  node 路径：${process.execPath}`)
+  log('  处置：确认 npm 已随 node 一起安装（`node -e "require.resolve(\'npm/bin/npm-cli.js\')"`）。')
+  process.exit(1)
+}
+
+/** 跑一个包的 build 脚本；返回 { ok, output }。用 node + npm-cli.js，跨平台一致。 */
+function runBuild(pkg, env) {
+  try {
+    const stdout = execFileSync(process.execPath, [NPM_CLI, 'run', 'build', '--silent'], {
+      cwd: pkg.dir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    })
+    return { ok: true, output: stdout }
+  } catch (error) {
+    // 错误信息要能落到报告里：stdout/stderr 任一为空都要容忍（tsc 走 stdout，
+    // 原生模块安装器走 stderr）。都空时至少把退出码与信号带出去，
+    // 否则「空行报告」会再犯一次同样的误判。
+    const parts = [error.stdout, error.stderr].filter(part => typeof part === 'string' && part.length > 0)
+    if (parts.length === 0) {
+      parts.push(`（子进程未产生输出）exit=${String(error.status ?? 'null')} signal=${String(error.signal ?? 'null')} code=${String(error.code ?? 'null')}`)
+    }
+    return { ok: false, output: parts.join('') }
+  }
+}
+
 const failed = []
 const skipped = []
 for (const [i, pkg] of plan.entries()) {
@@ -414,16 +497,8 @@ for (const [i, pkg] of plan.entries()) {
   // 平台常量只对 Electron 壳有意义；对插件无害，统一注入可避免「某些包忘记」。
   const env = { ...process.env, CORUM_TARGET_PLATFORM: PLATFORM }
   log(`${tag} ${pkg.name}`)
-  try {
-    execFileSync('npm', ['run', 'build', '--silent'], {
-      cwd: pkg.dir,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    })
-  } catch (error) {
-    failed.push({ pkg, output: `${error.stdout ?? ''}${error.stderr ?? ''}` })
-  }
+  const result = runBuild(pkg, env)
+  if (!result.ok) failed.push({ pkg, output: result.output })
 }
 
 if (skipped.length > 0) log(`\n（跳过 ${skipped.length} 个无 build 脚本的包）`)
