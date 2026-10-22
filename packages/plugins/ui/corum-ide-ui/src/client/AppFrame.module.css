@@ -859,10 +859,10 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--corum-glass-1, var(--dsw-alias-bg-layer-1));
+  background: var(--corum-workspace-surface, var(--corum-glass-1, var(--dsw-alias-bg-layer-1)));
   border: 1px solid var(--corum-glass-border, var(--dsw-alias-border-l1));
   border-radius: 18px;
-  backdrop-filter: var(--corum-glass-blur, blur(20px) saturate(140%));
+  backdrop-filter: var(--corum-workspace-blur, blur(20px) saturate(140%));
 }
 
 /* 折叠态：隐藏侧栏会话内容，标题栏常驻（宽度由 GridView minWidth 兜底）。 */
@@ -876,6 +876,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* GridView 外层 leaf 和内层 RegionCard 均带 data-slot，只给内层卡片铺底。 */
+.frame :global([data-slot='corum.editor'] > [data-slot='corum.editor']) {
+  background: var(--corum-workspace-surface);
+  backdrop-filter: var(--corum-workspace-blur);
 }
 
 /* 侧栏折叠（2026-09-30 定案 = **整列隐藏**）：leaf 的 collapsedWidth 改为 0，
@@ -912,9 +918,9 @@
   padding: calc(40px + 10px * var(--corum-density-scale, 1)) 0 calc(10px * var(--corum-density-scale, 1));
   box-sizing: border-box;
   overflow: hidden;
-  background: var(--corum-glass-2, var(--dsw-alias-bg-layer-2));
+  background: var(--corum-workspace-surface, var(--corum-glass-2, var(--dsw-alias-bg-layer-2)));
   border-right: 1px solid var(--corum-glass-border, var(--dsw-alias-border-l1));
-  backdrop-filter: var(--corum-glass-blur, blur(20px) saturate(140%));
+  backdrop-filter: var(--corum-workspace-blur, blur(20px) saturate(140%));
 }
 
 /* win32/linux 无红绿灯：活动栏内容顶到 y=0，占据 titlebar 让出的左 76px 列

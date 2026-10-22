@@ -27,6 +27,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react'
 import { applyCorumTheme, defineCorumThemes } from './monaco-theme.ts'
 import { summarizeLineChanges } from './diff-summary.ts'
 import { installMonacoWorkerEnvironment } from './worker.ts'
+import { DEFAULT_DISPLAY_PREFS, displayOptions, getDisplayPrefsInstance } from './display-prefs.ts'
 import css from './EditorColumn.module.css'
 
 export interface DiffViewerProps {
@@ -100,6 +101,14 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       },
     })
     diffRef.current = diff
+    const displayPrefs = getDisplayPrefsInstance()
+    const applyDisplayPrefs = (): void => {
+      const options = displayOptions(displayPrefs?.getPrefs() ?? DEFAULT_DISPLAY_PREFS)
+      diff.getOriginalEditor().updateOptions(options)
+      diff.getModifiedEditor().updateOptions(options)
+    }
+    applyDisplayPrefs()
+    const disposeDisplayPrefs = displayPrefs?.subscribe(applyDisplayPrefs)
     const diffListener = diff.onDidUpdateDiff(() => {
       const changes = diff.getLineChanges()
       setSummary(changes === null ? null : summarizeLineChanges(changes))
@@ -144,6 +153,7 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       // diff 模型独立创建（非共享 cache），随视图销毁
       model?.original.dispose()
       model?.modified.dispose()
+      disposeDisplayPrefs?.()
     }
     // original/modified/language 在同一 diff tab 生命周期内不变（tab 级固定），
     // 变化即重开 tab（新 path）。`sideBySide` 例外：它由用户在工具条上实时切换，

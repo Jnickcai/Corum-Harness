@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_DISPLAY_PREFS, normalizeDisplayPrefs, type DisplayPrefs } from '../shared/editor-display-prefs.ts'
 
 export function settingsHome(): string {
   return process.env.CORUM_HOME?.trim() || join(homedir(), '.corum')
@@ -48,4 +49,16 @@ function writePreference(key: string, value: unknown, home: string): void {
   const path = join(home, 'desktop-settings.json')
   writeFileSync(`${path}.tmp`, JSON.stringify({ ...preferences, [key]: value }, null, 2), { mode: 0o600 })
   renameSync(`${path}.tmp`, path)
+}
+
+/** 显示偏好属于桌面用户配置，不随 host 端口改变。 */
+export function readEditorDisplayPrefs(home = settingsHome()): DisplayPrefs | null {
+  try {
+    const value = readPreferences(home).editorDisplayPrefs
+    return value === undefined ? null : normalizeDisplayPrefs(value, DEFAULT_DISPLAY_PREFS)
+  } catch { return null }
+}
+
+export function writeEditorDisplayPrefs(value: unknown, home = settingsHome()): void {
+  writePreference('editorDisplayPrefs', normalizeDisplayPrefs(value, DEFAULT_DISPLAY_PREFS), home)
 }

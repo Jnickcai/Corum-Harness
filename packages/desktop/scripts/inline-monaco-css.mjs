@@ -26,7 +26,15 @@ if (!existsSync(styleCss) || !existsSync(clientJs)) {
   process.exit(0)
 }
 
-const cssText = readFileSync(styleCss, 'utf8')
+// 样式注入页面后，相对字体 URL 会指向 host 根目录。字体随 CSS 内联，
+// 确保开发版和安装包都不依赖额外静态资源路由。
+const cssText = readFileSync(styleCss, 'utf8').replace(
+  /url\((['"]?)(?:\.\/)?codicon\.ttf\1\)/g,
+  () => {
+    const font = readFileSync(join(root, 'node_modules', 'monaco-editor', 'esm', 'vs', 'base', 'browser', 'ui', 'codicons', 'codicon', 'codicon.ttf'))
+    return `url("data:font/ttf;base64,${font.toString('base64')}")`
+  },
+)
 const inject = [
   `;(function(){if(typeof document!=='undefined'&&document.querySelector('style[data-corum-monaco]')===null){`,
   `var s=document.createElement('style');`,

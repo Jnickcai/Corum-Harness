@@ -10,16 +10,8 @@
  *
  * ## 就绪度（PRD §4.23 + §10.2 分档）
  *
- * 25 项中**只有 1 项有真源**：
- *
- * | 项 | 真源 | 状态 |
- * |---|---|---|
- * | E20 diff 布局（并排 / 内联） | ✅ `localStorage['corum.diff.sideBySide']` | **已接线** |
- * | E1~E19、E21~E22 | ❌ Monaco 选项全部**硬编码**在 `MonacoEditor.tsx:196-257`（约 35 项） | 未上线 |
- * | E23~E25 编辑体验 | ❌ 全仓无实现（无 autoSave、无 formatter 提供者） | 未上线 |
- *
- * ⇒ 其余 24 项一律「禁用 + 未上线」badge（PRD §6.1）；标签描述里保留**当前硬编码值**，
- * 让「现在是什么、以后能改什么」一眼可见。
+ * 字体三项走 fontPrefs，显示九项走 editorDisplayPrefs；diff 布局沿用已有偏好。
+ * 其余十二项仍禁用并标注未上线，避免提供不能生效的控件。
  *
  * ⚠️ **E20 的读写格式是 `'1'` / `'0'`，不是 `'true'` / `'false'`**，且 `null` 视为 `true`
  * （`EditorColumn.tsx:435-441`）。写错格式会让真实编辑器**静默**翻成内联布局 ——
@@ -34,7 +26,7 @@ import { SettingRow } from '../SettingRow.tsx'
 import { SelectField } from '../SelectField.tsx'
 import { Switch } from '../Switch.tsx'
 import { Badge } from '../Badge.tsx'
-import { GlassButton, useFontPrefs } from '../shared.tsx'
+import { GlassButton, useEditorDisplayPrefs, useFontPrefs } from '../shared.tsx'
 import css from '../SettingsSections.module.css'
 
 /* ── 编辑器（PRD §4.23）────────────────────────────────────────────── */
@@ -70,11 +62,18 @@ function readDiffSideBySide(): boolean {
  * 编辑器设置分区。
  *
  * 字体组（E1 字族 / E2 字号 / E3 行高）已接真源（fontPrefs cordis 服务）；
- * E20（diff 布局）走 localStorage；其余项为「目标态占位」，禁用并标注未上线。
+ * 显示组接 editorDisplayPrefs，E20（diff 布局）走 localStorage；其余项仍禁用。
  *
  * @returns the editor settings section.
  */
 export function EditorSection() {
+  const displayPrefs = useEditorDisplayPrefs()
+  const display = useSyncExternalStore(
+    listener => displayPrefs?.subscribe(listener) ?? (() => {}),
+    () => displayPrefs?.getPrefs() ?? null,
+  )
+  const displayReady = display !== null
+  const displayBadge = displayReady ? undefined : OFFLINE
   const [sideBySide, setSideBySide] = useState<boolean>(readDiffSideBySide)
   // 字面偏好真源（fontPrefs cordis 服务，跨 bundle 单例；context 下发）。
   const fontPrefs = useFontPrefs()
@@ -111,7 +110,7 @@ export function EditorSection() {
       <div className={css.topRow}>
         <span className={css.topHint}>
           编辑器专属设置（**仅编辑器内生效**，与外观页的界面字体、终端页的终端字体互不影响）。
-          当前除「diff 布局」外，其余条目尚未接入设置真源，故标注未上线并禁用。
+          字体、显示和 diff 布局可调整；标注「未上线」的条目暂不可用。
         </span>
       </div>
 
@@ -174,32 +173,32 @@ export function EditorSection() {
       </SettingGroup>
 
       <SettingGroup title="显示">
-        <SettingRow label="行号" desc="开 / 关 / 相对。当前硬编码：on" badge={OFFLINE}>
-          <SelectField value="on" options={[{ id: 'on', label: '开' }]} onChange={noop} disabled />
+        <SettingRow label="行号" desc="显示绝对行号、相对行号，或隐藏行号。" badge={displayBadge}>
+          <SelectField value={display?.lineNumbers ?? 'on'} options={[{ id: 'on', label: '开' }, { id: 'off', label: '关' }, { id: 'relative', label: '相对' }]} onChange={id => displayPrefs?.setPrefs({ lineNumbers: id as 'on' | 'off' | 'relative' })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="小地图" desc="当前硬编码：enabled + showSlider:always + maxColumn:80" badge={OFFLINE}>
-          <Switch checked={true} onChange={noop} disabled />
+        <SettingRow label="小地图" desc="在编辑器右侧显示代码缩略图。" badge={displayBadge}>
+          <Switch checked={display?.minimap ?? true} onChange={minimap => displayPrefs?.setPrefs({ minimap })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="空白字符" desc="不显示 / 仅选中 / 始终。当前硬编码：selection" badge={OFFLINE}>
-          <SelectField value="selection" options={[{ id: 'selection', label: '仅选中' }]} onChange={noop} disabled />
+        <SettingRow label="空白字符" desc="控制空格与 Tab 的可视标记。" badge={displayBadge}>
+          <SelectField value={display?.renderWhitespace ?? 'selection'} options={[{ id: 'none', label: '不显示' }, { id: 'selection', label: '仅选中' }, { id: 'all', label: '始终' }]} onChange={id => displayPrefs?.setPrefs({ renderWhitespace: id as 'none' | 'selection' | 'all' })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="当前行高亮" desc="关 / 边框 / 整行。当前未设置（默认 line）" badge={OFFLINE}>
-          <SelectField value="line" options={[{ id: 'line', label: '整行' }]} onChange={noop} disabled />
+        <SettingRow label="当前行高亮" desc="高亮光标所在行的代码区域、行号栏，或两者。" badge={displayBadge}>
+          <SelectField value={display?.renderLineHighlight ?? 'line'} options={[{ id: 'none', label: '关' }, { id: 'gutter', label: '行号栏' }, { id: 'line', label: '整行' }, { id: 'all', label: '整行与行号栏' }]} onChange={id => displayPrefs?.setPrefs({ renderLineHighlight: id as 'none' | 'gutter' | 'line' | 'all' })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="括号对着色" desc="当前硬编码：enabled" badge={OFFLINE}>
-          <Switch checked={true} onChange={noop} disabled />
+        <SettingRow label="括号对着色" desc="用不同颜色区分嵌套括号。" badge={displayBadge}>
+          <Switch checked={display?.bracketPairColorization ?? true} onChange={bracketPairColorization => displayPrefs?.setPrefs({ bracketPairColorization })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="缩进导轨 / 括号导轨" desc="当前硬编码：bracketPairs + indentation 均开" badge={OFFLINE}>
-          <Switch checked={true} onChange={noop} disabled />
+        <SettingRow label="缩进导轨 / 括号导轨" desc="显示缩进层级与括号配对参考线。" badge={displayBadge}>
+          <Switch checked={display?.guides ?? true} onChange={guides => displayPrefs?.setPrefs({ guides })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="折叠控件显示" desc="始终 / 悬停。当前硬编码：always" badge={OFFLINE}>
-          <SelectField value="always" options={[{ id: 'always', label: '始终' }]} onChange={noop} disabled />
+        <SettingRow label="折叠控件显示" desc="始终显示，或鼠标悬停时显示。" badge={displayBadge}>
+          <SelectField value={display?.showFoldingControls ?? 'always'} options={[{ id: 'always', label: '始终' }, { id: 'mouseover', label: '悬停' }]} onChange={id => displayPrefs?.setPrefs({ showFoldingControls: id as 'always' | 'mouseover' })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="滚动越界" desc="允许滚到末行之外。当前硬编码：false" badge={OFFLINE}>
-          <Switch checked={false} onChange={noop} disabled />
+        <SettingRow label="滚动越界" desc="允许滚动到文件末行下方的空白区域。" badge={displayBadge}>
+          <Switch checked={display?.scrollBeyondLastLine ?? false} onChange={scrollBeyondLastLine => displayPrefs?.setPrefs({ scrollBeyondLastLine })} disabled={!displayReady} />
         </SettingRow>
-        <SettingRow label="平滑滚动 / 平滑光标" desc="当前硬编码：smoothScrolling + cursorSmoothCaretAnimation 均开" badge={OFFLINE} divider={false}>
-          <Switch checked={true} onChange={noop} disabled />
+        <SettingRow label="平滑滚动 / 平滑光标" desc="为滚动与光标移动启用平滑过渡。" badge={displayBadge} divider={false}>
+          <Switch checked={display?.smoothMotion ?? true} onChange={smoothMotion => displayPrefs?.setPrefs({ smoothMotion })} disabled={!displayReady} />
         </SettingRow>
       </SettingGroup>
 

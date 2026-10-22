@@ -245,6 +245,7 @@
 /* ── NIgux Code（Monaco，flex:1 pad[0,14,14,14]） ──────────────────── */
 
 .code {
+  background: var(--corum-code-surface, transparent);
   display: flex;
   flex-direction: column;
   flex: 1;

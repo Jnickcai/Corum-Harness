@@ -20,7 +20,7 @@ import { createInputHal, type InputHal } from './input-hal.ts'
 import { getPlatformModule } from './platform/index.ts'
 import { takeTrayResidentHint, type CorumTray } from './tray.ts'
 import type { CorumDock } from './dock.ts'
-import { readStartupAnimationEnabled, writeStartupAnimationEnabled } from './startup-settings.ts'
+import { readStartupAnimationEnabled, writeStartupAnimationEnabled, readEditorDisplayPrefs, writeEditorDisplayPrefs } from './startup-settings.ts'
 import type { createStartupScreen } from './startup-screen.ts'
 import { listStartupThemes, importStartupTheme, selectStartupTheme, deleteStartupTheme, resolveStartupTheme } from './startup-themes.ts'
 import { performInstallUpdate } from './update-install.ts'
@@ -111,6 +111,14 @@ export function registerIpc(
   // $CORUM_HOME/boot-diagnostics.json 的文件，不依赖 host 存活。
   ipcMain.handle('corum:boot-diagnostics', () => readBootDiagnostics())
   ipcMain.handle('corum:startup-animation-get', () => readStartupAnimationEnabled())
+  ipcMain.handle('corum:editor-display-get', event => {
+    if (event.sender.id !== getWindow()?.webContents.id) throw new Error('无效的编辑器设置请求')
+    return readEditorDisplayPrefs()
+  })
+  ipcMain.handle('corum:editor-display-set', (event, prefs: unknown) => {
+    if (event.sender.id !== getWindow()?.webContents.id || typeof prefs !== 'object' || prefs === null || Array.isArray(prefs)) throw new Error('无效的编辑器设置请求')
+    writeEditorDisplayPrefs(prefs)
+  })
   ipcMain.handle('corum:startup-animation-set', (event, enabled: unknown) => {
     if (event.sender.id !== getWindow()?.webContents.id || typeof enabled !== 'boolean') throw new Error('无效的启动设置请求')
     writeStartupAnimationEnabled(enabled)

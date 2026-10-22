@@ -26,6 +26,7 @@ import { EditorColumn } from './editor/EditorColumn.tsx'
 import type { EditorApiRef, EditorColumnInjected } from './editor/EditorColumn.tsx'
 import { createCorumEditor, createEditorReadySource, type CorumEditorService } from './editor/corum-editor.ts'
 import { createFontPrefs, setFontPrefsInstance, type FontPrefsStore } from './editor/font-prefs.ts'
+import { createDisplayPrefs, setDisplayPrefsInstance, type DisplayPrefsStore } from './editor/display-prefs.ts'
 import { createCorumFsClient, type CorumFsClient } from './editor/corum-fs-client.ts'
 import type { FsEntry } from './editor/ExplorerPane.tsx'
 import { workspaceRelativePath } from '../shared/preview-path.ts'
@@ -64,6 +65,7 @@ declare module '@deepseek-ai/cordis' {
      * 设置页（ide-ui）经 inject + 局部能力接口收窄消费（红线 1/3/4）。
      */
     fontPrefs: FontPrefsStore
+    editorDisplayPrefs: DisplayPrefsStore
   }
 }
 
@@ -71,7 +73,7 @@ declare module '@deepseek-ai/cordis' {
  * Client plugin body: framework surfaces over the desktop IPC carrier.
  * @param ctx - client cordis context.
  */
-export function apply(ctx: Context): void {
+export async function apply(ctx: Context): Promise<void> {
   // Framework notifications (design.pen「row-通知框」): a framework-level
   // capability any combo can use — HMR failure is just the first consumer.
   // The store is provided as `ctx.notifications`; the host renders the toast
@@ -94,6 +96,22 @@ export function apply(ctx: Context): void {
   const fontPrefs = createFontPrefs()
   ctx.provide('fontPrefs', fontPrefs)
   setFontPrefsInstance(fontPrefs)
+  const desktopPrefs = (window as unknown as { corumDesktop?: {
+    getEditorDisplayPrefs?: () => Promise<unknown>
+    setEditorDisplayPrefs?: (prefs: unknown) => Promise<void>
+  } }).corumDesktop
+  const savedDisplayPrefs = await desktopPrefs?.getEditorDisplayPrefs?.().catch(error => {
+    console.warn('[editor] 无法读取显示设置', error)
+  })
+  // 桌面配置是持久化真源；纯浏览器运行时沿用 localStorage。
+  const editorDisplayPrefs = createDisplayPrefs(desktopPrefs?.setEditorDisplayPrefs ? {
+    getItem: () => JSON.stringify(savedDisplayPrefs ?? null),
+    setItem: (_key, value) => { void desktopPrefs.setEditorDisplayPrefs!(JSON.parse(value)).catch(error => {
+      console.error('[editor] 无法保存显示设置', error)
+    }) },
+  } : undefined)
+  ctx.provide('editorDisplayPrefs', editorDisplayPrefs)
+  setDisplayPrefsInstance(editorDisplayPrefs)
 
   // 常用事件 → 通知栏（2026-09-10 用户「要把一些常用的事件接入通知栏」）。
   // 通知通道此前只有两个罕见失败分支在用，日常使用中根本看不到通知栏；

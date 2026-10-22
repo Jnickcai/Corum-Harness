@@ -47,6 +47,7 @@ import { applyCorumTheme, corumThemeName, defineCorumThemes } from './monaco-the
 import { installMonacoWorkerEnvironment } from './worker.ts'
 import { setCorumMonacoInstance, type CorumMonacoInstance } from './monaco-bridge.ts'
 import { getFontPrefsInstance } from './font-prefs.ts'
+import { DEFAULT_DISPLAY_PREFS, displayOptions, getDisplayPrefsInstance } from './display-prefs.ts'
 
 /** One code file shown in the editor. */
 export interface MonacoFileModel {
@@ -159,6 +160,7 @@ export function MonacoEditor({ file, dark = true, className, editable = false, o
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null)
   /** 字面偏好订阅的退订函数（try 块内订阅 → 桥到 effect cleanup 退订）。 */
   const fontPrefsDisposeRef = useRef<(() => void) | null>(null)
+  const displayPrefsDisposeRef = useRef<(() => void) | null>(null)
   // Stable refs to callbacks so the editor is not recreated on every parent render.
   const onContentChangeRef = useRef(onContentChange)
   onContentChangeRef.current = onContentChange
@@ -263,6 +265,11 @@ export function MonacoEditor({ file, dark = true, className, editable = false, o
         formatOnType: false,
       })
       editorRef.current = instance
+      const displayPrefs = getDisplayPrefsInstance()
+      instance.updateOptions(displayOptions(displayPrefs?.getPrefs() ?? DEFAULT_DISPLAY_PREFS))
+      displayPrefsDisposeRef.current = displayPrefs?.subscribe(() => {
+        instance.updateOptions(displayOptions(displayPrefs.getPrefs()))
+      }) ?? null
       // 字面偏好实时生效（PRD §4.23）：fontSize/fontFamily/lineHeight 均实测对
       // updateOptions 有效（区别于 diff 布局等布局类选项需重建）。订阅 cordis
       // 服务，设置页写入即实时反映到已打开的编辑器。dispose 经 ref 桥到 cleanup。
@@ -314,6 +321,8 @@ export function MonacoEditor({ file, dark = true, className, editable = false, o
       findWidgetFix.disconnect()
       fontPrefsDisposeRef.current?.()
       fontPrefsDisposeRef.current = null
+      displayPrefsDisposeRef.current?.()
+      displayPrefsDisposeRef.current = null
       setCorumMonacoInstance(undefined)
       editorRef.current?.dispose()
       editorRef.current = null
