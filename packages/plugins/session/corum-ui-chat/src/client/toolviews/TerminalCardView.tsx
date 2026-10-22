@@ -22,7 +22,7 @@
  * 壳（同一玻璃卡 + 原文可见），绝不崩、绝不吞错——与 FileToolCard 的降级同款。
  */
 import { memo, useCallback, useState } from 'react'
-import { ChevronDown, ChevronUp, ClipboardList, Copy, SquareTerminal } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, ClipboardList, Copy, SquareTerminal } from 'lucide-react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -112,20 +112,28 @@ function TerminalCardBody({ model, t }: { model: NonNullable<ReturnType<typeof t
           <SquareTerminal size={14} strokeWidth={2} className={css.iconBoxIcon} />
         </span>
         <span className={css.title}>{t('terminalCard.title')}</span>
+        {/* 命令行收进头部（2026-10-22 修订）：原为单独占一行（`.cmdRow`），那是折叠态
+            74px 的成因；现在与文件卡的 path chip 同位置、同规格，长命令尾部省略，
+            全文靠 title（hover）与右侧「复制命令」按钮给到。 */}
+        <span className={css.cmdChip} data-corum-terminal-cmd="" title={model.command}>
+          <span className={css.cmdChipText}>$ {model.command}</span>
+        </span>
+        {/* 无需 spacer：命令 chip 自身 flex:1 吃掉全部剩余宽度，右侧这一组
+            自然贴到卡片右端（右侧成组对齐）。留着 spacer 只会与命令抢空间。 */}
+        <span className={css.chip}>{linesChip}</span>
         <span className={css.statusPill}>
           <span className={statusClass}>{t(statusKey, { shell })}</span>
         </span>
-        <span className={css.chip}>{linesChip}</span>
-        <span className={css.spacer} />
         <button
           type="button"
-          className={css.btn}
-          title={t('terminalCard.copyCmd')}
+          className={css.iconBtn}
+          title={copiedCmd ? t('terminalCard.copied') : t('terminalCard.copyCmd')}
           aria-label={t('terminalCard.copyCmd')}
           onClick={onCopyCmd}
         >
-          <Copy size={13} strokeWidth={2} className={css.btnIcon} />
-          <span className={css.btnLabel}>{copiedCmd ? t('terminalCard.copied') : t('terminalCard.copyCmd')}</span>
+          {copiedCmd
+            ? <Check size={14} strokeWidth={2} />
+            : <Copy size={14} strokeWidth={2} />}
         </button>
         <button
           type="button"
@@ -136,21 +144,9 @@ function TerminalCardBody({ model, t }: { model: NonNullable<ReturnType<typeof t
           onClick={toggle}
         >
           {expanded
-            ? <ChevronUp size={13} strokeWidth={2} />
-            : <ChevronDown size={13} strokeWidth={2} />}
+            ? <ChevronUp size={14} strokeWidth={2} />
+            : <ChevronDown size={14} strokeWidth={2} />}
         </button>
-      </div>
-      {/*
-        命令行：**折叠与展开两态都恒为一行 + 省略号**（2026-09-15 用户定调）。
-        原由：AI 发出的命令常常很长，完整铺开会占掉半屏；而用户核对命令只需看到开头，
-        真要全文有 title（hover）与「复制命令」。
-        ⚠️ 与早期设计（折叠态完整折行）**相反** —— 那条已被本次要求取代。
-        输出才是展开态的主角，故展开体**不再重复命令回显**（见下方 filter）。
-      */}
-      <div className={css.cmdRow} data-corum-terminal-cmd="">
-        <span className={css.cmdText} title={model.command}>{`$ ${model.command}`}</span>
-        {/* 2026-09-16 用户定调：移除折叠态的「输出已折叠 · 点卡片展开看全部 N 行」小字
-            （折叠/展开已由右上 chevron 表达，这行小字是冗余噪音）。 */}
       </div>
       {expanded && (
         <div className={css.body} data-corum-terminal-body="">
@@ -243,10 +239,13 @@ function FallbackCard({ props, t }: { props: ToolCallViewProps & { t: TFunc }; t
           <SquareTerminal size={14} strokeWidth={2} className={css.iconBoxIcon} />
         </span>
         <span className={css.title}>{t('terminalCard.title')}</span>
+        {/* 与主体同骨架：命令行收进头部 chip（2026-10-22 修订）。 */}
+        <span className={css.cmdChip} data-corum-terminal-cmd="" title={command}>
+          <span className={css.cmdChipText}>$ {command}</span>
+        </span>
         <span className={css.statusPill}>
           <span className={statusClass}>{t(statusKey, { shell })}</span>
         </span>
-        <span className={css.spacer} />
         <button
           type="button"
           className={css.chevronBtn}
@@ -256,12 +255,9 @@ function FallbackCard({ props, t }: { props: ToolCallViewProps & { t: TFunc }; t
           onClick={() => { setExpanded(v => !v) }}
         >
           {expanded
-            ? <ChevronUp size={13} strokeWidth={2} />
-            : <ChevronDown size={13} strokeWidth={2} />}
+            ? <ChevronUp size={14} strokeWidth={2} />
+            : <ChevronDown size={14} strokeWidth={2} />}
         </button>
-      </div>
-      <div className={css.cmdRow} data-corum-terminal-cmd="">
-        <span className={css.cmdText} title={command}>{`$ ${command}`}</span>
       </div>
       {expanded && output !== undefined && output !== '' && (
         <div className={css.fallbackBody}>{output}</div>

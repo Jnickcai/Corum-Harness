@@ -1,13 +1,18 @@
 /* fork（corum）：文件工具卡统一玻璃壳（2026-09-14）。
  *
- * 唯一权威 = doc/UXDesign/design.pen §1.1 `row-文件工具卡` 六个 reusable 组件
- * （壳逐项对齐 SubagentCard.module.css:8-12 的会话区卡族配方）：
- *   background  $glass-1          → var(--corum-glass-1)
- *   border      1px $glass-border → var(--corum-glass-border)
- *   radius      14                → 14px
- *   backdrop    blur(20)          → blur(20px) saturate(140%)（pen 无 saturate，取舍点 F）
- *   padding     12                → 12px
+ * 唯一权威 = doc/UXDesign/design.pen「★ 四族工具卡 · 统一折叠骨架 40px
+ * （2026-10-22 定稿）」。2026-10-22 修订（折叠态减半 + 四族统一）：
+ *   radius      14 → 12           → 12px
+ *   padding     12 → 8            → 8px（折叠态 = 8 + 24 头行 + 8 = 40px）
  *   卡内 gap    8                 → 8px
+ *   头行 gap    8  → 6
+ *   标题        15 → 13
+ * 与终端卡（TerminalCard.module.css）同骨架：glass-1 + glass-border + r12 + pad 8。
+ *
+ * 头行布局 = **右侧成组对齐**：图标盒 + 标题 + 路径（fit_content，长路径尾部省略）
+ *   + spacer（吸收全部剩余）+ 度量 chip 组 + 状态 chip + 24px 按钮。
+ * 右边缘严格对齐，且「无内容即删」——失败态没有行数可显示时整个度量槽位删除，
+ * 不用「—」占位（占位符是伪装成信息的空白）。
  *
  * 颜色**全部**取既有变量（--corum-* / --dsw-alias-*），本文件不写死任何色值；
  * diff 增删行取状态色**低透明度**（design.pen 的 fill opacity 0.14，取舍点 A），
@@ -23,13 +28,13 @@
   display: flex;
   flex-direction: column;
   gap: calc(8px * var(--corum-density-scale, 1));
-  padding: calc(12px * var(--corum-density-scale, 1));
+  padding: calc(8px * var(--corum-density-scale, 1));
   margin: calc(4px * var(--corum-density-scale, 1)) 0 calc(4px * var(--corum-density-scale, 1)) calc(4px * var(--corum-density-scale, 1));
   min-width: 0;
   overflow: hidden;
   background: var(--corum-glass-1);
   border: 1px solid var(--corum-glass-border);
-  border-radius: 14px;
+  border-radius: 12px;
   backdrop-filter: var(--corum-glass-blur, blur(20px) saturate(140%));
 }
 
@@ -37,7 +42,16 @@
 .head {
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--corum-density-scale, 1));
+  gap: calc(6px * var(--corum-density-scale, 1));
+  min-width: 0;
+}
+
+/* 头行中段的弹性空白：吸收全部剩余宽度，把右侧那一组（度量 / 状态 / 按钮）
+   整体推到卡片右端 —— 这是「右侧成组对齐」的唯一机制。
+   路径 chip 自身不设 flex，靠它的 fit_content 宽度自然占位；spacer 吃掉的
+   剩余越多，右侧组就越靠右，但右边缘坐标恒定不变。 */
+.spacer {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -60,9 +74,10 @@
 
 .title {
   flex: none;
-  font-size: calc(15px * var(--corum-ui-font-scale, 1));
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
 }
 
 /* 行尾操作按钮（24×24，与图标盒同规格）。 */

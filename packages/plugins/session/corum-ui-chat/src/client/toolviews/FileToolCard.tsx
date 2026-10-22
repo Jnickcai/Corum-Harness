@@ -223,6 +223,10 @@ function Shell({ icon, tone, title, path, pathTitle, onOpenPath, chips, stateChi
         {path !== undefined && path !== '' && (
           <PathChip path={path} title={pathTitle} {...onOpenPath === undefined ? {} : { onOpen: onOpenPath }} />
         )}
+        {/* 弹性空白：吃满剩余宽度，把右侧这一组整体推到卡片右端（右侧成组对齐，
+            见 FileToolCard.module.css 的 .spacer 文档）。位置**必须**紧接路径之后 ——
+            放在最前会把 chip 推到右边但让路径跟着飘，放在中间才是「左锚定 + 右成组」。 */}
+        <span className={css.spacer} />
         {chips}
         {stateChip}
         {trailingChip}
@@ -309,7 +313,11 @@ function ReadCard({ input, t }: { input: CardInput; t: TFunc }) {
             </div>
           )
           : undefined}
-        note={truncated
+        // 截断提示改为**仅在展开态**渲染（2026-10-22 修订）。原为无条件显示，
+        // 于是折叠态仍多出一行小字（实测 68px，占掉「折叠态 40px」的一大半）：
+        // 「已截断」描述的是展开后看到的内容，收起时没有内容可截断，属于噪音。
+        // 与 MutationCard 的 `footExpandedOnly` 同一口径（脚注只服务展开态）。
+        note={truncated && expanded
           ? <Note icon={Scissors} tone="warn" text={t('fileCard.read.truncated', { shown, total: meta.totalLines })} />
           : undefined}
       />
@@ -582,6 +590,11 @@ function WriteCard({ input, t }: { input: CardInput; t: TFunc }) {
       hunks={hunks}
       mode={mode}
       foot={foot}
+      // 与 edit 卡同口径：脚注**只服务展开态**（2026-10-22 修订）。
+      // 「整文件覆盖写入 · 已生成 4 行 / 删除 2 行」描述的是展开后看到的 diff，
+      // 收起时没有 diff 可见，这行小字会把折叠卡从 40px 撑到 68px —— 与本次
+      // 「折叠态减半」的目标直接冲突。增删统计已在头部 stats chip 常驻，不丢信息。
+      footExpandedOnly={foot}
       t={t}
     />
   )
