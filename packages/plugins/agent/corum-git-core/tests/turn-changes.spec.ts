@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { afterAll, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
+import { captureEffectiveChanges } from '../src/git-primitives.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'corum-turn-changes-'))
 afterAll(() => {
@@ -228,5 +229,53 @@ describe('#105 本轮提交提醒', () => {
     await f.stop()
     expect(f.updates).toEqual(['progress'])
     expect(f.git('diff')).toContain('+new ending')
+  })
+})
+
+/**
+ * Windows 8.3 短名回归（2026-10-22，Windows CI 全红事故）。
+ *
+ * 现场：`os.tmpdir()` 是 `C:\Users\RUNNER~1\AppData\Local\Temp\…`（短名），
+ * `git rev-parse --show-toplevel` 给长名；Node 的普通 `realpathSync` **不展开 8.3**
+ * （实测 `C:\PROGRA~1` 原样返回），于是 `relative(workspace, join(root, path))`
+ * 得到 `..\runneradmin\…` ⇒ 每个文件被判「工作区外」丢弃 ⇒ 提交提醒一张卡都不出。
+ *
+ * ⚠️ 本用例**不**拿短名当 `cwd` 去 spawn git：Windows 上那样会 `spawnSync git ENOENT`
+ * （实测），而产品代码也从不这么做。这里钉的是**修复真正依赖的不变式**——
+ * 短名与长名经 `realpathSync.native` 必须收敛到同一路径（那是 `realpathPortable`
+ * 在 win32 上做的事），从而 `relative()` 为空、文件不会被误判出界。
+ */
+describe('Windows 8.3 短名（2026-10-22）', () => {
+  /** 取一个目录的 8.3 短名；该卷没生成短名时返回 undefined。 */
+  function shortNameOf(path: string): string | undefined {
+    try {
+      const listing = execFileSync('cmd', ['/c', 'dir', '/x', resolve(path, '..')], { encoding: 'utf8' })
+      for (const line of listing.split('\n')) {
+        if (!line.includes(basename(path))) continue
+        const segment = line.trim().split(/\s+/)[3]
+        if (segment !== undefined && segment.includes('~')) return join(resolve(path, '..'), segment)
+      }
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  it.skipIf(process.platform !== 'win32')('短名与长名经 realpath 收敛到同一路径（文件不得被判成工作区外）', () => {
+    const f = fixture()
+    const longDir = f.cwd
+    writeFileSync(join(longDir, 'short-path-file.ts'), 'export const x = 1\n')
+    const short = shortNameOf(longDir)
+    if (short === undefined) {
+      expect(short, '该卷未生成 8.3 短名，本用例前提不成立').toBeUndefined()
+      return
+    }
+    // 修复的核心：win32 上必须用 realpathSync.native（能展开短名），普通版不能。
+    const native = (realpathSync as unknown as { native: (input: string) => string }).native
+    expect(native(short), 'realpathSync.native 必须把短名展开成长名').toBe(native(longDir))
+    expect(realpathSync(short), '普通 realpathSync 不展开短名——这正是事故根因，也是修复必须用 .native 的理由')
+      .toBe(short)
+    // 由同一 realpath 形态计算出的工作区相对路径必须为空（不是 `..`）。
+    expect(relative(native(longDir), native(short)), '同目录的短/长名相对路径必须为空').toBe('')
   })
 })
