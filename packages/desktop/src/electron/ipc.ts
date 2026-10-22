@@ -112,14 +112,6 @@ export function registerIpc(
   // $CORUM_HOME/boot-diagnostics.json 的文件，不依赖 host 存活。
   ipcMain.handle('corum:boot-diagnostics', () => readBootDiagnostics())
   ipcMain.handle('corum:startup-animation-get', () => readStartupAnimationEnabled())
-  ipcMain.handle('corum:editor-display-get', event => {
-    if (event.sender.id !== getWindow()?.webContents.id) throw new Error('无效的编辑器设置请求')
-    return readEditorDisplayPrefs()
-  })
-  ipcMain.handle('corum:editor-display-set', (event, prefs: unknown) => {
-    if (event.sender.id !== getWindow()?.webContents.id || typeof prefs !== 'object' || prefs === null || Array.isArray(prefs)) throw new Error('无效的编辑器设置请求')
-    writeEditorDisplayPrefs(prefs)
-  })
   ipcMain.handle('corum:startup-animation-set', (event, enabled: unknown) => {
     if (event.sender.id !== getWindow()?.webContents.id || typeof enabled !== 'boolean') throw new Error('无效的启动设置请求')
     writeStartupAnimationEnabled(enabled)
@@ -271,6 +263,34 @@ export function registerIpc(
   // The MAIN window tracks which slots are detached (floating-state) so its
   // columns can collapse while detached and restore on close.
   const floatingWindows = new Map<string, BrowserWindow>()
+  /**
+   * 本壳自己开的窗口（主窗，或任意注册过的浮窗）——用于**窗口无关**的用户配置读写。
+   *
+   * 为什么不能只认主窗：显示偏好这类设置是**全局用户配置**，而同一个 bundle 在
+   * 每个 Electron 窗口里都会加载（见 `client/window-role.ts` 的模块注释），编辑器
+   * 槽位本身也能被拖成浮窗（`RegionCard` 的脱出没有白名单）。只比主窗的
+   * `webContents.id` 会让浮窗里的 `getEditorDisplayPrefs` 抛错 → 回落默认值、
+   * 且每次改设置都打一条 console.error（实测路径：`client/index.ts` 的
+   * `.catch`），浮窗下的设置既不生效也不落盘。另外主窗被关掉但浮窗仍在时，
+   * 原判据 `sender.id !== undefined` 恒真，读写同样全拒。
+   *
+   * 判据仍收得很紧：必须来自**本进程创建的**窗口，且是主 frame
+   * （与 `startupCaller` 同口径，防 iframe/子 frame 冒用）。
+   */
+  const isOwnShellFrame = (event: IpcMainInvokeEvent): boolean => {
+    const owners = [getWindow(), ...floatingWindows.values()].filter((win): win is BrowserWindow => win !== null && !win.isDestroyed())
+    return owners.some(win => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame)
+  }
+  // 编辑器显示偏好：**窗口无关**的用户配置（见 isOwnShellFrame 的注释），
+  // 主窗与浮窗都可读写——浮窗里同样能打开编辑器并改这些开关。
+  ipcMain.handle('corum:editor-display-get', event => {
+    if (!isOwnShellFrame(event)) throw new Error('无效的编辑器设置请求')
+    return readEditorDisplayPrefs()
+  })
+  ipcMain.handle('corum:editor-display-set', (event, prefs: unknown) => {
+    if (!isOwnShellFrame(event) || typeof prefs !== 'object' || prefs === null || Array.isArray(prefs)) throw new Error('无效的编辑器设置请求')
+    writeEditorDisplayPrefs(prefs)
+  })
   const notifyFloating = (slotKey: string, detached: boolean): void => {
     sendToMain('corum:floating-change', { slotKey, detached })
   }
