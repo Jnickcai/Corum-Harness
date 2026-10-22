@@ -71,7 +71,7 @@ import { CloseLabel, HeaderContent, TriggerContent } from './settings-chrome.tsx
 import { SECTION_DEFS } from './settings/SettingsSections.tsx'
 import { DataSection } from './settings/sections/SettingsDataSection.tsx'
 import { AppearanceSection } from './settings/sections/SettingsAppearanceSection.tsx'
-import { CorumRpcContext, CorumSettingsContext, FontPrefsContext, NotificationPrefsContext, type CorumSettingsFace } from './settings/shared.tsx'
+import { CorumRpcContext, CorumSettingsContext, EditorDisplayPrefsContext, FontPrefsContext, NotificationPrefsContext, type CorumSettingsFace, type EditorDisplayPrefsService } from './settings/shared.tsx'
 import { SettingsSectionHost } from './settings/SettingsSectionHost.tsx'
 import { en as settingsEn, zh as settingsZh, type SettingsKey } from './settings-locales.ts'
 import type {
@@ -270,7 +270,7 @@ export interface TitlebarOwnerProps {
 
 /** Required services (cordis fiber inject). `locale` feeds the settings shell's
  *  dictionaries + nav-label thunk resolution. */
-export const inject = ['slots', 'theme', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'sessions', 'notifications', 'fontPrefs']
+export const inject = ['slots', 'theme', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'sessions', 'notifications', 'fontPrefs', 'editorDisplayPrefs']
 
 /**
  * Client plugin body: provide ctx.layout, stack the glass token layer, then
@@ -748,6 +748,7 @@ export function apply(ctx: ClientContext): void {
     // 字面偏好面（PRD §4.23 E1/E2/E3、§4.2 乙类）：fontPrefs cordis 服务
     // （desktop provide，跨 bundle 单例；inject 声明获取，红线 4）。本地能力
     // 接口收窄（红线 3）；编辑器/终端 section 经 context 接真源、实时联动。
+    const editorDisplayPrefsSvc = ctx.get('editorDisplayPrefs') as EditorDisplayPrefsService | undefined ?? null
     interface FontPrefsFaceLocal {
       editor: { fontSize: number; fontFamily: string; lineHeight: number }
       terminal: { fontSize: number; fontFamily: string }
@@ -825,7 +826,9 @@ export function apply(ctx: ClientContext): void {
           <CorumSettingsContext.Provider value={corumSettings}>
             <NotificationPrefsContext.Provider value={notificationsSvc}>
               <FontPrefsContext.Provider value={fontPrefsSvc}>
-                <SettingsSectionHost {...props} render={def.Component} />
+                <EditorDisplayPrefsContext.Provider value={editorDisplayPrefsSvc}>
+                  <SettingsSectionHost {...props} render={def.Component} />
+                </EditorDisplayPrefsContext.Provider>
               </FontPrefsContext.Provider>
             </NotificationPrefsContext.Provider>
           </CorumSettingsContext.Provider>

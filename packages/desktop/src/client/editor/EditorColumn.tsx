@@ -35,12 +35,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Code, Eye, PanelRightOpen, X } from 'lucide-react'
+import { Code, Eye, FolderTree, GitCompare, PanelRightOpen, Save, Search, X } from 'lucide-react'
 import type {} from '@corum/corum-ide-ui/client'
 import { ConfirmDialog } from '@corum/corum-ui-base/client'
 import { MonacoEditor, languageFromPath } from './MonacoEditor.tsx'
 import { getCorumMonacoInstance } from './monaco-bridge.ts'
-import { ExplorerPane, type ExplorerPaneInjected } from './ExplorerPane.tsx'
+import { ExplorerPane, FileTypeIcon, type ExplorerPaneInjected } from './ExplorerPane.tsx'
 import { DiffViewer } from './DiffViewer.tsx'
 import { ImagePreview, MarkdownPreview, SvgPreview, VideoPreview } from './PreviewView.tsx'
 import css from './EditorColumn.module.css'
@@ -87,7 +87,7 @@ interface EditorTab {
   /** 预览类型（md/svg/图片/视频）；null = 普通代码 tab。 */
   kind?: PreviewKind
   /** 源码 ⟷ 预览切换（md/svg 有效；图片/视频恒预览）。 */
-  viewMode?: 'source' | 'preview'
+  viewMode?: 'source' | 'split' | 'preview'
   /** 外部文件再次打开时，媒体预览也必须重新读取。 */
   previewRevision?: number
 }
@@ -169,7 +169,7 @@ export interface EditorColumnInjected {
 export type EditorColumnProps = PropsRuntime<'corum.editor'> & EditorColumnInjected
 
 /** 资源管理器子面板宽度边界（设计 210 默认；调宽区间 [160, 480]）。 */
-const EXPLORER_DEFAULT_WIDTH = 210
+const EXPLORER_DEFAULT_WIDTH = 230
 const EXPLORER_MIN_WIDTH = 160
 const EXPLORER_MAX_WIDTH = 480
 
@@ -585,7 +585,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
     try {
       const result = await writeFile(activeTab.path, activeTab.content)
       if (result.ok) {
-        setTabs(prev => prev.map(t => t.path === activeTab.path ? { ...t, savedContent: t.content, externalChanged: false } : t))
+        setTabs(prev => prev.map(t => t.path === activeTab.path ? { ...t, savedContent: activeTab.content, externalChanged: false } : t))
         flashSaveFeedback({ kind: 'saved' }, 1600)
       } else {
         const msg = result.error?.message ?? '未知错误'
@@ -753,6 +753,8 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
   }, [activeTab])
 
   const activeDirty = activeTab !== null && activeTab.content !== activeTab.savedContent
+  const comparisonTabs = tabs.filter(tab => tab.diff !== undefined)
+  const [showComparisons, setShowComparisons] = useState(true)
 
   // ── 文件树联动回调 ──
   /** 新建文件（tree-header 钮 / 右键菜单）：父目录下创建空文件并打开。 */
@@ -989,6 +991,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
       <div className={css.editorMain}>
         {/* Editor Tabs（溢出横向滚动；tab 可拖拽排序；预览 tab 斜体） */}
         <div className={css.tabs}>
+          <div className={css.tabList} aria-label="已打开的文件">
           {tabs.map((tab) => {
             const dirty = tab.content !== tab.savedContent
             return (
@@ -996,6 +999,8 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
                 key={tab.path}
                 className={`${css.tab}${tab.path === activePath ? ` ${css.tabActive}` : ''}${tab.preview ? ` ${css.tabPreview}` : ''}${dragTabPath === tab.path ? ` ${css.tabDragging}` : ''}`}
                 data-tab-active={tab.path === activePath || undefined}
+                data-editor-tab={tab.path}
+                title={isExternalPreviewPath(tab.path) ? tab.title : tab.path}
                 draggable
                 onDragStart={(e) => {
                   setDragTabPath(tab.path)
@@ -1037,8 +1042,9 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
                   setTabMenu({ x: e.clientX, y: e.clientY, path: tab.path })
                 }}
               >
-                {dirty && <span className={css.tabDirty} />}
+                <span className={css.tabFileIcon}><FileTypeIcon name={tab.title} /></span>
                 <span className={css.tabTitle}>{tab.title}</span>
+                {dirty && <span className={css.tabDirty} aria-label="未保存" />}
                 {(tab.kind === 'markdown' || tab.kind === 'svg') && (
                   <button
                     type="button"
@@ -1060,7 +1066,31 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
               </div>
             )
           })}
-          <div className={css.spacer} />
+          </div>
+          <div className={css.editorActions}>
+          {activeTab?.diff !== undefined && (
+            <button type="button" className={css.editorAction} aria-label="显示已打开的对比" title="显示已打开的对比" onClick={() => { setShowComparisons(true); setExplorerCollapsed(false) }}><GitCompare size={15} /></button>
+          )}
+          <button
+            type="button"
+            className={css.editorAction}
+            aria-label="在当前文件中查找"
+            title="在当前文件中查找"
+            disabled={activeTab === null || activeTab.diff !== undefined || activeTab.viewMode === 'preview' || activeTab.kind === 'image' || activeTab.kind === 'video'}
+            onClick={() => getCorumMonacoInstance()?.trigger('toolbar', 'actions.find')}
+          >
+            <Search size={15} strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            className={css.editorAction}
+            aria-label="保存当前文件"
+            title="保存当前文件"
+            disabled={!activeDirty || activeTab?.diff !== undefined || (activeTab !== null && isExternalPreviewPath(activeTab.path)) || saveFeedback?.kind === 'saving'}
+            onClick={() => { void saveActive() }}
+          >
+            <Save size={15} strokeWidth={1.8} />
+          </button>
           {explorerCollapsed && (
             <button
               type="button"
@@ -1081,6 +1111,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
               <X size={17} strokeWidth={2} />
             </button>
           )}
+          </div>
         </div>
         {/* tab 右键菜单（自绘玻璃菜单，fixed 定位） */}
         {tabMenu !== null && (
@@ -1136,23 +1167,28 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
           </div>
         )}
 
+        {activeTab?.kind === 'markdown' && (
+          <div className={css.previewToolbar} role="group" aria-label="Markdown 显示方式">
+            {(['source', 'split', 'preview'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                className={css.diffToggle}
+                aria-label={`Markdown ${{ source: '源码', split: '分栏预览', preview: '预览' }[mode]}`}
+                aria-pressed={(activeTab.viewMode ?? 'preview') === mode}
+                onClick={() => setTabs(prev => prev.map(tab => tab.path === activeTab.path ? { ...tab, viewMode: mode } : tab))}
+              >
+                {{ source: '源码', split: '分栏', preview: '预览' }[mode]}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Code（diff tab → DiffViewer；预览态 md/svg/图片/视频 → PreviewView；普通 tab → MonacoEditor） */}
         <div className={css.code}>
           {activeTab?.diff !== undefined
             ? (
               <>
-                {/* diff 工具条：布局切换（并排 / 内联）。偏好持久化，跨 tab 与重启保持。 */}
-                <div className={css.diffBar}>
-                  <button
-                    type="button"
-                    className={css.diffToggle}
-                    aria-pressed={diffSideBySide}
-                    title={diffSideBySide ? '切换为内联单栏' : '切换为左右并排对比'}
-                    onClick={() => { setDiffSideBySide(v => !v) }}
-                  >
-                    {diffSideBySide ? '左右并排' : '内联单栏'}
-                  </button>
-                </div>
                 {/* 重建不完整时的如实提示（该文件被整文件覆盖写过等）：
                     避免用户把「尽力重建的左侧」误当成会话开始时的原文。 */}
                 {activeTab.diffNote !== undefined && (
@@ -1168,6 +1204,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
                   readFile={readFile}
                   dark={dark}
                   sideBySide={diffSideBySide}
+                  onSideBySideChange={setDiffSideBySide}
                 />
               </>
             )
@@ -1175,8 +1212,26 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
             ? <ImagePreview key={`${activeTab.path}:${activeTab.previewRevision ?? 0}`} path={activeTab.path} title={activeTab.title} readBinary={readBinary} />
             : activeTab !== null && activeTab.kind === 'video'
             ? <VideoPreview key={`${activeTab.path}:${activeTab.previewRevision ?? 0}`} path={activeTab.path} title={activeTab.title} />
-            : activeTab !== null && activeTab.viewMode === 'preview' && activeTab.kind === 'markdown'
-            ? <MarkdownPreview key={activeTab.path} text={activeTab.content} />
+            : activeTab !== null && activeTab.kind === 'markdown' && monacoFile !== null
+            ? (
+              <div className={css.markdownLayout} data-markdown-mode={activeTab.viewMode ?? 'preview'}>
+                {(activeTab.viewMode === 'source' || activeTab.viewMode === 'split') && (
+                  <div className={css.markdownSource}>
+                    <MonacoEditor
+                      file={monacoFile}
+                      dark={dark}
+                      editable={!isExternalPreviewPath(monacoFile.path)}
+                      onContentChange={onContentChange}
+                      onCursorChange={setCursorPos}
+                      disposePaths={disposePaths}
+                    />
+                  </div>
+                )}
+                {activeTab.viewMode !== 'source' && (
+                  <div className={css.markdownRendered}><MarkdownPreview key={activeTab.path} text={activeTab.content} /></div>
+                )}
+              </div>
+            )
             : activeTab !== null && activeTab.viewMode === 'preview' && activeTab.kind === 'svg'
             ? <SvgPreview key={activeTab.path} text={activeTab.content} title={activeTab.title} />
             : monacoFile !== null
@@ -1201,7 +1256,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
 
         {/* Editor Status（空态隐藏；diff tab 只读无保存态） */}
         {activeTab !== null && (
-          <div className={css.status}>
+          <div className={css.status} role="status" aria-live="polite">
             <span>行 {cursorPos.line}, 列 {cursorPos.column}</span>
             <span>UTF-8</span>
             <span>{activeTab.language}</span>
@@ -1209,6 +1264,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
             {activeTab.viewMode === 'preview' && (activeTab.kind === 'markdown' || activeTab.kind === 'svg') && (
               <span className={css.savedText}>预览</span>
             )}
+            {activeTab.viewMode === 'split' && <span className={css.savedText}>分栏预览</span>}
             {activeTab.kind === 'image' && <span className={css.savedText}>图片</span>}
             {activeTab.kind === 'video' && <span className={css.savedText}>视频</span>}
             {activeTab.diff !== undefined && <span className={css.savedText}>只读对比</span>}
@@ -1237,6 +1293,20 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
           <div className={css.sash} onMouseDown={onSashMouseDown} data-explorer-sash="" />
           <div className={css.divider} />
           <div className={css.explorerPane} style={{ width: explorerWidth }}>
+            {activeTab?.diff !== undefined && showComparisons ? (
+              <aside className={css.comparisonSidebar} aria-label="已打开的对比">
+                <div className={css.comparisonHeader}>
+                  <span>已打开的对比 <span className={css.comparisonCount}>{comparisonTabs.length}</span></span>
+                  <button type="button" className={css.editorAction} aria-label="显示资源管理器" title="显示资源管理器" onClick={() => setShowComparisons(false)}><FolderTree size={15} /></button>
+                </div>
+                {comparisonTabs.map(tab => (
+                  <button key={tab.path} type="button" className={css.comparisonFile} aria-pressed={tab.path === activePath} title={tab.diff!.modified} onClick={() => setActivePath(tab.path)}>
+                    <span><FileTypeIcon name={tab.diff!.modified} />{tab.diff!.modified.split('/').pop()}</span>
+                    <small>{tab.diff!.modified}</small>
+                  </button>
+                ))}
+              </aside>
+            ) : (
             <ExplorerPane
               listDir={explorer.listDir}
               generation={explorer.generation}
@@ -1259,6 +1329,7 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
               onCompare={openDiffTab}
               onAddToChat={onAddToChat}
             />
+            )}
           </div>
         </>
       )}

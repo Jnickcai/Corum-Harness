@@ -26,6 +26,10 @@ body {
   --corum-glass-1: #FFFFFFE6;
   --corum-glass-2: #FFFFFFCC;
   --corum-glass-3: #FFFFFFB3;
+  /* 工作区大面板透出统一环境色，浮层和消息卡继续使用 glass 层级。 */
+  --corum-workspace-surface: #FFFFFF45;
+  --corum-code-surface: #FFFFFF26;
+  --corum-workspace-blur: blur(12px) saturate(110%);
   /*
    * glass-4：比 glass-1 更不透明一档（活动栏用户头像专用 · design.pen G 区域
    * 2026-10-01 专题）。头像作为「用户入口」需要比按钮/栏底更深一档形成层次
@@ -85,6 +89,8 @@ body[data-ds-dark-theme] {
   --corum-glass-1: #1D112B9E;
   --corum-glass-2: #2A18409E;
   --corum-glass-3: #37205095;
+  --corum-workspace-surface: #1D112B45;
+  --corum-code-surface: #0D081726;
   /* glass-4（深色）：比 glass-1 更不透明（D9=217 vs 9E=158），活动栏用户头像底色
      —— design.pen G 区域 avatar 28 的 #1D112BD9。 */
   --corum-glass-4: #1D112BD9;

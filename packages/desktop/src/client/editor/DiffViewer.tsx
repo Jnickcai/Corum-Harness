@@ -21,9 +21,14 @@
  * widget 进 shadow root 的问题——见 dev-conventions §7.1）。
  * @module corum-desktop/client/editor/DiffViewer
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { editor, Uri } from 'monaco-editor'
+import { ArrowDown, ArrowUp } from 'lucide-react'
 import { applyCorumTheme, defineCorumThemes } from './monaco-theme.ts'
+import { summarizeLineChanges } from './diff-summary.ts'
+import { installMonacoWorkerEnvironment } from './worker.ts'
+import { DEFAULT_DISPLAY_PREFS, displayOptions, getDisplayPrefsInstance } from './display-prefs.ts'
+import css from './EditorColumn.module.css'
 
 export interface DiffViewerProps {
   /** 原文（先选的文件）相对路径；仅用于**标题/URI 标识**，`originalContent` 存在时不读盘。 */
@@ -52,15 +57,21 @@ export interface DiffViewerProps {
   modifiedContent?: string | undefined
   /** 左右并排（true）还是内联单栏（false）。缺省 true。 */
   sideBySide?: boolean | undefined
+  onSideBySideChange: (sideBySide: boolean) => void
 }
 
-export function DiffViewer({ original, modified, language, readFile, dark, originalContent, modifiedContent, sideBySide = true }: DiffViewerProps): React.ReactElement {
+export function DiffViewer({ original, modified, language, readFile, dark, originalContent, modifiedContent, sideBySide = true, onSideBySideChange }: DiffViewerProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const diffRef = useRef<editor.IStandaloneDiffEditor | null>(null)
+  const [summary, setSummary] = useState<ReturnType<typeof summarizeLineChanges> | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
+    setSummary(null)
+    setError(null)
+    installMonacoWorkerEnvironment()
     // 先注册主题再创建 diff：传未注册的主题名会被 monaco 静默回落到浅色 `vs`。
     defineCorumThemes()
     const diff = editor.createDiffEditor(host, {
@@ -72,7 +83,11 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       useInlineViewWhenSpaceIsLimited: false,
       automaticLayout: true,
       useShadowDOM: false,
-      minimap: { enabled: false },
+      // 对比两侧是否显示小地图**由显示偏好决定**（见下方 applyDisplayPrefs）。
+      // 这里不写 `minimap: { enabled: false }`：Monaco 0.56 的 updateOptions 对
+      // 对象型选项是**按键合并**（`EditorOptionsUtil.applyUpdate` →
+      // `editorOptions.js` 的 applyUpdate），紧随其后的 applyDisplayPrefs 只覆盖
+      // enabled 键，创建时写的 false 会被立刻翻回 true——留下一个骗人的死值。
       scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
       renderOverviewRuler: false,
@@ -90,6 +105,20 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       },
     })
     diffRef.current = diff
+    // 显示九项对**对比两侧**都生效（PR 要求「普通编辑器与对比两侧即时生效」）。
+    // 小地图刻意跟随同一份偏好：用户在设置里关掉它，对比页也应当没有它。
+    const displayPrefs = getDisplayPrefsInstance()
+    const applyDisplayPrefs = (): void => {
+      const options = displayOptions(displayPrefs?.getPrefs() ?? DEFAULT_DISPLAY_PREFS)
+      diff.getOriginalEditor().updateOptions(options)
+      diff.getModifiedEditor().updateOptions(options)
+    }
+    applyDisplayPrefs()
+    const disposeDisplayPrefs = displayPrefs?.subscribe(applyDisplayPrefs)
+    const diffListener = diff.onDidUpdateDiff(() => {
+      const changes = diff.getLineChanges()
+      setSummary(changes === null ? null : summarizeLineChanges(changes))
+    })
 
     let cancelled = false
     void (async () => {
@@ -100,7 +129,8 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       } else {
         const ra = await readFile(original)
         if (cancelled) return
-        contentA = ra.ok && ra.value !== undefined ? ra.value.content : `（无法读取 ${original}：${ra.error?.message ?? '未知错误'}）`
+        if (!ra.ok || ra.value === undefined) throw new Error(`无法读取 ${original}：${ra.error?.message ?? '未知错误'}`)
+        contentA = ra.value.content
       }
       // 右侧：给了内存新文就不读盘（改后内容可能在已回收的 worktree 里 —— 见 props 注释）。
       let contentB: string
@@ -109,23 +139,27 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       } else {
         const rb = await readFile(modified)
         if (cancelled) return
-        contentB = rb.ok && rb.value !== undefined ? rb.value.content : `（无法读取 ${modified}：${rb.error?.message ?? '未知错误'}）`
+        if (!rb.ok || rb.value === undefined) throw new Error(`无法读取 ${modified}：${rb.error?.message ?? '未知错误'}`)
+        contentB = rb.value.content
       }
-      const uriA = Uri.parse(`inmemory://diff${original}`)
-      const uriB = Uri.parse(`inmemory://diff${modified}`)
+      const modelPath = modified.startsWith('/') ? modified : `/${modified}`
+      const uriA = Uri.from({ scheme: 'inmemory', authority: 'diff-original', path: modelPath })
+      const uriB = Uri.from({ scheme: 'inmemory', authority: 'diff-modified', path: modelPath })
       const modelA = editor.createModel(contentA, language, uriA)
       const modelB = editor.createModel(contentB, language, uriB)
       diff.setModel({ original: modelA, modified: modelB })
-    })()
+    })().catch((cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)) })
 
     return () => {
       cancelled = true
+      diffListener.dispose()
       const model = diff.getModel()
       diff.dispose()
       diffRef.current = null
       // diff 模型独立创建（非共享 cache），随视图销毁
       model?.original.dispose()
       model?.modified.dispose()
+      disposeDisplayPrefs?.()
     }
     // original/modified/language 在同一 diff tab 生命周期内不变（tab 级固定），
     // 变化即重开 tab（新 path）。`sideBySide` 例外：它由用户在工具条上实时切换，
@@ -144,5 +178,26 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
     applyCorumTheme(dark)
   }, [dark])
 
-  return <div ref={hostRef} style={{ width: '100%', height: '100%' }} data-diff-viewer="" />
+  return (
+    <div className={css.diffView} data-diff-viewer="">
+      <div className={css.diffBar}>
+        <div className={css.diffSummary} role="status" aria-live="polite">
+          {error !== null ? '比较失败' : summary === null ? '正在比较…' : summary.count === 0 ? '文件内容相同' : (
+            <><span className={css.diffAdded}>+{summary.added}</span><span className={css.diffRemoved}>−{summary.removed}</span><span>{summary.count} 处改动</span></>
+          )}
+        </div>
+        <div className={css.editorActions}>
+          <button type="button" className={css.editorAction} aria-label="上一处改动" title="上一处改动" disabled={!summary?.count || error !== null} onClick={() => diffRef.current?.goToDiff('previous')}><ArrowUp size={14} /></button>
+          <button type="button" className={css.editorAction} aria-label="下一处改动" title="下一处改动" disabled={!summary?.count || error !== null} onClick={() => diffRef.current?.goToDiff('next')}><ArrowDown size={14} /></button>
+          <button type="button" className={css.diffToggle} aria-pressed={sideBySide} onClick={() => onSideBySideChange(!sideBySide)}>{sideBySide ? '左右并排' : '内联单栏'}</button>
+        </div>
+      </div>
+      <div className={css.diffHeadings} data-side-by-side={sideBySide}>
+        <span title={original}>修改前 <span>{original.split('/').pop()}</span></span>
+        <span title={modified}>修改后 <span>{modified.split('/').pop()}</span></span>
+      </div>
+      {error !== null && <div className={css.loadError} role="alert">{error}</div>}
+      <div ref={hostRef} className={css.diffCanvas} />
+    </div>
+  )
 }

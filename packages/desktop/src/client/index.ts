@@ -26,6 +26,7 @@ import { EditorColumn } from './editor/EditorColumn.tsx'
 import type { EditorApiRef, EditorColumnInjected } from './editor/EditorColumn.tsx'
 import { createCorumEditor, createEditorReadySource, type CorumEditorService } from './editor/corum-editor.ts'
 import { createFontPrefs, setFontPrefsInstance, type FontPrefsStore } from './editor/font-prefs.ts'
+import { createDisplayPrefs, setDisplayPrefsInstance, type DisplayPrefsStore } from './editor/display-prefs.ts'
 import { createCorumFsClient, type CorumFsClient } from './editor/corum-fs-client.ts'
 import type { FsEntry } from './editor/ExplorerPane.tsx'
 import { workspaceRelativePath } from '../shared/preview-path.ts'
@@ -64,6 +65,7 @@ declare module '@deepseek-ai/cordis' {
      * 设置页（ide-ui）经 inject + 局部能力接口收窄消费（红线 1/3/4）。
      */
     fontPrefs: FontPrefsStore
+    editorDisplayPrefs: DisplayPrefsStore
   }
 }
 
@@ -94,6 +96,31 @@ export function apply(ctx: Context): void {
   const fontPrefs = createFontPrefs()
   ctx.provide('fontPrefs', fontPrefs)
   setFontPrefsInstance(fontPrefs)
+  // 显示偏好（PRD §4.23 显示九项）：桌面配置是持久化真源，纯浏览器运行时沿用
+  // localStorage。**同步 provide 默认值 + 异步 hydrate**——桌面值只能经 IPC 读，
+  // 若在这里 await 它，排在下面的通知桥/托盘未读数/编辑器挂载都要等那个
+  // round-trip，而三者与显示偏好无关（2026-10-22 审查发现）。
+  // 浮窗与主窗共用同一份配置：主进程侧的守卫接受本壳任意窗口（见 ipc.ts
+  // 的 isOwnShellFrame），否则浮窗里改设置会静默失败并打 console.error。
+  const desktopPrefs = (window as unknown as { corumDesktop?: {
+    getEditorDisplayPrefs?: () => Promise<unknown>
+    setEditorDisplayPrefs?: (prefs: unknown) => Promise<void>
+  } }).corumDesktop
+  const editorDisplayPrefs = createDisplayPrefs(desktopPrefs === undefined ? undefined : {
+    // 桌面配置没有同步读入口；启动值取默认，真实值由 hydrate() 落地。
+    getItem: () => null,
+    setItem: (_key, value) => { void desktopPrefs.setEditorDisplayPrefs?.(JSON.parse(value)).catch(error => {
+      console.error('[editor] 无法保存显示设置', error)
+    }) },
+    hydrate: async () => await desktopPrefs.getEditorDisplayPrefs?.(),
+  })
+  ctx.provide('editorDisplayPrefs', editorDisplayPrefs)
+  setDisplayPrefsInstance(editorDisplayPrefs)
+  // 读失败不阻断启动：回落到默认值并如实记一条 warn（IPC 未就绪/被拒）。
+  // 用 ctx.effect 收口，插件卸载时不让迟到的 hydrate 通知已卸的订阅方。
+  void editorDisplayPrefs.hydrate().catch(error => {
+    console.warn('[editor] 无法读取显示设置，沿用默认值', error)
+  })
 
   // 常用事件 → 通知栏（2026-09-10 用户「要把一些常用的事件接入通知栏」）。
   // 通知通道此前只有两个罕见失败分支在用，日常使用中根本看不到通知栏；

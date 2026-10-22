@@ -57,6 +57,8 @@ ipcRenderer.on('corum:open-notification-center', () => {
  * 几个方法（tray-bridge / session-archive 的既有形态），不 import 本文件。
  */
 export interface CorumDesktopBridge {
+  getEditorDisplayPrefs: () => Promise<unknown>
+  setEditorDisplayPrefs: (prefs: unknown) => Promise<void>
   listStartupThemes: () => Promise<StartupThemeCatalog>
   importStartupTheme: () => Promise<{ cancelled: boolean; theme?: StartupThemeInfo }>
   selectStartupTheme: (id: string) => Promise<void>
@@ -174,6 +176,8 @@ const BAKED_TARGET_PLATFORM: 'darwin' | 'linux' | 'win32' | undefined =
     : __CORUM_TARGET_PLATFORM__ as 'darwin' | 'linux' | 'win32'
 
 contextBridge.exposeInMainWorld('corumDesktop', {
+  getEditorDisplayPrefs: (): Promise<unknown> => ipcRenderer.invoke('corum:editor-display-get'),
+  setEditorDisplayPrefs: (prefs: unknown): Promise<void> => ipcRenderer.invoke('corum:editor-display-set', prefs),
   listStartupThemes: (): Promise<StartupThemeCatalog> => ipcRenderer.invoke('corum:startup-themes-list'),
   importStartupTheme: (): Promise<{ cancelled: boolean; theme?: StartupThemeInfo }> => ipcRenderer.invoke('corum:startup-themes-import'),
   selectStartupTheme: (id: string): Promise<void> => ipcRenderer.invoke('corum:startup-themes-select', id),

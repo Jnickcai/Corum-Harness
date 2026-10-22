@@ -25,6 +25,9 @@ const CORUM_THEMES: Record<'corum-light' | 'corum-dark', MonacoEditorApi.IStanda
     colors: {
       'editor.background': '#00000000',
       'editorGutter.background': '#00000000',
+      // 小地图开启时概览标记区会回退到 tokenization 背景；透明编辑器必须显式覆盖。
+      'editorOverviewRuler.background': '#00000000',
+      'editorOverviewRuler.border': '#00000000',
       'editor.lineHighlightBackground': '#0E0E1C08',
       'editor.lineHighlightBorder': '#00000000',
       'editorLineNumber.foreground': '#8B8BA3',
@@ -35,6 +38,7 @@ const CORUM_THEMES: Record<'corum-light' | 'corum-dark', MonacoEditorApi.IStanda
       'editorWidget.border': '#FFFFFF',
       'scrollbarSlider.background': '#8B8BA333',
       'scrollbarSlider.hoverBackground': '#8B8BA355',
+      'scrollbarSlider.activeBackground': '#8B8BA377',
       'minimap.background': '#00000000',
       'minimapSlider.background': '#8B8BA322',
       'minimapSlider.hoverBackground': '#8B8BA333',
@@ -71,6 +75,8 @@ const CORUM_THEMES: Record<'corum-light' | 'corum-dark', MonacoEditorApi.IStanda
     colors: {
       'editor.background': '#00000000',
       'editorGutter.background': '#00000000',
+      'editorOverviewRuler.background': '#00000000',
+      'editorOverviewRuler.border': '#00000000',
       'editor.lineHighlightBackground': '#F3ECFF0A',
       'editor.lineHighlightBorder': '#00000000',
       'editorLineNumber.foreground': '#7E719E',
@@ -81,6 +87,7 @@ const CORUM_THEMES: Record<'corum-light' | 'corum-dark', MonacoEditorApi.IStanda
       'editorWidget.border': '#B98CFF2E',
       'scrollbarSlider.background': '#7E719E33',
       'scrollbarSlider.hoverBackground': '#7E719E55',
+      'scrollbarSlider.activeBackground': '#7E719E77',
       // minimap / 缩进参考线 / 括号匹配 / 折叠（corum 玻璃暗色对齐）。
       'minimap.background': '#00000000',
       'minimapSlider.background': '#7E719E22',

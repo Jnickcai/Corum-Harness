@@ -202,11 +202,10 @@
   min-height: 52px;
 }
 
-/* 设计稿 htxWi toolbar：+ / 🛡 / @Agent / spacer / 模型 / 🎤 / 发送，gap 6。
-   会话区最小宽度时不换行（flex-wrap: nowrap），工具栏保持单行布局。 */
+/* 宽栏保持单行；会话区缩窄时允许工具组和模型/发送组分行。 */
 .row {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: calc(6px * var(--corum-density-scale, 1));
@@ -224,7 +223,9 @@
 
 .tools {
   gap: calc(6px * var(--corum-density-scale, 1));
-  flex: none;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .modes {
@@ -238,7 +239,9 @@
 }
 
 .trailing {
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-left: auto;
   gap: calc(6px * var(--corum-density-scale, 1));
 }
 

@@ -43,13 +43,19 @@ export const IDE_TRANSPARENT_SLOTS: ReadonlySet<string> = new Set(['conversation
 
 // ── IDE 业务槽位注册 ──
 // 初始值（defaultWeight）与最小值（minWidth/minHeight）均以 2026-08-26 用户全屏
-// 实机调整好的实测几何为准（窗口 1728×1004）。用户定调：各区域当前值 = 最小值，
-// 可拉宽/拉高、不可比当前更窄/更低；编辑器吸收剩余（minWidth 205 仅兜底防压垮）。
+// 实机调整好的初始几何为准（窗口 1728×1004）。编辑器 minWidth 205 兜底防压垮。
 //   - sidebar 300（2026-08-27 用户调整；可拉宽，不可更窄）
-//   - conversation 509（可拉宽，不可更窄）
+//   - conversation 默认 509、**最小 360**（2026-10-22 变更，见下）
 //   - editor 合并卡吸收剩余（minWidth 205 兜底；2026-09-03 设计改版：编辑器+
 //     资源管理器合一张卡，资源管理器 210px 子面板内嵌卡右缘、卡内 sash 调宽）
 //   - corum.panel 终端 minHeight 227（可拉高，不可更低）
+//
+// **conversation 的最小宽度被改过口径，不要再按「只能拉宽」读这条**：
+// 2026-08-26 的原始口径是「各区域当前值 = 最小值，可拉宽、不可比当前更窄」，
+// 故当时 minWidth 与 defaultWeight 同为 509；2026-10-22 用户要求「对话栏允许
+// 缩至 360px，便于向左扩大编辑区」（PR #116），最小宽度因此放宽到 360。
+// 配套改动：InputBar 工具组改 flex-wrap（窄栏分行，不让模型/发送钮被挤没）。
+// 要再动这个数字，先确认这条需求是否还有效——它推翻了上一轮的实机结论。
 // sidebar 钉住（pinned）：IDE combo 下侧栏位置/宽度固定——不可被 drop 拖走/
 // 拖入 split/swap，其余三区域（convo/editor/终端）自由组合不卷入它。
 // 宽度仍可由其右缘 root sash 手调（minWidth 300），但不被其它区域拖动带跑。
@@ -59,7 +65,7 @@ export const IDE_TRANSPARENT_SLOTS: ReadonlySet<string> = new Set(['conversation
 // 占位、主区吃满；原值 56 会在折叠后留一条空槽。展开入口 = 常驻标题栏最左的
 // 折叠/展开按钮（NavTitleBar），折叠态不再留图标轨。
 registerSlot('corum.sidebar' satisfies IdeGridSlot, { label: '会话列表', defaultWeight: 260, minWidth: 240, pinned: true, collapsedWidth: 0, visibility: 'fixed' })
-registerSlot('conversation' satisfies IdeGridSlot, { label: '对话区', defaultWeight: 509, minWidth: 509, visibility: 'fixed' })
+registerSlot('conversation' satisfies IdeGridSlot, { label: '对话区', defaultWeight: 509, minWidth: 360, visibility: 'fixed' })
 registerSlot('corum.editor' satisfies IdeGridSlot, { label: '编辑器', defaultWeight: 700, minWidth: 205, visibility: 'fixed' })
 // 轨迹区域（2026-09-09 用户定调：抽屉形态不好用，改为独立区域——与编辑器/终端
 // 同构的右侧网格叶子，右上角轨迹按钮点亮）。occupant 由 fork #12 包

@@ -108,6 +108,28 @@ export function useFontPrefs(): FontPrefsService | null {
   return useContext(FontPrefsContext)
 }
 
+/** 编辑器显示偏好的跨 bundle 能力面；desktop root 提供同一 Cordis 实例。 */
+export interface EditorDisplayPrefs {
+  lineNumbers: 'on' | 'off' | 'relative'
+  minimap: boolean
+  renderWhitespace: 'none' | 'selection' | 'all'
+  renderLineHighlight: 'none' | 'gutter' | 'line' | 'all'
+  bracketPairColorization: boolean
+  guides: boolean
+  showFoldingControls: 'always' | 'mouseover'
+  scrollBeyondLastLine: boolean
+  smoothMotion: boolean
+}
+export interface EditorDisplayPrefsService {
+  getPrefs(): Readonly<EditorDisplayPrefs>
+  setPrefs(patch: Partial<EditorDisplayPrefs>): void
+  subscribe(listener: () => void): () => void
+}
+export const EditorDisplayPrefsContext = createContext<EditorDisplayPrefsService | null>(null)
+export function useEditorDisplayPrefs(): EditorDisplayPrefsService | null {
+  return useContext(EditorDisplayPrefsContext)
+}
+
 /* ── section 操作上下文（SettingsShell 经 owner props → Host 下发 openSection/close）── */
 
 /** 设置壳的 section 操作面：openSection 切换 section、close 关闭设置面板。 */
