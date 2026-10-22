@@ -101,6 +101,10 @@
       {
         "from": "assets",
         "to": "assets"
+      },
+      {
+        "from": "build/vcredist",
+        "to": "vcredist"
       }
     ],
     "mac": {

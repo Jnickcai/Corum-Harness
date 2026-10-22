@@ -16,7 +16,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -1163,7 +1163,38 @@ if (process.argv.includes('--check-ui-styles')) {
   process.exit(0)
 }
 
+/**
+ * Windows 目标下断言「随包 VC++ 安装包」已暂存（2026-10-22 用户定调：
+ * 「把 VC++ 内置到安装包，检测没有就启动安装」）。
+ *
+ * 为什么是**硬断言**而不是「缺了就跳过」：`electron-builder` 的 extraResources
+ * 指向不存在的目录会直接让打包失败，但报错只指向 `build/vcredist` 这个路径，
+ * 看不出「该跑哪条命令」。这里先拦一次并指名 `pack:node:win`，把失败点前移到
+ * 能看懂的地方；同时也防止「不小心用 macOS 那份没带 vcredist 的 build/ 打 win 包」。
+ */
+async function assertVcRedistStaged() {
+  const targetPlatform = CORUM_TARGET_PLATFORM === '' ? process.platform : CORUM_TARGET_PLATFORM
+  if (targetPlatform !== 'win32') return
+  const dir = join(root, 'packages', 'desktop', 'build', 'vcredist')
+  const exe = join(dir, 'vc_redist.x64.exe')
+  if (!existsSync(exe)) {
+    throw new Error(
+      `Windows 包必须先暂存 VC++ 运行库安装包：${exe}\n`
+      + '  原因：目标机可能没装 VC++ Redistributable ⇒ 所有 MSVC 编译的 *.node 原生模块\n'
+      + '        会以「ERR_DLOPEN_FAILED: The specified module could not be found」失败\n'
+      + '        （文件其实存在，缺的是它依赖的 CRT DLL）。\n'
+      + '  处置：先跑 `pnpm --filter corum-desktop run pack:node:win`（会下载并暂存安装包）。',
+    )
+  }
+  const size = statSync(exe).size
+  if (size < 8 * 1024 * 1024) {
+    throw new Error(`VC++ 安装包尺寸异常（${size} 字节，疑似错误页）：${exe}`)
+  }
+  console.log(`[pack-macos] VC++ redistributable staged (${Math.round(size / 1024 / 1024)}MB) → 随包内置`)
+}
+
 async function main() {
+  await assertVcRedistStaged()
   await assertUiPluginStylesInlined()
   await deployHost()
   await assertUniformDshVersions()
