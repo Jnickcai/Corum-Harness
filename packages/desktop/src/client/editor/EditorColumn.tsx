@@ -237,6 +237,16 @@ export function EditorColumn({ closeRegion, showEditor, editorApi, explorer, rea
   /** 错误告知（替 window.alert）。 */
   const showError = useCallback((message: string) => { setDialog({ kind: 'info', title: '操作失败', message }) }, [])
   const [cursorPos, setCursorPos] = useState({ line: 1, column: 1 })
+  /**
+   * 切换文件 / 切换 Markdown 显示方式时把状态栏光标位置复位。
+   *
+   * 为什么必须有：`cursorPos` 只有 `onCursorChange` 一个写入者，而**预览态不渲染
+   * MonacoEditor**（没有提供方），于是它保留着上一个 tab 的残值 —— README.md 只有
+   * 1 行时状态栏仍显示「行 11, 列 2」（2026-10-22 实机截图）。PR #116 加了
+   * 源码/分栏/预览三态切换后，预览态变多，撞见陈旧值的概率显著上升。
+   * 复位成 1,1 而不是隐藏：状态栏位置稳定，且 1,1 对任何文件都成立。
+   */
+  useEffect(() => { setCursorPos({ line: 1, column: 1 }) }, [activePath, activeTab?.viewMode])
   /** Models of closed tabs to dispose (consumed once by MonacoEditor). */
   const [disposePaths, setDisposePaths] = useState<string[]>([])
   /**
