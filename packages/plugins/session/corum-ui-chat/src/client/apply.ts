@@ -37,6 +37,7 @@ import { patchUpdateQueueWire } from './update-queue-wire.ts'
 import { createChatRuntime, primeSubagentChildCache, primeSubagentProgressChannel, type ChatRuntimeService } from './chat-runtime.ts'
 import { FileToolView } from './toolviews/FileToolView.tsx'
 import { TerminalCardView } from './toolviews/TerminalCardView.tsx'
+import { AskQuestionView } from './toolviews/AskQuestionView.tsx'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
 
@@ -513,6 +514,21 @@ export function apply(ctx: Context): void {
       priority: -1,
       locale: NS,
     }, TerminalCardView)
+  })
+
+  // fork（corum）2026-10-21：提问行（ask_user_question）—— 官方行在参数不合规时
+  // 回落到通用工具行，把**整段参数字符串**顶到摘要上（实测：模型写出坏键的四个并行
+  // 提问 ⇒ 会话里一屏原始 JSON，用户报「提问卡片展示异常」）。本视图宽容解析：
+  // 能读出的题干/选项照常展示，读不出问题时降级成「参数不完整 + 折叠的原始参数」。
+  // priority -1：官方 ask-question-toolview 占 key='ask_user_question' priority 0
+  // （同 key 同优先级注册直接 throw），用 -1 遮蔽（与上面 bash / 文件卡同款）。
+  ctx.slots.inject('tool.call.toolview', function* () {
+    yield ctx.slots.register({
+      name: 'tool.call.toolview',
+      key: 'ask_user_question',
+      priority: -1,
+      locale: NS,
+    }, AskQuestionView)
   })
 
   ctx.slots.inject('details', () => ctx.slots.register({

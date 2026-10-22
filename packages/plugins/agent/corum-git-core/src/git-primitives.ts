@@ -285,10 +285,36 @@ export interface EffectiveChangeSnapshot {
   changes: Map<string, ChangedFile>
 }
 
+
+/**
+ * fork（corum）2026-10-22：**Windows 8.3 短名安全的 realpath**。
+ *
+ * 事故（Windows CI 全红）：`os.tmpdir()` 在 GitHub Windows runner 上是
+ * `C:\Users\RUNNER~1\AppData\Local\Temp\…`（`RUNNER~1` 是 8.3 短名），而
+ * `git rev-parse --show-toplevel` 返回**长名** `C:/Users/runneradmin/…`。
+ * Node 的普通 `realpathSync` **不展开 8.3 短名**（实测：输入 `C:\PROGRA~1` 原样返回），
+ * 于是 `relative(workspace, join(root, path))` 得到 `..\..\runneradmin\…` ⇒ 被
+ * 「不在工作区内」判据整条丢弃 ⇒ `changes` 永远为空 ⇒ 提交提醒一张卡都不出。
+ *
+ * `realpathSync.native` 走 Win32 API，能把短名展开成规范长名（同时规范化大小写）。
+ * 非 Windows 平台两者等价，仍用普通版（`.native` 在部分平台行为不同，不冒险）。
+ *
+ * @param path - 待解析的路径。
+ * @returns 规范化后的绝对路径；解析失败时原样返回。
+ */
+function realpathPortable(path: string): string {
+  try {
+    const native = (realpathSync as unknown as { native?: (input: string) => string }).native
+    return process.platform === 'win32' && typeof native === 'function' ? native(path) : realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 /** 本轮提交提醒的快照：按真实路径和内容比较，不把暂存状态变化当成编辑。 */
 export function captureEffectiveChanges(cwd: string): EffectiveChangeSnapshot {
-  const workspace = realpathSync(cwd)
-  const root = realpathSync(runGitSync(cwd, ['rev-parse', '--show-toplevel']).stdout)
+  const workspace = realpathPortable(cwd)
+  const root = realpathPortable(runGitSync(cwd, ['rev-parse', '--show-toplevel']).stdout)
   const head = runGitSync(cwd, ['rev-parse', '--verify', 'HEAD']).stdout
   // 不 trim：porcelain 的前两列和文件名中的空白都必须保留。NUL 分隔兼容中文、空格和重命名。
   const output = execFileSync('git', [...gitSafeDirectoryArgs(cwd), 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', '.'], {

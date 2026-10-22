@@ -25,6 +25,7 @@ import type { createStartupScreen } from './startup-screen.ts'
 import { listStartupThemes, importStartupTheme, selectStartupTheme, deleteStartupTheme, resolveStartupTheme } from './startup-themes.ts'
 import { performInstallUpdate } from './update-install.ts'
 import { openStartupPreview } from './startup-preview.ts'
+import { pinWindowTitle } from './window-title.ts'
 import { homedir } from 'node:os'
 import type { BootDiagnostics } from '../host/profile-precheck.ts'
 
@@ -314,6 +315,9 @@ export function registerIpc(
         spellcheck: false,
       },
     })
+    // 浮窗同样要钉标题：页面 <title>（基座 dsh-web-frontend 的「DeepSeek Harness」）
+    // 会覆盖 title: `corum · ${key}`，Dock/Alt-Tab 里就会显示错误品牌名。
+    pinWindowTitle(win, `corum · ${key}`)
     floatingWindows.set(key, win)
     win.on('closed', () => {
       floatingWindows.delete(key)
