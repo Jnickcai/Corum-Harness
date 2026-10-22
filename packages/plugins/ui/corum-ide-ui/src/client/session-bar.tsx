@@ -1002,7 +1002,7 @@ const WORKTREE_STATUS_LABEL: Record<string, string> = {
  * 胶囊的展开浮层**（与子 Agent 区并列），一个会话一处、不重复。
  *
  * @param remote - 统一事件中心 remote 面（缺省不订阅）。
- * @param sessionId - 当前��话 id（按父会话过滤帧）。
+ * @param sessionId - 当前会话 id（按父会话过滤帧）。
  * @returns 台账条目（无台账时为空数组）。
  */
 function useWorktreeLedger(

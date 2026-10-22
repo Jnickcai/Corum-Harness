@@ -32,7 +32,7 @@ export const CONDUCTOR_MODE_LABEL = '指挥模式'
  *
  * 平台口径与 `corumWriteToolsForPlatform()` 一致（`pwsh` 仅 win32 装载；`str_replace_editor`
  * 只在挂 `str-replace-editor` 行的 preset 里存在）。这里**不**做未知名收敛——收敛由
- * `@corum/corum-orchestration` 的 `corumNarrowDenyFilter` 在子 Agent 侧完成；主 Agent ���的
+ * `@corum/corum-orchestration` 的 `corumNarrowDenyFilter` 在子 Agent 侧完成；主 Agent 侧的
  * deny 必须按真实注册面过滤，见 {@link conductorExecutionDeny}。
  *
  * **2026-09-20 变更：`bash` 不再裁掉**（用户定调「这里应该要给其 bash 的只读权限，

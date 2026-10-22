@@ -51,7 +51,7 @@ DSH_CHECKOUT="${DSH_CHECKOUT:-}"
 DSH_BASELINE_TAG="${DSH_BASELINE_TAG:-}"
 
 # ── 基线标签支持（升级期必修）─────────────────────────────────────────────
-# 为什么需要：守卫读的是 `$DSH_CHECKOUT/<路径>` 的**工作区文件**，而检出 HEAD 会随官���推进而前进
+# 为什么需要：守卫读的是 `$DSH_CHECKOUT/<路径>` 的**工作区文件**，而检出 HEAD 会随官方推进而前进
 # （实测：HEAD=0.1.7-rc.2，而 corum 当前目标是 0.1.5-rc.3 ⇒ 逐字节断言会拿错基线、长期假红且无法区分
 # 「我们落后」与「我们改错了」）。设 DSH_BASELINE_TAG 后改为 `git archive <tag>` 取官方基线。
 if [ -n "$DSH_BASELINE_TAG" ] && [ -d "$DSH_CHECKOUT/.git" ]; then
@@ -1172,7 +1172,7 @@ section "[16] fork #9（corum-subagent）：增量 opt-in（官方 preset 行为
 SUBAGENT_FORK="$REPO_ROOT/packages/plugins/agent/corum-subagent"
 OFFICIAL_SUBAGENT="$DSH_CHECKOUT/packages/subagent/subagent"
 # 允许有差异的文件（围绕 cwd 透传；invariant 是模板改名）+ 2026-09-20 子 Agent 人格分层：
-#   · descriptor.ts —— durable 描述符增 kind/personaHint（人格按种类重放，��落盘会漂移）；
+#   · descriptor.ts —— durable 描述符增 kind/personaHint（人格按种类重放，不落盘会漂移）；
 #   · 新增 child-roles.ts —— 两份角色契约（执行者/调查员）+ 注入层上限，官方无对应物。
 # 2026-09-29 升级 0.1.5-rc.3 后重登：官方把 continuation.ts 拆成 4 文件，故新增
 # continuation-activation.ts / continuation-messages.ts / inbox.ts 也属「登记为有差异」

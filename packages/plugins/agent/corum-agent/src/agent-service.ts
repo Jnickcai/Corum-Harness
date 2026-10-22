@@ -1003,7 +1003,7 @@ export class CorumAgentService extends TypertRemoteService {
         await this.ctx.agentPresets.mount(agentCtx, profile.id)
         // 额外能力注入（如 complete_task 工具），在 mount preset 之后。
         extraSetup?.(agentCtx)
-        // 官方���型选择安装：把 provider/model/reasoningEffort 绑定到该 Agent 作用域。
+        // 官方模型选择安装：把 provider/model/reasoningEffort 绑定到该 Agent 作用域。
         installTaskModelSelection(agentCtx, agent, selection)
       },
     })
