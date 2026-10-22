@@ -83,7 +83,11 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       useInlineViewWhenSpaceIsLimited: false,
       automaticLayout: true,
       useShadowDOM: false,
-      minimap: { enabled: false },
+      // 对比两侧是否显示小地图**由显示偏好决定**（见下方 applyDisplayPrefs）。
+      // 这里不写 `minimap: { enabled: false }`：Monaco 0.56 的 updateOptions 对
+      // 对象型选项是**按键合并**（`EditorOptionsUtil.applyUpdate` →
+      // `editorOptions.js` 的 applyUpdate），紧随其后的 applyDisplayPrefs 只覆盖
+      // enabled 键，创建时写的 false 会被立刻翻回 true——留下一个骗人的死值。
       scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
       renderOverviewRuler: false,
@@ -101,6 +105,8 @@ export function DiffViewer({ original, modified, language, readFile, dark, origi
       },
     })
     diffRef.current = diff
+    // 显示九项对**对比两侧**都生效（PR 要求「普通编辑器与对比两侧即时生效」）。
+    // 小地图刻意跟随同一份偏好：用户在设置里关掉它，对比页也应当没有它。
     const displayPrefs = getDisplayPrefsInstance()
     const applyDisplayPrefs = (): void => {
       const options = displayOptions(displayPrefs?.getPrefs() ?? DEFAULT_DISPLAY_PREFS)
