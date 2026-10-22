@@ -252,7 +252,11 @@ export const zh = {
   'codeCard.collapse': '收起代码',
   'codeCard.summary': '{first} …（共 {n} 行）',
   // ── 终端卡（2026-09-15）：替换官方 bash 行的 corum 毛玻璃卡 ──
-  'terminalCard.title': '终端',
+  // 标题文案 2026-10-23 改为「运行」（原「终端」）：用户口径「终端」更像指底部面板 /
+  // 整机终端，而这行是**一次 bash 调用**，叫「运行」才对齐它做的事。
+  // ⚠️ 只改显示文案；key 名 `terminalCard.*` 与文件名/类名保持不动（改它们是纯噪音，
+  // 且会牵动 apply.ts 注册与测试断言）。
+  'terminalCard.title': '运行',
   'terminalCard.copyCmd': '复制命令',
   'terminalCard.copyOutput': '复制输出',
   'terminalCard.copied': '已复制',
@@ -579,7 +583,9 @@ export const en = {
   'codeCard.collapse': 'Collapse code',
   'codeCard.summary': '{first} …({n} lines)',
   // ── Terminal card (2026-09-15): replaces official bash row with corum glass card ──
-  'terminalCard.title': 'Terminal',
+  // Title renamed to "Run" (2026-10-23, was "Terminal"): this row is one bash call,
+  // not the bottom terminal panel. Key/file/class names intentionally unchanged.
+  'terminalCard.title': 'Run',
   'terminalCard.copyCmd': 'Copy command',
   'terminalCard.copyOutput': 'Copy output',
   'terminalCard.copied': 'Copied',

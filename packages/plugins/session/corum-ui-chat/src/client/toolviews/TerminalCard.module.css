@@ -1,5 +1,14 @@
-/* fork（corum）：终端卡（设计稿 qLyn3 sCrmX expanded / j8ZUL collapsed）。
-   毛玻璃卡 r14 + 光边 + padding 12 + gap 8，头行 25px 高。 */
+/* fork（corum）：终端卡（设计稿「★ 四族工具卡 · 统一折叠骨架 40px」）。
+ *
+ * 2026-10-22 修订（折叠态减半 + 四族统一），与 FileToolCard 同骨架：
+ *   毛玻璃卡 r12 + 光边 + padding 8 + gap 8。
+ *   **折叠态 = 8 + 24 头行 + 8 = 40px**（原 74–77px）。
+ *
+ * 头行 = **右侧成组对齐**（与文件卡同一机制）：图标盒 + 标题 + 命令行 chip
+ *   （fit_content，长命令尾部省略）+ spacer（吸收剩余）+ 行数 chip + 状态 chip
+ *   + 24px 按钮组。右边缘严格对齐。
+ * ⚠️ 命令行由「单独占一行」改为**收进头部 chip**：原折叠态是「头行 + 命令行」
+ *   两行，这是 74px 的成因；现在只有一行。 */
 
 /* ⚠️ 等宽字族**必须**用 `--ds-font-family-code`，别用 `--dsw-font-markdown-code-block`。
    后者是**字体简写**（实测计算值 `11px/19px "SF Mono", …`，带字号+行高），喂给
@@ -11,10 +20,13 @@
   display: flex;
   flex-direction: column;
   gap: calc(8px * var(--corum-density-scale, 1));
-  padding: calc(12px * var(--corum-density-scale, 1));
+  padding: calc(8px * var(--corum-density-scale, 1));
+  /* 与文件卡同款外边距（FileToolCard.module.css 的 .card）：4px 0 4px 4px。
+     实测缺了它 → 终端卡左边缘 446、文件卡 450，同一列里**差 4px**，看着不齐。 */
+  margin: calc(4px * var(--corum-density-scale, 1)) 0 calc(4px * var(--corum-density-scale, 1)) calc(4px * var(--corum-density-scale, 1));
   background: var(--corum-glass-1, rgba(29, 17, 43, 0.85));
   border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 /* ── 头行 ────────────────────────────────────────────────────────── */
@@ -22,8 +34,9 @@
 .head {
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--corum-density-scale, 1));
-  height: 25px;
+  gap: calc(6px * var(--corum-density-scale, 1));
+  /* 折叠态恒为单行 40px：头行就是这一行，不再有第二行命令行。 */
+  height: 24px;
 }
 
 .iconBox {
@@ -43,10 +56,42 @@
 }
 
 .title {
+  flex: none;
   font-family: var(--corum-ui-font-family, Inter, sans-serif);
-  font-size: calc(15px * var(--corum-ui-font-scale, 1));
+  font-size: calc(13px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
   white-space: nowrap;
+}
+
+/* 命令行 chip（2026-10-22 新增）：命令**收进头部**，取代原先单独占一行的
+   `.cmdRow`。fit_content 宽度 + 长命令尾部省略（hover title 与「复制命令」
+   给全文），与文件卡的 path chip 同规格。
+   ⚠️ min-width: 0 是 ellipsis 生效的前提，否则会把右侧那一组挤出去。 */
+.cmdChip {
+  /* 吃掉全部剩余宽度：命令是这一行里唯一该伸缩的段（路径在文件卡里同理）。
+     ⚠️ 早期写了 max-width:260px 把它钉成定宽 —— 实测在 676px 卡上恒为 260px，
+     窗口变宽也不动，右侧那组被晾在中间。改为 flex:1 1 auto 后命令随卡片宽度伸缩，
+     长命令在窄卡上尾部省略、在宽卡上多显示。min-width:0 是 ellipsis 生效的前提。 */
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: calc(3px * var(--corum-density-scale, 1)) calc(8px * var(--corum-density-scale, 1));
+  border-radius: 8px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.62));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  font-family: var(--ds-font-family-code, 'JetBrains Mono', ui-monospace, monospace);
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.cmdChipText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* 状态 pill：r8 + glass-2 + glass-border + pad [3,8] + gap 5 */
@@ -60,7 +105,8 @@
   background: var(--corum-glass-2, rgba(42, 24, 64, 0.62));
   border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
   font-family: var(--ds-font-family-code, 'JetBrains Mono', ui-monospace, monospace);
-  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
 }
 
 .statusText {
@@ -86,7 +132,8 @@
   background: var(--corum-glass-2, rgba(42, 24, 64, 0.62));
   border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
   font-family: var(--ds-font-family-code, 'JetBrains Mono', ui-monospace, monospace);
-  font-size: calc(12px * var(--corum-ui-font-scale, 1));
+  font-size: calc(11px * var(--corum-ui-font-scale, 1));
+  font-weight: 600;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -126,14 +173,39 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* 24×24 方形图标按钮（2026-10-22 统一）：与文件卡的 .action / 图标盒同规格
+   （24×24 + r7 + glass-2 + glass-border）。原先 chevron 是 28×25 无边框的
+   透明按钮，与文件卡的 24×24 方形按钮不同款 —— 四族统一后改为同款。
+   图标按钮尺寸统一是「右边缘严格对齐」的一部分：宽度一致，右端才齐。 */
+.iconBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 7px;
+  background: var(--corum-glass-2, rgba(42, 24, 64, 0.62));
+  border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.iconBtn:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--corum-glass-border-active, #01CDFE);
+}
+
 .chevronBtn {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 25px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -201,55 +273,24 @@
   height: 1px;
 }
 
-/* ── 折叠体 ──────────────────────────────────────────────────────── */
-
-/* 命令行（**折叠与展开两态都恒为一行 + 省略号**，2026-09-15 用户定调）。
-   ⚠️ 本块**推翻了 2026-09-15 早前的相反要求**（当时写的是「pre-wrap + 无 ellipsis、
-   长指令必须完整可见」，且把这句写成了「最重要的验收标准」）。新要求的原由：
-   AI 发出的命令常很长，完整铺开占掉半屏；核对只需看开头，全文另有 hover title 与
-   「复制命令」。⇒ 故此处**必须** nowrap + ellipsis。 */
-.cmdRow {
-  display: flex;
-  align-items: center;
-  gap: calc(8px * var(--corum-density-scale, 1));
-  min-width: 0;
-}
-
-/* min-width: 0 是 flex 子项能真正收缩的前提（否则 ellipsis 不生效，会把兄弟挤出去）。 */
-.cmdText {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--ds-font-family-code, 'JetBrains Mono', ui-monospace, monospace);
-  font-size: calc(12.5px * var(--corum-ui-font-scale, 1));
-  color: var(--dsw-alias-label-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.collapsedHint {
-  font-family: var(--corum-ui-font-family, Inter, sans-serif);
-  font-size: calc(12px * var(--corum-ui-font-scale, 1));
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* ── fallback（model=null 时渲染，不崩、不吞错） ──────────────────── */
 
 .fallback {
   display: flex;
   flex-direction: column;
   gap: calc(8px * var(--corum-density-scale, 1));
-  padding: calc(12px * var(--corum-density-scale, 1));
+  padding: calc(8px * var(--corum-density-scale, 1));
+  margin: calc(4px * var(--corum-density-scale, 1)) 0 calc(4px * var(--corum-density-scale, 1)) calc(4px * var(--corum-density-scale, 1));
   background: var(--corum-glass-1, rgba(29, 17, 43, 0.85));
   border: 1px solid var(--corum-glass-border, rgba(185, 140, 255, 0.18));
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .fallbackHead {
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--corum-density-scale, 1));
-  height: 25px;
+  gap: calc(6px * var(--corum-density-scale, 1));
+  height: 24px;
 }
 
 .fallbackBody {
