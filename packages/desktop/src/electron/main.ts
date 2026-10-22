@@ -24,6 +24,7 @@ import { registerSchemes, registerProtocols } from './protocol.ts'
 import { registerIpc } from './ipc.ts'
 import { createCorumTray, type CorumTray } from './tray.ts'
 import { createCorumDock, type CorumDock } from './dock.ts'
+import { corumWindowTitle, pinWindowTitle } from './window-title.ts'
 import type { ShellMenuHost } from './shell-menu.ts'
 import { HostBridgeClient, type BridgeReady } from './bridge-client.ts'
 import { findCombo, loadAllCombos, sanitizeComboEnv, touchCombo, type Combo } from './combos.ts'
@@ -230,7 +231,8 @@ function createWindow(): void {
     minWidth: 1219,
     minHeight: 427,
     // 窗口标题（2026-08-28 改名）：中文「矩道」、英文「Corum」，按系统语言选。
-    title: app.getLocale().startsWith('zh') ? '矩道' : 'Corum',
+    // 这里设的是**初始值**；页面加载后由 pinWindowTitle() 钉住（基座 <title> 会覆盖它）。
+    title: corumWindowTitle(),
     show: !SMOKE,
     backgroundColor: '#050403',
     // 窗口 Chrome 平台选路收进 electron/platform/（P1：window-chrome 能力）。
@@ -246,6 +248,9 @@ function createWindow(): void {
       spellcheck: false,
     },
   })
+  // 钉住窗口标题：基座前端页面的 <title> 是「DeepSeek Harness」，Electron 默认会拿它
+  // 覆盖上面设的品牌名（page-title-updated）。详见 window-title.ts。
+  pinWindowTitle(mainWindow)
   // 自检：上报实际生效的窗口最小尺寸（验证 minWidth/minHeight 是否被 Electron 采纳）。
   if (DEV) {
     const [mw, mh] = mainWindow.getMinimumSize()
