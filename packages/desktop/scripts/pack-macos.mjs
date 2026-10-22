@@ -619,7 +619,7 @@ function parsePlatformPackageName(name) {
  * 版本**由调用方 pin 死**（取自主包声明的那份，不猜），并在落盘后按 `expectOs`/`expectArch`
  * 校验其 `package.json` 的 `os`/`cpu` 字段——**下载成功 ≠ 拿对了平台**。
  *
- * @returns `true` 表��新装入，`false` 表示目标已存在（幂等）。
+ * @returns `true` 表示新装入，`false` 表示目标已存在（幂等）。
  */
 async function fetchPlatformPackage(name, version) {
   const top = join(HOST_DIR, 'node_modules')
