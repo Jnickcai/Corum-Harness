@@ -63,3 +63,52 @@ test('显示偏好写入桌面配置，独立于端口且保留其他设置', ()
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('异步 hydrate 落地持久化值并通知一次；重复调用只生效第一次', async () => {
+  assert.equal(typeof implementation.createDisplayPrefs, 'function')
+  let hydrateCalls = 0
+  const store = implementation.createDisplayPrefs({
+    getItem: () => null,
+    setItem() {},
+    hydrate: async () => { hydrateCalls++; return { lineNumbers: 'relative', minimap: false } },
+  })
+  // 同步读到的是默认值——hydrate 之前不得阻塞调用方（这就是不 await 它的理由）。
+  assert.equal(store.getPrefs().lineNumbers, 'on')
+  let updates = 0
+  store.subscribe(() => updates++)
+  await store.hydrate()
+  assert.equal(hydrateCalls, 1)
+  assert.equal(updates, 1)
+  assert.equal(store.getPrefs().lineNumbers, 'relative')
+  assert.equal(store.getPrefs().minimap, false)
+  await store.hydrate()
+  assert.equal(hydrateCalls, 1)
+  assert.equal(updates, 1)
+})
+
+test('用户在 hydrate 落地前改过的键不被覆盖，其余键仍取持久值', async () => {
+  assert.equal(typeof implementation.createDisplayPrefs, 'function')
+  const store = implementation.createDisplayPrefs({
+    getItem: () => null,
+    setItem() {},
+    // 磁盘值：lineNumbers=relative、minimap=true
+    hydrate: async () => ({ lineNumbers: 'relative', minimap: true }),
+  })
+  // 用户先关掉小地图（默认 true → false，是真实改动）。
+  store.setPrefs({ minimap: false })
+  await store.hydrate()
+  // 按 key 保护：用户拨过的 minimap 保持 false（磁盘上的 true 不得改回去）……
+  assert.equal(store.getPrefs().minimap, false)
+  // ……没动过的 lineNumbers 仍拿到磁盘上的 relative（不能因为一次改动就整套退回默认）。
+  assert.equal(store.getPrefs().lineNumbers, 'relative')
+})
+
+test('没有异步读入口时 hydrate 是空操作，不抛错也不通知', async () => {
+  assert.equal(typeof implementation.createDisplayPrefs, 'function')
+  const store = implementation.createDisplayPrefs({ getItem: () => null, setItem() {} })
+  let updates = 0
+  store.subscribe(() => updates++)
+  await store.hydrate()
+  assert.equal(updates, 0)
+  assert.equal(store.getPrefs().lineNumbers, 'on')
+})
