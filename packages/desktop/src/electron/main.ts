@@ -25,6 +25,7 @@ import { registerIpc } from './ipc.ts'
 import { createCorumTray, type CorumTray } from './tray.ts'
 import { createCorumDock, type CorumDock } from './dock.ts'
 import { corumWindowTitle, pinWindowTitle } from './window-title.ts'
+import { probeVcRuntime, describeVcRuntimeProblem, installVcRuntime, VC_REDIST_FILENAME } from './vc-runtime.ts'
 import type { ShellMenuHost } from './shell-menu.ts'
 import { HostBridgeClient, type BridgeReady } from './bridge-client.ts'
 import { findCombo, loadAllCombos, sanitizeComboEnv, touchCombo, type Combo } from './combos.ts'
@@ -461,6 +462,41 @@ function buildHostEnv(combo: Combo | null): Record<string, string> {
 }
 
 /**
+ * Windows 上确认 VC++ 运行库可用；不可用则**抛出具名错误**（而不是让 native
+ * dlopen 抛那句误导性的「指定模块找不到」）。
+ *
+ * 检查顺序与 Windows 的 DLL 解析顺序一致：随包 `Resources/node/` 优先，其次
+ * System32。随包那份由 `fetch-node.mjs` 的 `stageVcRuntime` 打进产物，所以正常
+ * 安装的包在这里应当直接通过。
+ *
+ * 只在 win32 + 打包态生效：dev 态用系统 node，缺 DLL 时其报错已足够直白，
+ * 不必干扰开发流程。
+ */
+async function ensureVcRuntimeAvailable(): Promise<void> {
+  if (!isPackaged()) return
+  const before = probeVcRuntime({ bundledDir: join(process.resourcesPath, 'node') })
+  if (before.ok) return
+
+  // 缺失 ⇒ 先用随包的官方安装包静默装一次（2026-10-22 用户定调：
+  // 「把 VC++ 内置到安装包，检测没有就启动安装」）。
+  process.stderr.write(`[corum-desktop] VC runtime missing: ${before.missing.join(', ')}; attempting auto-install\n`)
+  const installer = join(process.resourcesPath, 'vcredist', VC_REDIST_FILENAME)
+  const result = await installVcRuntime(installer)
+  process.stderr.write(`[corum-desktop] VC runtime auto-install: ${result.message}\n`)
+
+  // 装完复探：安装器可能报成功但 DLL 仍未落地（例如需要重启），所以以**实际探测**
+  // 为准，而不是只看退出码。
+  const after = probeVcRuntime({ bundledDir: join(process.resourcesPath, 'node') })
+  if (after.ok) return
+
+  // 仍未就位 ⇒ 抛出「可操作」的错误（含缺失项与手动安装指引），而不是让 host 起不来
+  // 却只报一句误导性的「The specified module could not be found」。
+  const message = describeVcRuntimeProblem(after) + `\n\n自动安装结果：${result.message}`
+  process.stderr.write(`${message}\n`)
+  throw new Error(message)
+}
+
+/**
  * 按 combo（或 null）spawn host 子进程。替换旧实例（combo 切换 = 换进程）；
  * 热重启（同实例 restart）只换 ready 负载。dsh 页面走官方 webserver，协议集
  * 无需随 host 更新。
@@ -469,6 +505,10 @@ function buildHostEnv(combo: Combo | null): Record<string, string> {
 async function spawnHost(combo: Combo | null): Promise<BridgeReady> {
   if (bridge !== null) bridge.dispose()
   const spawnT0 = Date.now()
+  // Windows：host 起不来最常见的原因之一是缺 VC 运行库（原生模块 dlopen 失败，
+  // 报的却是「The specified module could not be found」）。在 spawn 之前先探一次，
+  // 把它变成一条指名道姓的错误，而不是让用户对着那句误导性的话猜。
+  if (process.platform === 'win32') await ensureVcRuntimeAvailable()
   const next = new HostBridgeClient(hostNode(), bridgePath(), buildHostEnv(combo), combo?.cwd)
   bridge = next
   const ready = await next.ready()

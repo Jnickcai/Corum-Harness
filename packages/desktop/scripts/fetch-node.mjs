@@ -26,7 +26,7 @@
  * @module corum-desktop/scripts/fetch-node
  */
 
-import { createWriteStream, existsSync } from 'node:fs'
+import { createWriteStream, existsSync, statSync } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -36,6 +36,9 @@ const root = resolve(import.meta.dirname, '..', '..', '..')
 /** desktop 包根（脚本位置推导——2026-09 重命名后 packages/shell 已不存在）。 */
 const DESKTOP_ROOT = resolve(import.meta.dirname, '..')
 const NODE_DIR = join(DESKTOP_ROOT, 'build', 'node')
+/** VC++ 可再发行安装包的暂存目录（随包内置，见 fetchVcRedist）。 */
+const VC_REDIST_DIR = join(DESKTOP_ROOT, 'build', 'vcredist')
+const VC_REDIST_NAME = 'vc_redist.x64.exe'
 
 const DEFAULT_VERSION = 'v26.4.0'
 
@@ -137,6 +140,59 @@ async function main() {
   // 用 fs.rename 而不是 `mv`：Windows 上没有 POSIX `mv`，且同盘重命名是原子的。
   await rename(join(DESKTOP_ROOT, 'build', name), NODE_DIR)
   console.log(`[fetch-node] node runtime staged at ${NODE_DIR} (${slug}-${arch})`)
+
+  // Windows：把 VC++ 可再发行安装包一并物化进产物（用户机器可能没装 VC Redist）。
+  // 不是侧载 DLL —— 见 fetchVcRedist 的注释（实测推翻了「exe 旁放 DLL 就够」）。
+  if (platform === 'win32') await fetchVcRedist()
+}
+
+/**
+ * 下载微软官方 VC++ 可再发行安装包，暂存到 `build/vcredist/`，供打包内置。
+ *
+ * ## 为什么是「内置安装包」而不是「侧载 DLL」（2026-10-22 Win10 实测结论）
+ *
+ * 最初实现把 CRT 的 5 个 DLL 复制到 `build/node`（node.exe 旁），依据是「Windows
+ * DLL 搜索顺序里 exe 目录优先」。**对照实验推翻了它**：把 System32 的 5 个 CRT DLL
+ * 临时改名以模拟「未装 VC Redist」，结果是
+ *
+ *   - 系统 node（exe 旁无 DLL）  → `ERR_DLOPEN_FAILED`（预期内）
+ *   - **随包 node（exe 旁有 DLL）→ 仍然 `ERR_DLOPEN_FAILED`**（假设错）
+ *   - 把 DLL 放到**`.node` 模块所在目录** → `LOAD OK`（唯一有效路径）
+ *
+ * 也就是说 CRT 必须在**每个含 `.node` 的目录**里，而闭包里有几十个这样的目录
+ * （`Resources/host/node_modules/**`），散落多份 DLL 既丑陋又容易在新增原生模块时漏掉。
+ *
+ * 更稳的做法是**让系统装上**：随包携带官方安装包，启动时检测缺失即静默安装一次。
+ * 好处：
+ *   - 覆盖**所有**原生模块（不挑 DLL 散在哪），也不受第三方包结构调整影响；
+ *   - 一次安装，之后该机器上所有 MSVC 原生模块都正常（包括我们没预料到的）；
+ *   - 安装包是微软官方签名的，用户/系统信任链完整。
+ *
+ * 代价是产物增大（x64 安装包约 25MB），只在 win32 目标下发生。
+ *
+ * ## 取源
+ *
+ * `https://aka.ms/vs/17/release/vc_redist.x64.exe` 是微软的永久跳转地址，始终指向
+ * 最新的 2015-2022 合并版（`curl -L` 语义：跟随 302）。文件名固定，便于校验与复用。
+ */
+async function fetchVcRedist() {
+  await mkdir(VC_REDIST_DIR, { recursive: true })
+  const target = join(VC_REDIST_DIR, VC_REDIST_NAME)
+  if (existsSync(target)) {
+    console.log(`[fetch-node] using cached ${target}`)
+    return
+  }
+  const url = process.env.CORUM_VC_REDIST_URL ?? 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+  console.log(`[fetch-node] downloading VC++ redistributable: ${url}`)
+  const response = await fetch(url, { redirect: 'follow' })
+  if (!response.ok) throw new Error(`fetch-node: HTTP ${response.status} for ${url}`)
+  await pipeline(response.body, createWriteStream(target))
+  const size = statSync(target).size
+  // 安装包实测约 25MB；明显偏小说明下到的是错误页（跳转失败时的 200 HTML）。
+  if (size < 8 * 1024 * 1024) {
+    throw new Error(`fetch-node: VC++ redistributable 尺寸异常（${size} 字节），疑似下载到错误页`)
+  }
+  console.log(`[fetch-node] VC++ redistributable staged at ${target} (${Math.round(size / 1024 / 1024)}MB)`)
 }
 
 await main().catch((error) => {
