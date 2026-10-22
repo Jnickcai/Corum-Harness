@@ -1370,7 +1370,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
       : `dsh ${dshVersion ?? '未知'} · ${entries.length} 个 · 随基座统一装配`
     const desc = isCorum
       ? 'Corum 自带的能力插件，随应用一起安装与升级，不可单独启停或卸载。'
-      : 'DeepSeek Harness 基座提供的运行时插件，由底座统一装配与升级，不可单独启停或卸载。'
+      : 'dsh 基座提供的运行时插件，由底座统一装配与升级，不可单独启停或卸载。'
     const note = isCorum
       ? '只读展示，Corum 内置插件随应用装配管理，不可单独操作。'
       : '只读展示，dsh 基座插件由底座统一装配管理，不可单独操作。'
