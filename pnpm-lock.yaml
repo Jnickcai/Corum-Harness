@@ -329,6 +329,12 @@ importers:
       '@corum/corum-credentials-local':
         specifier: workspace:*
         version: link:../plugins/agent/corum-credentials-local
+      '@corum/corum-extension-pack':
+        specifier: workspace:*
+        version: link:../plugins/agent/corum-extension-pack
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../plugins/agent/corum-extension-registry
       '@corum/corum-fs-local':
         specifier: workspace:*
         version: link:../plugins/agent/corum-fs-local
@@ -657,6 +663,9 @@ importers:
         specifier: ^7.6.3
         version: 7.8.5
     devDependencies:
+      '@deepseek-ai/dsh-session-format':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
       '@tsdown/css':
         specifier: ^0.22.14
         version: 0.22.14(jiti@2.7.0)(postcss@8.5.30)(tsdown@0.22.14)(yaml@2.9.1)
@@ -1125,6 +1134,9 @@ importers:
       '@corum/corum-api-remotes':
         specifier: workspace:*
         version: link:../corum-api-remotes
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
       '@corum/corum-git-core':
         specifier: workspace:*
         version: link:../corum-git-core
@@ -1414,6 +1426,64 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/plugins/agent/corum-extension-pack:
+    dependencies:
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
+      '@corum/corum-mcp-manager':
+        specifier: workspace:*
+        version: link:../corum-mcp-manager
+      '@corum/corum-preset-modules':
+        specifier: workspace:*
+        version: link:../corum-preset-modules
+    devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: 1.0.7
+        version: 1.0.7(@deepseek-ai/cordis-plugin-loader@1.0.3)(@deepseek-ai/cordis@4.0.2)
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: 1.0.3
+        version: 1.0.3(@deepseek-ai/cordis@4.0.2)(node-addon-require-builtin@0.1.9)
+      '@deepseek-ai/dsh-home-paths':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.5
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(@tsdown/css@0.22.14)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
+
+  packages/plugins/agent/corum-extension-registry:
+    devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
+      '@deepseek-ai/dsh-home-paths':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.5
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(@tsdown/css@0.22.14)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
+
   packages/plugins/agent/corum-fs-local:
     dependencies:
       koffi:
@@ -1535,6 +1605,9 @@ importers:
 
   packages/plugins/agent/corum-mcp-manager:
     dependencies:
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.32.1(zod@4.6.7)
@@ -1832,6 +1905,10 @@ importers:
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
 
   packages/plugins/agent/corum-skill-manager:
+    dependencies:
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
     devDependencies:
       '@corum/plugin-build':
         specifier: workspace:*
@@ -2242,6 +2319,15 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.0.2
         version: 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(9bb4becf044e20364596306bf69da1b1)
+      '@deepseek-ai/dsh-api-workspace-controller':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-api-gateway@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-connection@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-host-directory-picker@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-session@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))))(@deepseek-ai/dsh-storage-domain@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-storage@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-typert-protocol@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-workspace@0.1.5-rc.3(261a9c1447f97688b440a8e3cf4c7d6f))
+      '@deepseek-ai/dsh-client-connection':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))
       '@deepseek-ai/dsh-client-locale':
         specifier: 0.1.5-rc.3
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
@@ -3295,6 +3381,9 @@ importers:
       '@corum/corum-ide-ui':
         specifier: workspace:*
         version: link:../corum-ide-ui
+      '@corum/corum-rpc-client':
+        specifier: workspace:*
+        version: link:../corum-rpc-client
       '@corum/corum-ui-base':
         specifier: workspace:*
         version: link:../corum-ui-base
@@ -10929,7 +11018,7 @@ snapshots:
       '@deepseek-ai/cordis': 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
       '@deepseek-ai/dsh-credentials': 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.2))
       '@deepseek-ai/schemastery': 3.18.2
-      zod: 4.6.5
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@deepseek-ai/dsh-invariants'
 

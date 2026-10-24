@@ -1,12 +1,15 @@
 {
   "name": "@corum/corum-session-archive",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "corum 会话日志归档插件（保存会话日志 ZIP / 导入会话日志 ZIP，走桌面原生桥）",
   "type": "module",
   "dsh": {
     "client": {
       "platform": "web",
-      "inject": [],
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller"
+      ],
       "immediately": false
     }
   },
@@ -34,6 +37,9 @@
   "devDependencies": {
     "@corum/plugin-build": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-api-workspace-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-store": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.3",
@@ -65,6 +71,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-api-workspace-controller": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-store": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.3",

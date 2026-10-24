@@ -126,12 +126,20 @@ export interface CorumDesktopBridge {
   onFloatingDrag: (callback: (payload: { slotKey: string; dragging: boolean; x?: number; y?: number }) => void) => () => void
   /** Save one session's log ZIP via a native save dialog. */
   saveSessionLog: (sessionId: string) => Promise<{ path: string | null; error?: string }>
+  /**
+   * Export several sessions' logs into ONE zip via a native save dialog.
+   * Each member is that session's own export zip (importable individually).
+   * `failed` names the ids the host could not build (skipped, not fatal).
+   */
+  exportSessionsZip: (sessionIds: string[]) => Promise<{ path: string | null; failed?: string[]; error?: string }>
   /** Import session log ZIP(s) via a native open dialog. */
   importSessionLog: () => Promise<{ imported: string[]; skipped: string[]; cancelled?: boolean; error?: string }>
   /** Physically delete one session after a native confirm dialog. */
   deleteSession: (sessionId: string) => Promise<{ deleted: boolean; wasLive?: boolean; cancelled?: boolean; error?: string }>
   /** Pick a working directory via a native open-directory dialog (project cwd). */
   pickDirectory: (options?: { title?: string; defaultPath?: string }) => Promise<{ path: string | null; cancelled?: boolean; error?: string }>
+  /** Pick a file via a native open-file dialog (e.g. extension-pack ZIP import). */
+  pickFile: (options?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => Promise<{ path: string | null; cancelled?: boolean; error?: string }>
   /** 壳层 combo 管理页：读取所有已配置且可用的 combo。 */
   listCombos: () => Promise<unknown[]>
   /** 壳层 combo 管理页：按 combo 注入 env/cwd/覆盖规则并启动 dsh host。 */
@@ -216,6 +224,15 @@ contextBridge.exposeInMainWorld('corumDesktop', {
   getDshBaselineVersion: (): Promise<string | undefined> =>
     ipcRenderer.invoke('corum:dsh-baseline-version'),
 
+  /**
+   * 更新日志（随包分发的 CHANGELOG.md 正文 + 其绝对路径）。
+   * 面板内直接渲染正文；「在编辑器打开」用 path 走 corumEditor.openFile
+   * （工作区外路径由 openExternalPreview 兜底成只读预览）。
+   * 老产物没有该文件时解析为 null，调用方省略日志区而不是编造内容。
+   */
+  getChangelog: (): Promise<{ path: string; content: string } | null> =>
+    ipcRenderer.invoke('corum:changelog'),
+
   /** 重启安装已下载的更新。 */
   installUpdate: (downloadedPath: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('corum:update-install', { downloadedPath }),
@@ -297,6 +314,9 @@ contextBridge.exposeInMainWorld('corumDesktop', {
   /** Save one session's log ZIP via a native save dialog; resolves the saved path or null when cancelled. */
   saveSessionLog: (sessionId: string): Promise<{ path: string | null; error?: string }> =>
     ipcRenderer.invoke('corum:save-session-log', { sessionId }),
+  /** Export several sessions' logs into ONE zip via a native save dialog. */
+  exportSessionsZip: (sessionIds: string[]): Promise<{ path: string | null; failed?: string[]; error?: string }> =>
+    ipcRenderer.invoke('corum:export-sessions-zip', { sessionIds }),
   /** Import session log ZIP(s) via a native open dialog; resolves the import outcome. */
   importSessionLog: (): Promise<{ imported: string[]; skipped: string[]; cancelled?: boolean; error?: string }> =>
     ipcRenderer.invoke('corum:import-session-log'),
@@ -306,6 +326,9 @@ contextBridge.exposeInMainWorld('corumDesktop', {
   /** Pick a working directory via a native open-directory dialog (project cwd). */
   pickDirectory: (options?: { title?: string; defaultPath?: string }): Promise<{ path: string | null; cancelled?: boolean; error?: string }> =>
     ipcRenderer.invoke('corum:pick-directory', options ?? {}),
+  /** Pick a file via a native open-file dialog (e.g. extension-pack ZIP import). */
+  pickFile: (options?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<{ path: string | null; cancelled?: boolean; error?: string }> =>
+    ipcRenderer.invoke('corum:pick-file', options ?? {}),
   /** 壳层 combo 管理页：读取所有已配置且可用的 combo。 */
   listCombos: (): Promise<unknown[]> =>
     ipcRenderer.invoke('corum:combos-list'),

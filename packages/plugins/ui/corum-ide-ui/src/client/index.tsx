@@ -63,13 +63,18 @@ import { makeCorumRpcCall } from '@corum/corum-rpc-client/client'
 import type { CorumRpcCall } from '@corum/corum-rpc-client/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { SettingsShell } from './SettingsShell.tsx'
-import type { UpdateApi, UpdateState } from './update/update-api.ts'
+import type { CorumEditorCapable, UpdateApi, UpdateState } from './update/update-api.ts'
 import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
 } from './shell-contract.ts'
 import { CloseLabel, HeaderContent, TriggerContent } from './settings-chrome.tsx'
 import { SECTION_DEFS } from './settings/SettingsSections.tsx'
 import { DataSection } from './settings/sections/SettingsDataSection.tsx'
+import {
+  SessionArchiveContext,
+  type SessionArchiveCapable,
+  type SessionArchiveResolver,
+} from './settings/sections/useSessionArchiveCapability.tsx'
 import { AppearanceSection } from './settings/sections/SettingsAppearanceSection.tsx'
 import { CorumRpcContext, CorumSettingsContext, EditorDisplayPrefsContext, FontPrefsContext, NotificationPrefsContext, type CorumSettingsFace, type EditorDisplayPrefsService } from './settings/shared.tsx'
 import { SettingsSectionHost } from './settings/SettingsSectionHost.tsx'
@@ -88,13 +93,17 @@ export type { SlotMeta } from '@corum/corum-ui-base/client'
 // 编译期保障锚点；feature 插件不需要它——经 registerSlot() 动态注册进网格）。
 export { IDE_GRID_SLOTS } from './ide-layout.ts'
 export type { IdeGridSlot } from './ide-layout.ts'
-// 集成中心（PR4）：三个内容子槽的键域 + owner 面。内容包用 type-only 消费
+// 集成中心（PR4）：五个内容子槽的键域 + owner 面。内容包用 type-only 消费
 // （`import type {} from '@corum/corum-ide-ui/client'`）拉入 SlotMap 键；
 // 需要按名解构 `INTEGRATIONS_SECTION_SLOTS` 的组合可直接 value-import 本出口。
 export { INTEGRATIONS_SECTION_SLOTS } from './IntegrationsFrame.tsx'
 export type {
   IntegrationsPageOwnerProps, IntegrationsSection, IntegrationsSectionSlot,
 } from './IntegrationsFrame.tsx'
+// 开发者模式开关（P5b）：内容包（corum-ide-integrations-pages-ui）按设计稿
+// §1.3 在扩展包页头部「导入本地扩展包」按钮的 gating 上消费它；现从未导出，
+// 此处补出 useDeveloperMode / getDeveloperMode 两个出口（不新增开关，见设计稿）。
+export { useDeveloperMode, getDeveloperMode } from './settings/developer-mode.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -208,6 +217,21 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'corum.integrations.mcp': { kind: 'single'; scope: 'root'; owner: IntegrationsPageOwnerProps }
     /** 集成中心 · 技能页（occupant = corum-ide-integrations-pages-ui 的 SkillsPage）。 */
     'corum.integrations.skills': { kind: 'single'; scope: 'root'; owner: IntegrationsPageOwnerProps }
+    /**
+     * 集成中心 · 扩展包页（P5b；occupant = corum-ide-integrations-pages-ui 的 ExtensionsPage）。
+     *
+     * 只读列表 + 详情 + 空态 + 开发者 gated 本地导入（§2.1/§3）。声明权与本壳其它
+     * 集成中心槽同款：① 此处 SlotMap 登记；② root children 声明；③ 注册方 name 一致。
+     */
+    'corum.integrations.extensions': { kind: 'single'; scope: 'root'; owner: IntegrationsPageOwnerProps }
+    /**
+     * 集成中心 · 市场页（P5b 占位；occupant 由后续 P5e 注册）。
+     *
+     * 本轮只声明槽位 + 壳子导航出现「市场」页签；occupant 暂不注册 ⇒ 空面板
+     * （IntegrationsFrame 的 renderSlot 未注册时为空，不白屏）。P5e 落地时由
+     * 内容包补 ctx.slots.inject。
+     */
+    'corum.integrations.market': { kind: 'single'; scope: 'root'; owner: IntegrationsPageOwnerProps }
   }
 }
 
@@ -291,6 +315,52 @@ function makeUpdateApi(rpc: CorumRpcCall): UpdateApi {
     },
     check: async () => rpc<UpdateState>('updateChecker', 'check', {}),
     download: async () => rpc<UpdateState>('updateChecker', 'download', {}),
+  }
+}
+
+/**
+ * 构造「会话管理」能力解析器（issue #121 修订版）。
+ *
+ * 存档能力在 `corum-session-archive`（可选插件）。与侧栏保存入口同一手法：
+ * `ctx.reflect.get` 读 store 而**不带 inject 要求**（未装配返回 undefined）。
+ * 返回的是**解析器**而不是常量 —— 槽的 inject 面按 entry 永久缓存，若在此
+ * 固化成常量，插件晚于本壳装配时页面会永久冻结成降级态。
+ * 类型面用局部能力接口收窄（红线 3），不 import session 组实现包。
+ *
+ * 2026-10-22：原 ManageDialog 形态被用户验收否掉 ⇒ 改为独立 section 页，
+ * 这里下发的就是那一页需要的动作面（还原 / 单条导出 / 批量导出 / 删除 /
+ * 导入 + 行数据发布 + 结果消解）。
+ */
+function resolveSessionArchive(ctx: ClientContext): SessionArchiveResolver {
+  return () => {
+    const archive = (ctx.reflect as unknown as {
+      get: (name: string) => {
+        readonly desktopAvailable: boolean
+        readonly store: unknown
+        archivedRows: () => readonly unknown[]
+        setManageRows: (rows: readonly unknown[]) => void
+        restoreArchived: (ids: readonly string[]) => Promise<void>
+        save: (sessionId: string) => Promise<void>
+        exportArchived: (ids: readonly string[]) => Promise<void>
+        deleteArchived: (ids: readonly string[]) => Promise<void>
+        import: () => Promise<void>
+        dismissManageOutcome: () => void
+      } | undefined
+    }).get('sessionArchive')
+    if (archive === undefined) return null
+    // 绑定实例方法（类实例方法作裸引用会丢 this）。
+    return {
+      desktopAvailable: archive.desktopAvailable,
+      store: archive.store as SessionArchiveCapable['store'],
+      archivedRows: () => archive.archivedRows(),
+      setManageRows: (rows: readonly unknown[]) => { archive.setManageRows(rows) },
+      restoreArchived: (ids: readonly string[]) => archive.restoreArchived(ids),
+      saveSession: (sessionId: string) => archive.save(sessionId as never),
+      exportArchived: (ids: readonly string[]) => archive.exportArchived(ids),
+      deleteArchived: (ids: readonly string[]) => archive.deleteArchived(ids),
+      importSessionLog: () => archive.import(),
+      dismissManageOutcome: () => { archive.dismissManageOutcome() },
+    }
   }
 }
 
@@ -397,13 +467,17 @@ export function apply(ctx: ClientContext): void {
         // 注册」的时序）。壳只提供定位/宽度/pointer-events，**不带任何 app-region**
         // （drag 命中区一律由该组件产生，见其 CSS 的拖拽不变式）。
         'corum.titlebar': { kind: 'single', scope: 'root' },
-        // 集成中心三个内容子槽（PR4）：声明在此 = 本壳是它们的排他渲染者
+        // 集成中心内容子槽（PR4）：声明在此 = 本壳是它们的排他渲染者
         // （IntegrationsFrame 按子导航选中项 renderSlot 其中一个）。occupant 由
         // corum-ide-integrations-ui / corum-ide-integrations-pages-ui 经
         // ctx.slots.inject 注册（inject 保证「声明先于注册」的时序）。
         'corum.integrations.plugins': { kind: 'single', scope: 'root' },
         'corum.integrations.mcp': { kind: 'single', scope: 'root' },
         'corum.integrations.skills': { kind: 'single', scope: 'root' },
+        // 扩展包页（P5b）：occupant = corum-ide-integrations-pages-ui 的 ExtensionsPage。
+        'corum.integrations.extensions': { kind: 'single', scope: 'root' },
+        // 市场页（P5b 占位）：occupant 由后续 P5e 注册；本轮槽位声明即可见页签。
+        'corum.integrations.market': { kind: 'single', scope: 'root' },
       },
       store: createLayoutStore,
       inject: (actions: PanelActions) => {
@@ -450,6 +524,11 @@ export function apply(ctx: ClientContext): void {
           updateApi: makeUpdateApi(makeCorumRpcCall(ctx.get('connection') as ConnectionHandle)),
           // 更新面板品牌头图：corumapp:// 协议读 desktop assets。
           updateHeroImageSrc: 'corumapp://app/assets/brand-update-dark.png',
+          // 编辑器打开能力（`ctx.corumEditor`，corum-desktop client provide 的
+          // cordis 服务）。更新日志要在编辑器里看（只读预览），面板与「升级后
+          // 自动打开」都经它。取不到（非桌面壳）时 null ⇒ 面板省略该入口。
+          // 用局部能力接口收窄（红线 3），不 import 实现包。
+          editorApi: ctx.get('corumEditor') as CorumEditorCapable | undefined ?? null,
           hooks: {
             theme: {
               getSnapshot: () => ctx.theme.getTheme().preference,
@@ -796,6 +875,9 @@ export function apply(ctx: ClientContext): void {
       // 供 corum-session-archive 的「导入会话日志」行迁入（PRD §4.8 DA5）。
       // ⚠️ 两件事缺一不可：① SlotMap 登记键名（见上方增强块）；
       // ② 此处的 children 声明；③ 注册方改挂到该 key。
+      // 「归档会话」整组（含该子槽的渲染点）已随 issue #121 修订版迁往
+      // 「会话管理」独立 section 页（2026-10-22），此处保留声明仅为不破坏
+      // 已注册方的挂载（渲染点已不在本页 ⇒ 子槽自然不出现）。
       if (def.id === 'data') {
         return ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
@@ -808,6 +890,25 @@ export function apply(ctx: ClientContext): void {
           <CorumRpcContext.Provider value={corumRpc}>
             <CorumSettingsContext.Provider value={corumSettings}>
               <SettingsSectionHost {...props} render={() => <DataSection renderSlot={props.renderSlot} />} />
+            </CorumSettingsContext.Provider>
+          </CorumRpcContext.Provider>
+        )))
+      }
+      // 「会话管理」section（issue #121 修订版）：归档会话的还原/导出/删除/导入。
+      // 能力解析器经 context 下发（存档插件可选，缺席时页面降级为事实陈述）。
+      if (def.id === 'session-management') {
+        return ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: def.id,
+          order: def.order,
+          label: () => t(def.label),
+          locale: NS,
+        }, (props: SettingsSectionOwnerProps) => (
+          <CorumRpcContext.Provider value={corumRpc}>
+            <CorumSettingsContext.Provider value={corumSettings}>
+              <SessionArchiveContext.Provider value={resolveSessionArchive(ctx)}>
+                <SettingsSectionHost {...props} render={def.Component} />
+              </SessionArchiveContext.Provider>
             </CorumSettingsContext.Provider>
           </CorumRpcContext.Provider>
         )))

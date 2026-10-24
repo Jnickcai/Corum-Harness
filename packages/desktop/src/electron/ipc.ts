@@ -496,6 +496,36 @@ export function registerIpc(
     }
   })
 
+  // Export several sessions' logs into ONE zip: host builds each member
+  // (the same per-session archive `corum:save-session-log` writes) and
+  // nests them under one outer zip; the main process owns the native save
+  // dialog and the single file write. Ids the host could not build are
+  // reported back so the caller can tell the user what was skipped.
+  ipcMain.handle('corum:export-sessions-zip', async (_event, request: { sessionIds: string[] }) => {
+    const win = getWindow()
+    const bridge = getBridge()
+    if (win === null || win.isDestroyed()) return { path: null, error: 'no window' }
+    if (bridge === null) return { path: null, error: 'no host bridge (combo not launched)' }
+    const ids = Array.isArray(request.sessionIds) ? request.sessionIds.filter(id => typeof id === 'string') : []
+    if (ids.length === 0) return { path: null, error: 'no sessions selected' }
+    const picked = await dialog.showSaveDialog(win, {
+      title: '导出会话日志',
+      defaultPath: 'dsh-sessions-export.zip',
+      filters: [{ name: 'Session Log', extensions: ['zip'] }],
+    })
+    if (picked.canceled || picked.filePath === undefined) return { path: null }
+    const result = await bridge.sessionExportBatch(ids)
+    if (!result.ok || result.zipBase64 === undefined) {
+      return { path: null, error: result.error ?? 'export failed' }
+    }
+    try {
+      await writeFile(picked.filePath, Buffer.from(result.zipBase64, 'base64'))
+      return { path: picked.filePath, failed: result.failed ?? [] }
+    } catch (error) {
+      return { path: null, error: String(error) }
+    }
+  })
+
   // Physically delete one session: native confirm dialog first (the host
   // removal is irreversible — artifact, workspace references, caches), then
   // the host-side delete. A running session is refused by the host.
@@ -569,6 +599,21 @@ export function registerIpc(
     return { path: picked.filePaths[0] }
   })
 
+  // Pick a single file via a native open-file dialog (P5b extension-pack ZIP import).
+  // Mirrors pick-directory but selects files; optional filters constrain extensions.
+  ipcMain.handle('corum:pick-file', async (_event, request: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+    const win = getWindow()
+    if (win === null || win.isDestroyed()) return { path: null, error: 'no window' }
+    const picked = await dialog.showOpenDialog(win, {
+      title: request.title ?? '选择文件',
+      ...(request.defaultPath !== undefined && request.defaultPath !== '' ? { defaultPath: request.defaultPath } : {}),
+      properties: ['openFile'],
+      ...(request.filters !== undefined && request.filters.length > 0 ? { filters: request.filters } : {}),
+    })
+    if (picked.canceled || picked.filePaths.length === 0) return { path: null, cancelled: true }
+    return { path: picked.filePaths[0] }
+  })
+
   // ── 应用信息 ──────────────────────────────────────────────────────────
   //
   // 版本号读本包的 package.json，不用 `app.getVersion()`：dev 态主进程由
@@ -634,6 +679,32 @@ export function registerIpc(
     }
   })()
   ipcMain.handle('corum:dsh-baseline-version', () => dshBaselineVersion)
+
+  /**
+   * 更新日志正文 + 文件绝对路径（应用内「检查更新」面板与编辑器视图共用）。
+   *
+   * 文件随安装包分发（`Resources/assets/CHANGELOG.md`，源 = 仓库根 CHANGELOG.md，
+   * 经 `extraResources` 的 `assets` 一项目录搬运）。**不从 GitHub 拉**：历史上
+   * 的版本信息必须离线可读——更新本身就需要联网，若日志也要联网，断网时用户
+   * 连「这版改了什么」都看不到。
+   *
+   * 返回路径而不是只返回文本：渲染层要用 `corumEditor.openFile(absolutePath)`
+   * 把这份文件在编辑器里打开（工作区外路径由 openExternalPreview 兜底成只读
+   * 预览），路径必须由主进程给，渲染层无法自行拼装 resourcesPath。
+   *
+   * 读不到（老产物没有该文件）返回 null，调用方省略日志区而不是编造内容。
+   */
+  ipcMain.handle('corum:changelog', () => {
+    try {
+      const assetsDir = options?.startupAssetsDir
+      if (assetsDir === undefined) return null
+      const filePath = join(assetsDir, 'CHANGELOG.md')
+      if (!existsSync(filePath)) return null
+      return { path: filePath, content: readFileSync(filePath, 'utf8') }
+    } catch {
+      return null
+    }
+  })
 
   // ── 应用更新 · 重启安装 ────────────────────────────────────────────────
   //

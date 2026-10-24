@@ -54,7 +54,98 @@ import {
   buildMosaic, MosaicTileBody, mosaicStyles, mosaicTileClass, MosaicWall, useMosaicColumns,
   type MosaicItemHint, type MosaicSize, type MosaicTint,
 } from '@corum/corum-ui-base/client'
+import type { CorumRpcCall } from '@corum/corum-rpc-client/client'
 import css from './PluginsPage.module.css'
+
+/* ── 扩展包归属台账（P5d provenance + locked uninstall）────────────────── */
+
+/** 六类资源类别（与 host 侧 ExtensionItemKind 同口径；本页只用 plugins）。 */
+type OwnershipKind = 'presets' | 'skills' | 'mcp' | 'plugins' | 'themes' | 'ui'
+
+/** ownership() 返回的 wire 形状（六个 kind 键都在）。 */
+type OwnershipWire = Readonly<Record<OwnershipKind, Readonly<Record<string, string>>>>
+
+/** list() 返回的包摘要（只取 id + name 用于显示名 join）。 */
+interface PackSummaryWire {
+  readonly id: string
+  readonly name?: string
+  readonly version: string
+}
+
+/** list() 返回形状。 */
+interface ListWire {
+  readonly packs: readonly PackSummaryWire[]
+}
+
+/** 全空归属（fail-soft 兜底）。 */
+const EMPTY_OWNERSHIP: OwnershipWire = {
+  presets: {}, skills: {}, mcp: {}, plugins: {}, themes: {}, ui: {},
+}
+
+/**
+ * 取扩展包归属台账（页面 mount 时调一次，visible 时补一次）。
+ *
+ * fail-soft：RPC 不可用 / 抛错时返回空归属，行为与未接入 P5d 一致
+ * （卸载按钮全部可点）。与 `corum-ide-integrations-pages-ui/ownership.ts`
+ * 同构——本包不跨依赖那个包，就地实现一份。
+ */
+function useExtensionOwnership(rpc: CorumRpcCall | null): {
+  ownerOf: (kind: OwnershipKind, name: string) => string | null
+} {
+  const [ownership, setOwnership] = useState<OwnershipWire>(EMPTY_OWNERSHIP)
+  const [packNames, setPackNames] = useState<Readonly<Record<string, string>>>({})
+
+  const load = useCallback(async (rpcFn: CorumRpcCall): Promise<void> => {
+    try {
+      const [own, list] = await Promise.all([
+        rpcFn<OwnershipWire>('extensionManager', 'ownership', {}),
+        rpcFn<ListWire>('extensionManager', 'list', {}),
+      ])
+      const names: Record<string, string> = {}
+      for (const p of list.packs) {
+        names[p.id] = p.name !== undefined && p.name !== '' ? p.name : p.id
+      }
+      setOwnership(own)
+      setPackNames(names)
+    } catch {
+      setOwnership(EMPTY_OWNERSHIP)
+      setPackNames({})
+    }
+  }, [])
+
+  useEffect(() => {
+    if (rpc === null) return
+    void load(rpc)
+  }, [rpc, load])
+
+  useEffect(() => {
+    if (rpc === null) return
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') void load(rpc)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { document.removeEventListener('visibilitychange', onVisible) }
+  }, [rpc, load])
+
+  const ownerOf = useCallback((kind: OwnershipKind, name: string): string | null => {
+    const packId = ownership[kind]?.[name]
+    if (packId === undefined) return null
+    return packNames[packId] ?? packId
+  }, [ownership, packNames])
+
+  return { ownerOf }
+}
+
+/** provenance 行的值文案：「扩展包 · <pack name>」或「用户导入」。 */
+function provenanceLabel(ownerName: string | null, fallback: string): string {
+  if (ownerName !== null) return `扩展包 · ${ownerName}`
+  return fallback
+}
+
+/** pack-owned 资源的卸载禁用 title（四页共用同一句话）。 */
+function packOwnedTitle(ownerName: string): string {
+  return `由扩展包「${ownerName}」统一管理，请到 集成中心 › 扩展包 卸载整包`
+}
 
 /* ── 数据投影（与 host pluginManager 的 wire 形状对齐）─────────────────────── */
 
@@ -168,6 +259,12 @@ interface MutationResult {
 export interface PluginsPageProps {
   /** `pluginManager` 命名空间的 RPC caller（connection.rpc.call('/api', 'pluginManager/'+method, {args}) 的封装）。 */
   callRemote: <T>(method: string, args: Record<string, unknown>) => Promise<T>
+  /**
+   * 通用 corum RPC caller（P5d provenance + locked uninstall）。
+   * 用于调 `extensionManager/ownership` + `extensionManager/list` 取归属台账；
+   * RPC 不可用时页面 fail-soft 为空归属（行为与未接入 P5d 一致）。
+   */
+  rpc: CorumRpcCall
 }
 
 /* ── 桌面 preload 桥的窄化面（红线 3：本地能力接口，不 import 壳实现包）────── */
@@ -256,15 +353,6 @@ const INITIAL_QUERY = 'corum plugin'
 
 /** 输入防抖时长（毫秒）。 */
 const SEARCH_DEBOUNCE_MS = 300
-
-/**
- * 系统只读详情列表的可见条数（超出部分折叠成一行「⋯ 另有 N 个」）。
- *
- * dsh 基座在真实环境里有上百条运行时条目，全量渲染会把详情栏撑成一条长柱 ——
- * 列表容器本身**可滚动**（见 .readOnlyList 的 max-height），这里的截断只是让
- * 「还有多少条」这件事在折叠状态下就读得到。
- */
-const SYSTEM_LIST_VISIBLE = 7
 
 /**
  * 插件市场假数据（展示用）：检索无结果时兜底，用于看磁贴排布与详情面板的最终效果。
@@ -384,7 +472,13 @@ const FAKE_MARKET_TILES: readonly SearchResult[] = [
 
 /** 展示名：包名末段（去 scope），如 @corum/corum-ide-sidebar-ui → corum-ide-sidebar-ui。 */
 function shortName(moduleName: string): string {
-  return moduleName.split('/').pop() ?? moduleName
+  const base = moduleName.split('/').pop() ?? moduleName
+  const shortened = base
+    .replace(/^corum-/, '')
+    .replace(/^ide-/, '')
+    .replace(/-ui$/, '')
+    .replace(/-dev$/, '')
+  return shortened === '' ? base : shortened
 }
 
 /**
@@ -503,8 +597,9 @@ const HOT_TILE_MARK = 'hot' as const
  * 集成中心 ·「插件」页（市场 + 已装，Metro 磁贴版）。
  * @param props - 挂载点注入的 pluginManager RPC caller。
  */
-export function PluginsPage({ callRemote }: PluginsPageProps) {
-  const [tab, setTab] = useState<Tab>('market')
+export function PluginsPage({ callRemote, rpc }: PluginsPageProps) {
+  const ownership = useExtensionOwnership(rpc)
+  const [tab, setTab] = useState<Tab>('installed')
   const [scope, setScope] = useState<MarketScope>('public')
   /* 搜索词：**输入框初始为空**（用户没搜过就不该显示搜索词）。
      `INITIAL_QUERY` 只用于挂载时预取一次市场数据（见下方 useEffect），
@@ -702,6 +797,20 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
   )
 
   /**
+   * 用户安装的插件（第三方 / 本地 / link）——**排除随应用装配的系统插件**：
+   * `@corum/*`（Corum 内置）与 `@deepseek-ai/*`（dsh 基座）不进入可操作磁贴区，
+   * 它们分别由下方「Corum 内置」「dsh 基座插件」两张只读卡承载。
+   *
+   * 用户 2026-10-24 指出：插件页展示的应是「我装的插件」，不是系统自带件。
+   */
+  const userPlugins = useMemo(
+    () => installedPlugins.filter(entry => (
+      !entry.moduleName.startsWith('@corum/') && !entry.moduleName.startsWith('@deepseek-ai/')
+    )),
+    [installedPlugins],
+  )
+
+  /**
    * 「Corum 内置」卡：Corum 自带的**功能插件**（`@corum/*` 且 kind==='plugin'）。
    *
    * 它们与上方卡片网格是同一批条目 —— 网格是「可逐个启停的操作面」，这张卡是
@@ -743,14 +852,14 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
 
   /** 已装 tab 的可见集（本地过滤，含描述）。 */
   const visibleInstalled = useMemo(
-    () => installedPlugins.filter(entry => matches(entry.moduleName, entry.description) && inFilter(entry.moduleName, entry.description)),
-    [installedPlugins, matches, inFilter],
+    () => userPlugins.filter(entry => matches(entry.moduleName, entry.description) && inFilter(entry.moduleName, entry.description)),
+    [userPlugins, matches, inFilter],
   )
 
   /** 个人范围 = 已装清单里的本地/开发中插件（本地过滤）。 */
   const personalEntries = useMemo(
-    () => installedPlugins.filter(e => isLocalSpec(e.moduleName) && matches(e.moduleName, e.description) && inFilter(e.moduleName, e.description)),
-    [installedPlugins, matches, inFilter],
+    () => userPlugins.filter(e => isLocalSpec(e.moduleName) && matches(e.moduleName, e.description) && inFilter(e.moduleName, e.description)),
+    [userPlugins, matches, inFilter],
   )
 
   /** 公开市场：按分类筛选 + 排序（下载量降序）+ 分组限量。 */
@@ -831,6 +940,20 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
       hasDescription: e.description !== undefined && e.description !== '',
     })),
     [personalTiles],
+  )
+  /**
+   * 已装 tab 的排布提示（与可见已装集同序）。
+   *
+   * 已装态改用磁贴墙后与市场/个人两视图同构：长名字（包名末段）优先占 264 宽的
+   * 槽，避免落进 128 窄贴被截断。`hasDescription` 仍传真值——已装条目带 `description`
+   * 时算法会把它排进大贴拿额外高度（磁贴本体不渲染描述，但配额据此分配形状）。
+   */
+  const installedHints = useMemo<MosaicItemHint[]>(
+    () => visibleInstalled.map(e => ({
+      nameLength: shortName(e.moduleName).length,
+      hasDescription: e.description !== undefined && e.description !== '',
+    })),
+    [visibleInstalled],
   )
   /* ── 详情面板选中态 ── */
 
@@ -973,7 +1096,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
       <button
         key={entry.entryId}
         type="button"
-        className={mosaicTileClass({ size, tint: tileTintOf(entry.moduleName), active, glow: size === 'big' })}
+        className={mosaicTileClass({ size, tint: tileTintOf(entry.moduleName), active, glow: size === 'big', className: css.tileWithSwitch })}
         data-tile-size={size}
         aria-pressed={active}
         onClick={() => { setMarketId(entry.entryId) }}
@@ -988,65 +1111,50 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
     )
   }
 
-  /* ── 已装 tab 的卡片（design.pen g0Dv2n 首版：3 列网格 + 两张系统只读卡）──────
-   * 形态是**卡片**，不是磁贴：卡片自带启停开关与「配置 / 卸载」，点击卡体只做选中。
-   * 卡内的按钮一律 stopPropagation，避免顺带改选中态（点开关不该换详情栏）。
+  /* ── 已装 tab 的磁贴（design.pen F5 · 磁贴版 2026-10-24）────────────────────
+   * 已装态与市场/个人两视图同构，走同一条 `buildMosaic` + `MosaicWall` 通路：
+   * 错落块几何（264×264 大贴 / 264×128 宽贴 / 128×264 高贴 / 128×128 小贴、
+   * 8px 间隙、r10、1px 玻璃描边、四档 tint 底）与市场态完全一致，不再另持一份
+   * 卡片网格。每张贴是列的直接子元素（CSS 靠 `.mosaicCol > [data-tile-size]`
+   * 分档列高），故外层 `<button>` 直接挂 `mosaicTileClass` + `data-tile-size`，
+   * 不包壳层。
+   *
+   * 与市场态唯一的不同在**角标**：市场态角标是热度（火焰 + 周下载量），
+   * 已装态角标是启停开关（32×18 pill：开 = `$brand-primary`、关 = `$glass-3`，
+   * knob 14×14）—— 复用共享包的 `.tileSwitch` / `.tileSwitchKnob`，不另造样式。
+   * 开关走 `corner` 槽（绝对定位右上角，不挤压图标行），点击它**只翻转启停**
+   * 不改选中态（`stopPropagation`，与市场态点磁贴选中的语义互不串扰）。
+   * 配置 / 卸载 / 状态等操作仍在右侧详情面板底部（`renderPluginDetail`），
+   * 磁贴自身只做「选中 + 启停」两件事。
    */
 
-  /** 普通插件卡：head（图标 36 + 名称/描述 + 启停开关）+ footer（版本 chip / 配置 / 卸载）。 */
-  const renderPluginCard = (entry: InstalledEntry): ReactNode => {
+  /**
+   * 已装态单张贴（与市场磁贴同几何）。
+   *
+   * @param entry - 已装条目（`kind === 'plugin'`；runtime 条目已在上游过滤）。
+   * @param size - 块几何给的尺寸档（决定字号/图标大小/是否独占列高）。
+   * @returns 一张贴（`<button>` 直接挂磁贴类名，是列的直接子元素）。
+   */
+  const renderInstalledTile = (entry: InstalledEntry, size: MosaicSize): ReactNode => {
     const active = installedSel?.kind === 'plugin' && installedSel.entryId === entry.entryId
-    const toggling = busy.has(`toggle:${entry.entryId}`)
-    const removing = busy.has(`uninstall:${entry.entryId}`)
     return (
-      <div
+      <button
         key={entry.entryId}
-        className={`${css.card}${active ? ' ' + css.cardActive : ''}`}
-        role="button"
-        tabIndex={0}
+        type="button"
+        className={mosaicTileClass({ size, tint: tileTintOf(entry.moduleName), active, glow: size === 'big' })}
+        data-tile-size={size}
         aria-pressed={active}
         onClick={() => { setInstalledSel({ kind: 'plugin', entryId: entry.entryId }) }}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return
-          e.preventDefault()
-          setInstalledSel({ kind: 'plugin', entryId: entry.entryId })
-        }}
       >
-        <div className={css.cardHead}>
-          <span className={css.cardIcon}>{pluginIcon(entry.moduleName, 18)}</span>
-          <span className={css.cardText}>
-            <span className={css.cardName} title={entry.moduleName}>{shortName(entry.moduleName)}</span>
-            <span className={css.cardDesc}>{entry.description !== undefined && entry.description !== '' ? entry.description : '该插件未提供描述。'}</span>
-          </span>
-          {/* 启停开关（36×20）：开 = $brand-primary / 关 = $glass-3，knob 14×14。 */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={entry.enabled}
-            aria-label={`${shortName(entry.moduleName)} 启用开关`}
-            className={css.cardSwitch}
-            data-off={!entry.enabled || undefined}
-            disabled={toggling}
-            onClick={(e) => { e.stopPropagation(); void onToggleEnabled(entry) }}
-          ><span className={css.cardSwitchKnob} /></button>
-        </div>
-        <div className={css.cardFooter}>
-          <span className={css.cardChip}>{entry.version !== undefined && entry.version !== '' ? `v${entry.version}` : '版本未知'}</span>
-          <span className={css.cardSpacer} />
-          <button
-            type="button"
-            className={css.cardBtn}
-            onClick={(e) => { e.stopPropagation(); onConfigure(entry) }}
-          >配置</button>
-          <button
-            type="button"
-            className={css.cardIconBtn}
-            aria-label={`卸载 ${shortName(entry.moduleName)}`}
-            disabled={removing}
-            onClick={(e) => { e.stopPropagation(); void onUninstall(entry) }}
-          >{removing ? <LoaderCircle size={12} className={css.spin} /> : <Trash2 size={12} />}</button>
-        </div>
-      </div>
+        {/* 磁贴上不放启停开关：启停属于详情面板的操作（用户 2026-10-24 定调）。 */}
+        <MosaicTileBody
+          icon={pluginIcon(entry.moduleName, size === 'big' ? 34 : 24)}
+          name={shortName(entry.moduleName)}
+          version={entry.version !== undefined && entry.version !== '' ? `v${entry.version}` : undefined}
+          /* sub = 作者 / 模块来源小字（与市场态同口径）。 */
+          sub={authorOf(entry.moduleName)}
+        />
+      </button>
     )
   }
 
@@ -1054,7 +1162,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
    * 系统只读卡（Corum 内置 / dsh 基座插件）：**卡面零操作入口**。
    *
    * 底色用 $glass-1（普通卡是 $glass-2）—— 一档更暗，暗示「不可操作的背景层」；
-   * footer 换成锁图标 + 「仅可查看，不可操作」，替代普通卡的配置/卸载位。
+   * footer 换成锁图标，替代普通卡的配置/卸载位。
    * 整卡可点，只做选中（点开右侧只读详情）。
    */
   const renderSystemCard = (kind: 'corum' | 'dsh'): ReactNode => {
@@ -1087,10 +1195,6 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
           </span>
           <span className={css.cardChip}>{count} 个</span>
         </div>
-        <div className={css.cardFooter}>
-          <Lock size={12} className={css.cardLock} />
-          <span className={css.cardReadOnly}>仅可查看，不可操作</span>
-        </div>
       </div>
     )
   }
@@ -1119,30 +1223,35 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
 
   /* ── 详情面板 ── */
 
-  /** 已安装态的底部操作（市场 tab 的已装卡片用）：居中的「卸载」+ 启停开关。 */
-  const renderInstalledActions = (entry: InstalledEntry): ReactNode => (
-    <div className={css.detailActions}>
-      <button
-        type="button"
-        className={`${css.actionBtn} ${css.actionDanger}`}
-        disabled={busy.has(`uninstall:${entry.entryId}`)}
-        onClick={() => { void onUninstall(entry) }}
-      >
-        {busy.has(`uninstall:${entry.entryId}`) ? <LoaderCircle size={14} className={css.spin} /> : <Trash2 size={14} />}
-        卸载
-      </button>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={entry.enabled}
-        aria-label={`${shortName(entry.moduleName)} 启用开关`}
-        className={css.detailSwitch}
-        data-off={!entry.enabled || undefined}
-        disabled={busy.has(`toggle:${entry.entryId}`)}
-        onClick={() => { void onToggleEnabled(entry) }}
-      ><span className={css.detailSwitchKnob} /></button>
-    </div>
-  )
+  /** 已安装态的底部操作（市场 tab 的已装卡片用）：居中的「卸载」+ 启停开关。
+      pack-owned 插件禁用卸载（只能整包卸载），停用开关保持可用。 */
+  const renderInstalledActions = (entry: InstalledEntry): ReactNode => {
+    const packOwner = ownership.ownerOf('plugins', entry.moduleName)
+    return (
+      <div className={css.detailActions}>
+        <button
+          type="button"
+          className={`${css.actionBtn} ${css.actionDanger}`}
+          disabled={busy.has(`uninstall:${entry.entryId}`) || packOwner !== null}
+          title={packOwner !== null ? packOwnedTitle(packOwner) : undefined}
+          onClick={() => { void onUninstall(entry) }}
+        >
+          {busy.has(`uninstall:${entry.entryId}`) ? <LoaderCircle size={14} className={css.spin} /> : <Trash2 size={14} />}
+          卸载
+        </button>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={entry.enabled}
+          aria-label={`${shortName(entry.moduleName)} 启用开关`}
+          className={css.detailSwitch}
+          data-off={!entry.enabled || undefined}
+          disabled={busy.has(`toggle:${entry.entryId}`)}
+          onClick={() => { void onToggleEnabled(entry) }}
+        ><span className={css.detailSwitchKnob} /></button>
+      </div>
+    )
+  }
 
   /** 未安装态的底部操作：单个「安装」主按钮（品牌实色）。 */
   const renderInstallAction = (name: string): ReactNode => (
@@ -1232,7 +1341,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
         date: row.date,
         author: authorOf(row.name, row.publisher),
         changelog: row.changelog,
-        description: row.description ?? '该插件未提供描述。',
+        description: row.description ?? '—',
         extras: [
           ...extraRows(
             ['许可证', row.license],
@@ -1254,7 +1363,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
         moduleName: entry.moduleName,
         version: entry.version,
         author: authorOf(entry.moduleName),
-        description: entry.description ?? '该插件未提供描述。',
+        description: entry.description ?? '—',
         extras: [['来源', '本地/开发中'], ['状态', entry.enabled ? '已启用' : '已停用']],
       }, renderInstalledActions(entry))
     }
@@ -1320,6 +1429,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
   const renderPluginDetail = (entry: InstalledEntry): ReactNode => {
     const d = detail
     const origin = d?.origin === 'official' ? '官方插件' : d?.origin === 'corum' ? '本项目内置' : '第三方插件'
+    const packOwner = ownership.ownerOf('plugins', entry.moduleName)
     return (
       <div className={css.detailBody}>
         <div className={css.detailMain}>
@@ -1328,22 +1438,41 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
             {renderPill(entry.version !== undefined && entry.version !== '' ? `v${entry.version}` : '版本未知')}
           </div>
           <span className={css.detailAuthor}>{`@${authorOf(entry.moduleName, d?.publisher)} · ${origin}`}</span>
-          <p className={css.detailDesc}>{entry.description ?? d?.description ?? '该插件未提供描述。'}</p>
+          <p className={css.detailDesc}>{entry.description ?? d?.description ?? '—'}</p>
           <div className={css.detailMeta}>
-            {metaRow('状态', entry.enabled ? '已启用' : '已停用')}
+            {metaRow('状态', (
+              <span className={css.detailStatus}>
+                {/* 启停开关放在详情面板（磁贴上不再放开关）。 */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={entry.enabled}
+                  aria-label={`${shortName(entry.moduleName)} 启用开关`}
+                  className={mosaicStyles.tileSwitch}
+                  data-off={!entry.enabled || undefined}
+                  disabled={busy.has(`toggle:${entry.entryId}`)}
+                  onClick={() => { void onToggleEnabled(entry) }}
+                ><span className={mosaicStyles.tileSwitchKnob} /></button>
+                <span>{entry.enabled ? '已启用' : '已停用'}</span>
+              </span>
+            ))}
             {metaRow('版本', entry.version !== undefined && entry.version !== '' ? `v${entry.version}` : '—')}
             {metaRow('作者', `@${authorOf(entry.moduleName, d?.publisher)}`)}
             {metaRow('分类', SECTIONS.find(s => s.id === sectionOf(entry.moduleName, entry.description))?.label ?? '热门')}
+            {/* 来源（P5d）：扩展包拥有的插件标「扩展包 · <pack>」，其余保留既有口径。 */}
+            {metaRow('来源', provenanceLabel(packOwner, origin))}
             {detailLoading && metaRow('信息', '加载中…')}
           </div>
         </div>
-        {/* foot：配置（$glass-2 底 + 描边）+ 卸载（$state-error 字，无底）。 */}
+        {/* foot：配置（$glass-2 底 + 描边）+ 卸载（$state-error 字，无底）。
+            pack-owned 插件禁用卸载（只能整包卸载），停用开关保持可用。 */}
         <div className={css.detailFoot}>
           <button type="button" className={css.detailBtnPrimary} onClick={() => { onConfigure(entry) }}>配置</button>
           <button
             type="button"
             className={css.detailBtnDanger}
-            disabled={busy.has(`uninstall:${entry.entryId}`)}
+            disabled={busy.has(`uninstall:${entry.entryId}`) || packOwner !== null}
+            title={packOwner !== null ? packOwnedTitle(packOwner) : undefined}
             onClick={() => { void onUninstall(entry) }}
           >卸载</button>
         </div>
@@ -1357,23 +1486,17 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
    * 光读列表两卡形态不同（与设计稿一致）：
    *   - Corum：名称（150 定宽）+ 描述。
    *   - dsh：**等宽包名（250 定宽）** + 版本 —— dsh 的条目没描述，包名本身才是信息。
-   * 列表容器限高可滚动，不撑破详情栏；条目多于可视条数时补一行「⋯ 另有 N 个」。
+   * 列表容器限高可滚动，不撑破详情栏。
    */
   const renderSystemDetail = (kind: 'corum' | 'dsh'): ReactNode => {
     const isCorum = kind === 'corum'
     const entries = isCorum ? corumBuiltins : systemPlugins
-    // 列表容器可滚动（.readOnlyList 限高），故**全量渲染**；「另有 N 个」只是在
-    // 折叠状态下提醒还有多少条。截断渲染会让那句「可滚动查看」变成假话。
-    const hidden = Math.max(0, entries.length - SYSTEM_LIST_VISIBLE)
     const versionLine = isCorum
-      ? `Corum v${appVersion ?? '未知'} · 随应用内置装配`
-      : `dsh ${dshVersion ?? '未知'} · ${entries.length} 个 · 随基座统一装配`
+      ? `Corum v${appVersion ?? '未知'}`
+      : `dsh ${dshVersion ?? '未知'} · ${entries.length} 个`
     const desc = isCorum
       ? 'Corum 自带的能力插件，随应用一起安装与升级，不可单独启停或卸载。'
       : 'dsh 基座提供的运行时插件，由底座统一装配与升级，不可单独启停或卸载。'
-    const note = isCorum
-      ? '只读展示，Corum 内置插件随应用装配管理，不可单独操作。'
-      : '只读展示，dsh 基座插件由底座统一装配管理，不可单独操作。'
     return (
       <div className={`${css.detailBody} ${css.detailBodySystem}`}>
         <div className={css.detailTitleRow}>
@@ -1398,9 +1521,6 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
             </div>
           ))}
         </div>
-        {/* 「另有 N 个」落在**列表之外**：放列表里会随滚动滚走，而它正是「下面还有」的提示。 */}
-        {hidden > 0 && <span className={css.readOnlyMore}>{`⋯ 另有 ${hidden} 个，可滚动查看`}</span>}
-        <span className={css.readOnlyNote}>{note}</span>
       </div>
     )
   }
@@ -1423,7 +1543,6 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
       installedDetail = (
         <div className={css.detailEmptyBody}>
           <p className={css.detailEmptyTitle}>选择一个已装插件</p>
-          <p className={css.detailEmptyDesc}>点左侧任意插件卡片，在这里查看它的版本、状态与操作；开关可就地启停。</p>
         </div>
       )
     }
@@ -1438,7 +1557,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
     <div className={css.page}>
       {/* ── 1. 页头一行：tab pill ×2 + 搜索框 280×31 + 分类 chips（iYTAN o5WYjl）── */}
       <div className={css.header}>
-        {([['market', '市场'], ['installed', '已装']] as ReadonlyArray<readonly [Tab, string]>).map(([id, label]) => (
+        {([['installed', '已装']] as ReadonlyArray<readonly [Tab, string]>).map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -1546,20 +1665,20 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
               {entries === null && error === null && <p className={css.hintText}>加载中…</p>}
               {entries !== null && (
                 <>
-                  {/* 无已装插件：网格换空态占位卡；两张系统只读卡与有无插件无关，始终保留。 */}
+                  {/* 无已装插件：磁贴群换空态占位卡；两张系统只读卡与有无插件无关，始终保留。 */}
                   {visibleInstalled.length === 0 ? (
                     <div className={css.emptyCard}>
                       <PackageOpen size={26} className={css.emptyCardIcon} />
-                      <p className={css.emptyCardTitle}>{keyword === '' ? '还没有已装插件' : '没有符合条件的插件'}</p>
+                      <p className={css.emptyCardTitle}>{keyword === '' ? '还没有安装第三方插件' : '没有符合条件的插件'}</p>
                       {/* 真有搜索词时不能说「到市场挑一个」——那是「一个都没装」的指引。 */}
                       <p className={css.emptyCardDesc}>
-                        {keyword === '' ? '到「市场」tab 挑一个装上，或添加本地插件。' : '换个关键词试试，或清空搜索框看全部已装插件。'}
+                        {keyword === '' ? '到「市场」页挑一个装上。Corum 内置与 dsh 基座插件见下方只读卡。' : '换个关键词试试，或清空搜索框看全部已装插件。'}
                       </p>
                     </div>
                   ) : (
-                    <div className={css.cardGrid}>
-                      {visibleInstalled.map(renderPluginCard)}
-                    </div>
+                    /* 已装态磁贴墙：与市场/个人两视图同构（buildMosaic + MosaicWall）。
+                       排布只有一个事实源（共享包 mosaic.ts），不再另持卡片网格。 */
+                    renderMosaic(visibleInstalled, installedHints, renderInstalledTile)
                   )}
                   <div className={css.systemPair}>
                     {renderSystemCard('corum')}
@@ -1577,7 +1696,7 @@ export function PluginsPage({ callRemote }: PluginsPageProps) {
         <aside className={css.detail} aria-label="插件详情">
           {tab === 'market' && selectedMarket !== null && renderHero(pluginIcon('name' in selectedMarket ? selectedMarket.name : selectedMarket.moduleName, 30), 'market')}
           {tab === 'installed' && installedHero}
-          {tab === 'market' && (marketDetail ?? <DetailEmpty title="选择一个插件" desc="点左侧任意插件磁贴，在这里查看它的简介、热度与版本；点「安装」一键装入。" />)}
+          {tab === 'market' && (marketDetail ?? <DetailEmpty title="选择一个插件" desc="" />)}
           {tab === 'installed' && installedDetail}
         </aside>
       </div>
@@ -1614,7 +1733,7 @@ function DetailEmpty({ title, desc }: { title: string; desc: string }) {
         <img className={css.detailEmptyLogo} src={CORUM_LOGO_SRC} alt="" draggable={false} />
       </div>
       <p className={css.detailEmptyTitle}>{title}</p>
-      <p className={css.detailEmptyDesc}>{desc}</p>
+      {desc !== '' && <p className={css.detailEmptyDesc}>{desc}</p>}
     </div>
   )
 }

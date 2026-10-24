@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { useIntegrationsRpc } from './face.tsx'
+import { useExtensionOwnership, provenanceLabel, packOwnedTitle, type ExtensionOwnership } from './ownership.ts'
 import type { SkillInfo, SkillVersion, ProfileSummary, ScannedSkill, SkillAgentBind, BuiltinSkillImportResult } from './types.ts'
 import type { CorumRpcCall } from '@corum/corum-rpc-client/client'
 import type { LucideIcon } from 'lucide-react'
@@ -61,6 +62,7 @@ function formatBuiltinSummary(r: BuiltinSkillImportResult): string {
 
 export function SkillsPage() {
   const rpc = useIntegrationsRpc()
+  const ownership = useExtensionOwnership(rpc)
   const [skills, setSkills] = useState<SkillInfo[] | null>(null)
   const [profiles, setProfiles] = useState<ProfileSummary[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +70,7 @@ export function SkillsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [builtinBusy, setBuiltinBusy] = useState(false)
   const [builtinResult, setBuiltinResult] = useState<BuiltinSkillImportResult | null>(null)
-  const [tab, setTab] = useState<'market' | 'installed'>('market')
+  const [tab, setTab] = useState<'market' | 'installed'>('installed')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string>('all')
   /** 详情面板选中态。 */
@@ -153,6 +155,7 @@ export function SkillsPage() {
         selectedBindings={selectedBindings}
         bindCount={bindCount}
         rpc={rpc}
+        ownership={ownership}
         onDeleted={() => { setSelectedName(null); void reload() }}
         onChanged={() => { void reload() }}
         onDelete={(s) => setDeleting(s)}
@@ -275,7 +278,7 @@ function dateOnly(iso: string | undefined): string {
 }
 
 function SkillMarketView({ skills, error, tab, setTab, query, setQuery, category, setCategory,
-  selectedName, setSelectedName, selected, selectedBindings, bindCount, rpc, onDeleted, onChanged,
+  selectedName, setSelectedName, selected, selectedBindings, bindCount, rpc, ownership, onDeleted, onChanged,
   onDelete, onImport, onImportBuiltin, builtinBusy, builtinResult }: {
   skills: SkillInfo[] | null
   error: string | null
@@ -291,6 +294,7 @@ function SkillMarketView({ skills, error, tab, setTab, query, setQuery, category
   selectedBindings: SkillAgentBind[]
   bindCount: (name: string) => number
   rpc: CorumRpcCall
+  ownership: ExtensionOwnership
   onDeleted: () => void
   onChanged: () => void
   onDelete: (s: SkillInfo) => void
@@ -347,7 +351,6 @@ function SkillMarketView({ skills, error, tab, setTab, query, setQuery, category
     <div className={css.page}>
       {/* 页头单行：市场|已装 pill tab + 搜索框 + 分类 chips + 右端导入按钮（design.pen VNH3k） */}
       <div className={css.headerRow} role="tablist" aria-label="技能分区">
-        <button type="button" role="tab" aria-selected={tab === 'market'} className={`${css.tab}${tab === 'market' ? ' ' + css.tabActive : ''}`} onClick={() => setTab('market')}>市场</button>
         <button type="button" role="tab" aria-selected={tab === 'installed'} className={`${css.tab}${tab === 'installed' ? ' ' + css.tabActive : ''}`} onClick={() => setTab('installed')}>已装</button>
         {/* 市场 tab：在线市场占位「建设中」，搜索框与分类 chips 只服务本地列表，隐藏。 */}
         {tab !== 'market' && (
@@ -422,6 +425,7 @@ function SkillMarketView({ skills, error, tab, setTab, query, setQuery, category
               }
               const active = selected !== null && selected.name === s.name
               const Icon = skillIconOf(s.name)
+              const packOwner = ownership.ownerOf('skills', s.name)
               return (
                 <button
                   key={`${s.name}:${index}`}
@@ -436,13 +440,17 @@ function SkillMarketView({ skills, error, tab, setTab, query, setQuery, category
                   aria-pressed={active}
                   onClick={() => setSelectedName(s.name)}
                 >
-                  {/* 卡片只留：图标 / 名称 / 版本徽章 / 作者小字（技能无启停概念）。 */}
+                  {/* 卡片只留：图标 / 名称 / 版本徽章 / 作者小字（技能无启停概念）。
+                      pack-owned 技能补一枚「扩展包」角标（不破坏磁贴布局）。 */}
                   <MosaicTileBody
                     icon={<Icon size={size === 'big' ? 30 : 24} />}
                     name={s.name}
                     version={s.currentVersion ?? '—'}
                     /* 除 small 外都传描述（tall 纵向空间富余）；空串不渲染。 */
                     sub={skillAuthorLabel(s.name)}
+                    corner={packOwner !== null ? (
+                      <span className={css.tilePackChip} title={`扩展包 · ${packOwner}`}>扩展包</span>
+                    ) : undefined}
                   />
                 </button>
               )
@@ -483,13 +491,14 @@ function SkillMarketView({ skills, error, tab, setTab, query, setQuery, category
           {tab === 'market' || selected === null
             ? <DetailEmpty
                 title="选择一个技能"
-                desc="点左侧任意技能磁贴，在这里查看它的简介、版本历史与绑定关系。"
+                desc=""
               />
             : (
               <SkillDetailPanel
                 skill={selected}
                 bindings={selectedBindings}
                 rpc={rpc}
+                ownerName={ownership.ownerOf('skills', selected.name)}
                 onDeleted={onDeleted}
                 onChanged={onChanged}
                 onRequestDelete={() => onDelete(selected)}
@@ -511,17 +520,19 @@ function DetailEmpty({ title, desc }: { title: string; desc: string }) {
         <img className={css.detailEmptyLogo} src="corumapp://app/assets/icon.png" alt="" draggable={false} />
       </div>
       <p className={css.detailEmptyTitle}>{title}</p>
-      <p className={css.detailEmptyDesc}>{desc}</p>
+      {desc !== '' && <p className={css.detailEmptyDesc}>{desc}</p>}
     </div>
   )
 }
 
 /* ── 详情面板（版本管理 / 绑定 Agent 常驻；SKILL.md 为展开区）────────── */
 
-function SkillDetailPanel({ skill, bindings, rpc, onDeleted, onChanged, onRequestDelete }: {
+function SkillDetailPanel({ skill, bindings, rpc, ownerName, onDeleted, onChanged, onRequestDelete }: {
   skill: SkillInfo
   bindings: SkillAgentBind[]
   rpc: CorumRpcCall
+  /** 扩展包归属的包显示名（name ?? id）；null = 非扩展包拥有（用户导入）。 */
+  ownerName: string | null
   onDeleted: () => void
   onChanged: () => void
   onRequestDelete: () => void
@@ -641,6 +652,11 @@ function SkillDetailPanel({ skill, bindings, rpc, onDeleted, onChanged, onReques
               <span className={css.detailMetaKey}>作者</span>
               <span className={css.detailMetaValue}>{OFFICIAL_SKILL_NAMES.has(skill.name) ? 'corum · 官方技能' : 'corum 技能库'}</span>
             </div>
+            {/* 来源（P5d）：扩展包拥有的技能标「扩展包 · <pack>」，其余按既有口径「用户导入」。 */}
+            <div className={css.detailMetaRow}>
+              <span className={css.detailMetaKey}>来源</span>
+              <span className={css.detailMetaValue}>{provenanceLabel(ownerName, '用户导入')}</span>
+            </div>
           </div>
 
           {/* 日志：静态占位 changelog（wire 无此字段，见 CHANGELOG_PLACEHOLDER）。 */}
@@ -753,11 +769,14 @@ function SkillDetailPanel({ skill, bindings, rpc, onDeleted, onChanged, onReques
           </div>
         </div>
 
-        {/* 底部操作行：仅一个居中按钮（已装语义「卸载」= 删除，走 DeleteSkillDialog 确认）。 */}
+        {/* 底部操作行：仅一个居中按钮（已装语义「卸载」= 删除，走 DeleteSkillDialog 确认）。
+            pack-owned 技能禁用（只能整包卸载），title 引导到 集成中心 › 扩展包。 */}
         <div className={css.detailActions}>
           <button
             type="button"
             className={css.actionPrimary}
+            disabled={ownerName !== null}
+            title={ownerName !== null ? packOwnedTitle(ownerName) : undefined}
             onClick={onRequestDelete}
           >
             <Trash2 size={14} />卸载

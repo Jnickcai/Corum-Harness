@@ -1,7 +1,7 @@
 {
   "name": "corum-desktop",
   "description": "Corum（矩道）desktop carrier: Electron shell + host bridge + IPC transport, booting the corum profile over the official dsh foundation (zero HTTP).",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "private": true,
   "author": {
@@ -170,6 +170,8 @@
     "@corum/corum-api-remotes": "workspace:*",
     "@corum/corum-artgen": "workspace:*",
     "@corum/corum-credentials-local": "workspace:*",
+    "@corum/corum-extension-pack": "workspace:*",
+    "@corum/corum-extension-registry": "workspace:*",
     "@corum/corum-fs-local": "workspace:*",
     "@corum/corum-goal-round-driver": "workspace:*",
     "@corum/corum-ide-explorer-ui": "workspace:*",
@@ -283,6 +285,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-session-format": "^0.1.5-rc.3",
     "@tsdown/css": "^0.22.14",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.31",
