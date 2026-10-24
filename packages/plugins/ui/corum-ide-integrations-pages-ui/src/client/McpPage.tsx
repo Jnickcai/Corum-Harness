@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronUp, FolderTree, Hammer, Info, Plus, Trash2 } from 'lucide-react'
 import { useIntegrationsRpc } from './face.tsx'
+import { useExtensionOwnership, provenanceLabel, packOwnedTitle, type ExtensionOwnership } from './ownership.ts'
 import type { CorumRpcCall } from '@corum/corum-rpc-client/client'
 import {
   buildMosaic, MosaicTileBody, MosaicWall, mosaicStyles, mosaicTileClass, useMosaicColumns,
@@ -167,8 +168,9 @@ function tileTintOf(size: MosaicSize): MosaicTint {
 
 /* ── 主列表视图：Metro 磁贴 + 右侧详情面板 ──────────────────────────── */
 
-function McpListView({ rpc }: {
+function McpListView({ rpc, ownership }: {
   rpc: CorumRpcCall
+  ownership: ExtensionOwnership
 }) {
   const [servers, setServers] = useState<McpServerSummaryWire[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -222,7 +224,7 @@ function McpListView({ rpc }: {
   }, [rpc, servers])
 
   /** 页头 tab 选中态（两个 tab 目前指向同一份服务器列表，见上方页头注释）。 */
-  const [tab, setTab] = useState<'market' | 'installed'>('market')
+  const [tab, setTab] = useState<'market' | 'installed'>('installed')
   /** 详情面板选中项（默认选第一个；列表变化后回落——与插件页同一口径）。
       市场 tab 无服务器磁贴可选（仅「添加」+「建设中」），selected 恒为 undefined。 */
   const selected = useMemo(() => {
@@ -271,7 +273,6 @@ function McpListView({ rpc }: {
           目前只有已配置服务器这一份数据，「市场」态尚未接入 ⇒ 两个 tab 都指向
           同一列表，选中态仍按稿呈现，将来接市场时在此分叉）。 */}
       <div className={css.headerRow} role="tablist" aria-label="MCP 分区">
-        <button type="button" role="tab" aria-selected={tab === 'market'} className={`${css.tab}${tab === 'market' ? ' ' + css.tabActive : ''}`} onClick={() => { setTab('market') }}>市场</button>
         <button type="button" role="tab" aria-selected={tab === 'installed'} className={`${css.tab}${tab === 'installed' ? ' ' + css.tabActive : ''}`} onClick={() => { setTab('installed') }}>已装</button>
         <span className={css.headerSpacer} />
       </div>
@@ -392,6 +393,7 @@ function McpListView({ rpc }: {
                   rpc={rpc}
                   server={selected}
                   probe={probeMap[selected.name]}
+                  ownerName={ownership.ownerOf('mcp', selected.name)}
                   onToggled={() => { void reload() }}
                   onDeleted={() => { setSelectedId(null); void reload() }}
                 />
@@ -419,10 +421,12 @@ function DetailEmpty({ title, desc }: { title: string; desc: string }) {
 
 /* ── 详情面板 · 查看模式（MCP 语义信息面板）──────────────────────────── */
 
-function McpPanelView({ rpc, server, probe, onToggled, onDeleted }: {
+function McpPanelView({ rpc, server, probe, ownerName, onToggled, onDeleted }: {
   rpc: CorumRpcCall
   server: McpServerSummaryWire
   probe: ProbeState | undefined
+  /** 扩展包归属的包显示名；null = 非扩展包拥有。 */
+  ownerName: string | null
   onToggled: () => void
   onDeleted: () => void
 }) {
@@ -540,6 +544,11 @@ function McpPanelView({ rpc, server, probe, onToggled, onDeleted }: {
               <span className={css.detailMetaKey}>作者</span>
               <span className={css.detailMetaValue}>modelcontextprotocol · {TRANSPORT_LABEL[server.transport]}</span>
             </div>
+            {/* 来源（P5d）：扩展包拥有的 MCP 标「扩展包 · <pack>」，其余保留既有口径「用户导入」。 */}
+            <div className={css.detailMetaRow}>
+              <span className={css.detailMetaKey}>来源</span>
+              <span className={css.detailMetaValue}>{provenanceLabel(ownerName, '用户导入')}</span>
+            </div>
           </div>
 
           {/* 日志：静态占位 changelog（wire 无此字段，见 CHANGELOG_PLACEHOLDER）。 */}
@@ -608,11 +617,14 @@ function McpPanelView({ rpc, server, probe, onToggled, onDeleted }: {
 
         <div>
           {error !== null && <p className={css.hintText}>{error}</p>}
-          {/* 底部操作行：居中（删除服务器 error 描边 + 启停开关，走 saveServer 翻转 disabled）。 */}
+          {/* 底部操作行：居中（删除服务器 error 描边 + 启停开关，走 saveServer 翻转 disabled）。
+              pack-owned MCP 禁用删除（只能整包卸载），停用开关保持可用。 */}
           <div className={css.detailActions}>
             <button
               type="button"
               className={`${css.actionBtn} ${css.actionDanger}`}
+              disabled={ownerName !== null}
+              title={ownerName !== null ? packOwnedTitle(ownerName) : undefined}
               onClick={() => { setConfirmDelete(true) }}
             >
               <Trash2 size={13} />删除服务器
@@ -819,6 +831,7 @@ function McpPanelCreate({ rpc, onSaved, onCancel }: {
 
 export function McpPage() {
   const rpc = useIntegrationsRpc()
+  const ownership = useExtensionOwnership(rpc)
   if (rpc === null) return <p className={css.hintText}>RPC 服务未就绪。</p>
-  return <McpListView rpc={rpc} />
+  return <McpListView rpc={rpc} ownership={ownership} />
 }

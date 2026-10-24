@@ -329,6 +329,12 @@ importers:
       '@corum/corum-credentials-local':
         specifier: workspace:*
         version: link:../plugins/agent/corum-credentials-local
+      '@corum/corum-extension-pack':
+        specifier: workspace:*
+        version: link:../plugins/agent/corum-extension-pack
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../plugins/agent/corum-extension-registry
       '@corum/corum-fs-local':
         specifier: workspace:*
         version: link:../plugins/agent/corum-fs-local
@@ -1128,6 +1134,9 @@ importers:
       '@corum/corum-api-remotes':
         specifier: workspace:*
         version: link:../corum-api-remotes
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
       '@corum/corum-git-core':
         specifier: workspace:*
         version: link:../corum-git-core
@@ -1417,6 +1426,64 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/plugins/agent/corum-extension-pack:
+    dependencies:
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
+      '@corum/corum-mcp-manager':
+        specifier: workspace:*
+        version: link:../corum-mcp-manager
+      '@corum/corum-preset-modules':
+        specifier: workspace:*
+        version: link:../corum-preset-modules
+    devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: 1.0.7
+        version: 1.0.7(@deepseek-ai/cordis-plugin-loader@1.0.3)(@deepseek-ai/cordis@4.0.2)
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: 1.0.3
+        version: 1.0.3(@deepseek-ai/cordis@4.0.2)(node-addon-require-builtin@0.1.9)
+      '@deepseek-ai/dsh-home-paths':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.5
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(@tsdown/css@0.22.14)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
+
+  packages/plugins/agent/corum-extension-registry:
+    devDependencies:
+      '@corum/plugin-build':
+        specifier: workspace:*
+        version: link:../../../tooling/corum-plugin-build
+      '@deepseek-ai/dsh-home-paths':
+        specifier: 0.1.5-rc.3
+        version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.2)
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.5
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(@tsdown/css@0.22.14)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
+
   packages/plugins/agent/corum-fs-local:
     dependencies:
       koffi:
@@ -1538,6 +1605,9 @@ importers:
 
   packages/plugins/agent/corum-mcp-manager:
     dependencies:
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.32.1(zod@4.6.7)
@@ -1835,6 +1905,10 @@ importers:
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
 
   packages/plugins/agent/corum-skill-manager:
+    dependencies:
+      '@corum/corum-extension-registry':
+        specifier: workspace:*
+        version: link:../corum-extension-registry
     devDependencies:
       '@corum/plugin-build':
         specifier: workspace:*
@@ -3307,6 +3381,9 @@ importers:
       '@corum/corum-ide-ui':
         specifier: workspace:*
         version: link:../corum-ide-ui
+      '@corum/corum-rpc-client':
+        specifier: workspace:*
+        version: link:../corum-rpc-client
       '@corum/corum-ui-base':
         specifier: workspace:*
         version: link:../corum-ui-base
