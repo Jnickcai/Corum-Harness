@@ -621,7 +621,6 @@ export function SessionsPane(props: SessionsPaneInjected) {
           <Search size={14} strokeWidth={2} className={css.searchBoxIcon} />
           <input
             ref={searchInput}
-            data-sidebar-search=""
             className={css.searchBoxInput}
             type="text"
             placeholder="搜索会话…"

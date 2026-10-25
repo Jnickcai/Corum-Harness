@@ -89,9 +89,20 @@
   gap: calc(6px * var(--corum-density-scale, 1));
   padding: calc(10px * var(--corum-density-scale, 1)) calc(10px * var(--corum-density-scale, 1)) calc(6px * var(--corum-density-scale, 1));
   min-width: 0;
-  /* 固定高度对齐 ExplorerPane titlebar（同 53px），消除子像素取整导致的
-     折叠/展开两态按钮 Y 差 1px。 */
-  height: 48px;
+  /* 2026-10-26（用户定调，第三轮）：**以标题栏高度 40px 为基准**，让编辑器
+     标签栏底边那条 1px 分割线与左侧会话栏顶部那条分割线落在同一条水平线上。
+     
+     左侧那条线 = 标题栏带子（.titlebarMount height:40px）的 bottom ⇒ **y=40**。
+     
+     这里取 39px 而非 40px，是**实测**出来的（CDP 量 rect）：
+       编辑器卡片（RegionCard）自带 `border: 1px`，内容区因此从 **y=1** 起。
+       tabs 从 1 起、高 40 ⇒ 底边落在 y=41，比左侧低 1px（肉眼可见的错位）。
+       改成 39 ⇒ 底边 y=1+39=40，与左侧**逐像素同高**。
+     若日后要去掉卡片那条 1px 边框，本值需回到 40（无编译期守卫，靠肉眼/实测）。
+     
+     此前是 48px（原为对齐 ExplorerPane titlebar 的 53px 而设），比标题栏高
+     8px ⇒ 编辑器分割线比左侧低 8px，这是用户报障的直接原因。 */
+  height: 39px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--corum-glass-border);
 }
