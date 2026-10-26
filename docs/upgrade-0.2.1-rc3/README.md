@@ -159,12 +159,11 @@ graph TD
 | `README.md`（本册） | 索引与总览 |
 | `01-official-guide-mapping.md` | 阶段 -1：官方升级指南映射 |
 | `02-preparation.md` | 阶段 0：前置准备 |
-| `03-removed-packages.md` | 阶段 1：被删/更名包处理 + API 迁移（待写） |
-| `04-overrides-lockfile.md` | 阶段 2：override 重算 + lockfile（待写） |
-| `05-fork-rebase.md` | 阶段 3：fork 包 rebase（待写） |
-| `06-verification.md` | 阶段 4 + 4.5：三层验证 + Electron 验证（待写） |
-| `07-acp-subagent-isolation.md` | 阶段 5：装配进程隔离（待写） |
-| `08-top-level-sidecar.md` | 阶段 6：顶层会话 sidecar（待写） |
+| `03-removed-packages.md` | 阶段 1：被删/更名包处理 + API 迁移 |
+| `04-overrides-lockfile.md` | 阶段 2：override 重算 + lockfile |
+| `05-fork-rebase.md` | 阶段 3：fork 包 rebase |
+| `06-verification.md` | 阶段 4 + 4.5：三层验证 + Electron 验证 |
+| `07-acp-subagent-isolation.md` | 阶段 5：装配进程隔离 |
+| `08-top-level-sidecar.md` | 阶段 6：顶层会话 sidecar |
 
-> 当前已落盘：`README.md`、`01-official-guide-mapping.md`、`02-preparation.md`。
-> 其余 5 册（03-08）待后续编写。每册统一九章模板（README 除外）。
+> 全部 9 册已落盘（2026-10-27）：README + 01~08。每册统一九章模板（README 除外）。
