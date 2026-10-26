@@ -15,8 +15,8 @@
 **本册**：升级执行文档的索引与总览，不包含执行步骤本身。各阶段执行手册见下方索引表。
 
 > 单一事实源：`docs/UPGRADE-0.2.1-rc3-feasibility.md`（已含 2026-10-27 评审修订）。
-> 评审证据报告：`~/.corum/research-reports/885858d9-…`、`5c35a73b-…`、`06867ebb-….md`（只读参考）。
-> 实录文件：`docs/UPGRADE-0.2.1-rc3.md`（执行时逐步写入，阶段 0 创建骨架）。
+> 评审证据报告：`~/.corum/research-reports/e9de057a-…`、`abf2af7e-…`、`958879cc-….md`（只读参考）。
+> 实录文件：`docs/UPGRADE-0.2.1-rc3.md`（阶段 0 创建骨架；阶段 -1 实录暂记 01 册附录 B，阶段 0 建骨架时转录）。
 
 ---
 
@@ -42,7 +42,7 @@ graph TD
 ```
 
 **关键说明**：
-- 阶段 -1 是一切的前置——先映射 40 篇官方升级指南，再进阶段 0。
+- 阶段 -1 是一切的前置——先映射 43 篇官方升级指南，再进阶段 0。
 - 阶段 4（三层验证）通过后，阶段 5/6 可在 4 之后独立排期，不阻塞基座升级本身的收口。
 - 阶段 4.5（Electron 版本验证）插在 4 与 5 之间：验证 `node-addon-native-custom-loader` 在
   Electron 43.4.1 旧指纹下可加载，决定是否同步升 Electron。
@@ -54,9 +54,9 @@ graph TD
 
 | # | 文件 | 阶段 | 一句话目标 | 准入门禁摘要 | 退出门禁摘要 | 状态 |
 |---|---|---|---|---|---|---|
-| 1 | `01-official-guide-mapping.md` | -1 | 通读官方 0.2.1 升级指南（7 目录约 40 篇），产出「指南 → corum 影响映射表」 | 无（一切的前置） | 映射表覆盖全部指南，每条影响落到阶段 1-6 之一或显式标注「corum 不受影响」 | ☐ 待开工 |
+| 1 | `01-official-guide-mapping.md` | -1 | 通读官方 0.2.1 升级指南（7 目录共 43 篇），产出「指南 → corum 影响映射表」 | 无（一切的前置） | 有效映射条目 ≥43，每条影响落到阶段 1-6 之一或显式标注「corum 不受影响」 | ☐ 待开工 |
 | 2 | `02-preparation.md` | 0 | 备份 home + 工作区 commit + 基线 fork-drift 守卫确认零漂移 + 记录基线快照 + 创建实录骨架 | 阶段 -1 退出门禁通过 | 备份完成 + 工作区干净 + fork-drift 零漂移 + 基线快照已记录 + 实录文件已创建 | ☐ 待开工 |
-| 3 | `03-removed-packages.md` | 1 | 解决 4 个被删/更名包 + session-title API 迁移 + dsh-hmr 替代 | 阶段 0 退出门禁通过 | 4 个被删包全部改完 + invariants 方案 A 落地 + session-title API 迁移完成 + dsh-hmr 替代完成 + `pnpm install` 无断链 | ☐ 待开工 |
+| 3 | `03-removed-packages.md` | 1 | 解决 4 个被删/更名包 + session-title API 迁移 + HMR 形态核查（待阶段 -1 裁决） | 阶段 0 退出门禁通过 | 4 个被删包全部改完 + invariants 方案 A 落地 + session-title API 迁移完成 + HMR 形态经阶段 -1 裁决后处置 + `pnpm install` 无断链 | ☐ 待开工 |
 | 4 | `04-overrides-lockfile.md` | 2 | override 表重算（217→约 250-300）+ 清理 433 条陈旧豁免 + lock 重生成 + 闭包审计 | 阶段 1 退出门禁通过 | override 落点 250-300 条 + 433 条豁免清理 + pnpm-lock 重生成 + `assert-packaged-boot.mjs` 通过 + 平台词表 9→11 对账 | ☐ 待开工 |
 | 5 | `05-fork-rebase.md` | 3 | 50 个 fork 包逐个对照官方 0.2.1 重新合并 | 阶段 2 退出门禁通过 | 50 个 fork 包全部 rebase 完成 + corum-subagent 大头单独收口 + fork-drift 方向收敛 | ☐ 待开工 |
 | 6 | `06-verification.md` | 4 | 三层验证：tsc --force 0 错 + 全测试绿 + fork-drift 过 + 实机 CDP 冲烟 + V3→V4 迁移预演 | 阶段 3 退出门禁通过 | 三道总门禁全绿 + 三平台实机冲烟 + 存量会话 V3→V4 预演通过 | ☐ 待开工 |
@@ -103,8 +103,8 @@ graph TD
 | cordis 版本 | 无变化 | **4.0.2 → 4.0.5**（11 commits，patch 级） |
 | 时间跨度 | — | **2026-09-22 → 2026-10-23**（一个月） |
 
-> 数据来源：可行性文档 §一 + 评审报告 06867ebb §A（`git rev-list --count` /
-> `git diff --shortstat` 原始命令输出验证）。override 基线 217 条由评审报告 06867ebb §E1
+> 数据来源：可行性文档 §一 + 评审报告 958879cc §A（`git rev-list --count` /
+> `git diff --shortstat` 原始命令输出验证）。override 基线 217 条由评审报告 958879cc §E1
 > 核实（`pnpm-workspace.yaml:43-306`，其中 `@deepseek-ai/dsh-*` 211 条 + 其余 6 条）。
 
 ---

@@ -3,7 +3,7 @@
 > 状态：待执行 | 前置：阶段 1（被删/更名包）+ 阶段 2（override 重算 + lock 重生成）已完成 | 工程量：高（50 包 × 6026 commit 跨度，历次升级之最）
 >
 > 单一事实源：`docs/UPGRADE-0.2.1-rc3-feasibility.md`（含评审修订 §六 阶段 3）。
-> 评审证据：`~/.corum/research-reports/885858d9-…md`（fork 台账落后：实 50 个、fork-delta.md 只登记到 17）；`06867ebb-…md` E3 节（corum-subagent rebase 是单独大头）。
+> 评审证据：`~/.corum/research-reports/e9de057a-…md`（fork 台账落后：实 50 个、fork-delta.md 只登记到 17）；`958879cc-…md` E3 节（corum-subagent rebase 是单独大头）。
 > fork 台账 + 升级 runbook：`docs/fork-delta.md`（§5 runbook、§10 corum-subagent 详录、§10.3-5 沙箱钳制三接线回归门禁）。
 > 方法论参照：交接文档 `HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2（逐包循环 / 包声明与 override 同时改 / 直接验证可解析性 / 实机验证不可替代）。
 
@@ -32,7 +32,7 @@
 
 ## 2. 前置条件
 
-1. **阶段 1 已完成**：4 个被删/更名包 + session-title API 迁移 + dsh-hmr 改名均已落地，fork 包的 `package.json` deps 已更新指向 0.2.1-rc.3。
+1. **阶段 1 已完成**：4 个被删/更名包 + session-title API 迁移 + HMR 形态经阶段 -1 裁决后处置（fork 包的 `package.json` deps 已更新指向 0.2.1-rc.3）。
 2. **阶段 2 已完成**：override 表重算至 0.2.1-rc.3，lockfile 重生成成功，`pnpm install` 零报错。
 3. **官方 dsh 检出已更新至 `dsh-v0.2.1-rc.3`**。
 4. **阶段 -1（官方升级指南映射表）已完成**：特别是与 corum 直接相关的指南已映射（见 §3.1）。
@@ -44,19 +44,19 @@
 
 ### 3.1 官方升级指南映射（阶段 -1 产出）
 
-与 fork rebase 直接相关的官方升级指南（`docs/upgrade-guide/` 下 7 个版本目录约 40 篇）：
+与 fork rebase 直接相关的官方升级指南（`docs/upgrade-guide/` 下 7 个版本目录共 43 篇）：
 
 | 指南 | 版本目录 | 对应 fork 包 | 影响面 |
 |---|---|---|---|
 | `subagent-activations` | v0.2.1-alpha.1 | corum-subagent | activation 生命周期合并（`3d852a1cea` / `390fbe8852`） |
 | `subagent-preset-composition` | v0.2.1-alpha.1 | corum-subagent | preset 从包声明改为 profile YAML（`d1e22a7e24`） |
-| `jsonl-persistence-plugin` | v0.2.1-alpha.1 | corum-session（persistence） | SessionWriteLease/persistence 形态变化 |
+| `jsonl-persistence-plugin` | v0.2.1-alpha.1 | corum-subagent（persistence） | SessionWriteLease/persistence 形态变化 |
 | `working-directory` | v0.2.1-alpha.1 | session 域 fork 包 | 会话工作目录语义 |
 | `session-title-provider-strategy` | v0.2.1-alpha.1 | corum-agent | session-title-llm provider API 迁移 |
 | `remove-runtime-invariants` | v0.2.0-rc.2 | corum-goal-round-driver / corum-tool-subagent / corum-subagent / corum-tools | invariant 删除（阶段 1 已处理源码侧） |
-| `plugin-engines-dsh` | v0.2.1-alpha.1 | UI 域 fork 包 | 插件引擎变化 |
-| `from-default-profile-replaces-target` | v0.2.1-alpha.1 | corum-agent / corum-subagent | profile 合并语义 |
-| `new-session-blank-reuse` | v0.2.1-alpha.1 | session 域 fork 包 | 新会话语义 |
+| `plugin-engines-dsh` | v0.2.1-alpha.3 | corum-ide-plugin-manager-ui | 兼容性检查优先读 engines.dsh；拒绝记录 peers 改名 requirements（与 HMR 无关） |
+| `from-default-profile-replaces-target` | v0.2.1-alpha.2 | — | corum 不受影响 + 备忘（CLI 重建会删目标目录；corum 不走该 CLI，profile patch 手维护） |
+| `new-session-blank-reuse` | v0.2.1-rc.2 | session 域 fork 包 | 阶段 4 行为观察（corum 新任务走自有 RPC，不直接走 uiWorkspace.startSession） |
 
 ### 3.2 fork 台账
 
@@ -142,7 +142,7 @@ ls -d packages/plugins/{agent,session,ui}/*/
 
 ### 4.4 单列大头：corum-subagent（独立小节 + 独立排期建议）
 
-**为何单独成批**（评审 E3 节 + 06867ebb 报告）：
+**为何单独成批**（评审 E3 节 + 958879cc 报告）：
 
 1. **fork 基线最旧**：corum-subagent fork 自官方 **0.1.3-alpha.1**（其余 fork 多为 0.1.5-rc.3），距官方 0.2.1 跨度最大。
 2. **官方热区直击 fork 增量**：
@@ -172,7 +172,7 @@ ls -d packages/plugins/{agent,session,ui}/*/
 
 ### 4.5 6026 commit 跨度的破坏性 API 变更发现与记录
 
-**背景**：0.1.5-rc.3 → 0.2.1-rc.3 共 6026 commit / 12855 文件 / 161 万新增行（已验证，06867ebb 报告 A 节）。这是历次升级最大跨度（上次 0.1.3→0.1.5 约 200 commit）。
+**背景**：0.1.5-rc.3 → 0.2.1-rc.3 共 6026 commit / 12855 文件 / 161 万新增行（已验证，958879cc 报告 A 节）。这是历次升级最大跨度（上次 0.1.3→0.1.5 约 200 commit）。
 
 **处置**：破坏性 API 变更**在逐包 rebase 中发现并记录**（可行性文档 §七 风险清单第 4 项）。不预先全量扫描 6026 commit——成本太高且 fork-delta 台账 + 官方升级指南已覆盖大部分热区。
 
@@ -213,7 +213,7 @@ ls -d packages/plugins/{agent,session,ui}/*/
 | fork 台账落后 33 个包，rebase 无对照基准 | **高** | 步骤 0 先补台账到 50（必须最先做） |
 | 整文件覆盖禁令被违反（0.1.3 事故重演） | 中 | 实质修改文件禁止整文件拷贝官方版；合并后跑 `verify-fork-drift.sh` §5「定制面不得与官方逐字节一致 + 定制标记必须存在」断言 |
 | `tsc -b` 增量编译藏住破坏点 | 中 | **必须 `--force`**（0.1.5 升级教训：不 force 时 31 处报错看不见） |
-| 官方升级指南漏列或过时 | 低 | 阶段 -1 已通读 40 篇并产出映射表；rebase 中若发现指南未覆盖的变更，追加到映射表 |
+| 官方升级指南漏列或过时 | 低 | 阶段 -1 已通读 43 篇并产出映射表；rebase 中若发现指南未覆盖的变更，追加到映射表 |
 | 批次间类型/契约不稳定导致返工 | 中 | 批 1-3 可并行，批 4-5 串行（依赖前序批次稳定） |
 
 ---

@@ -8,7 +8,7 @@
 > corum 当前：基座 `0.1.5-rc.3` + cordis `4.0.2`，desktop app `0.7.0`，50 个 fork 包。
 > （评审注：50 为目录树实数，packages/plugins 下 23 agent + 12 session + 15 ui；docs/fork-delta.md 台账仅登记到 17 个，落后 33 个，升级期间应同步补台账。）
 >
-> 评审记录：2026-10-27 由指挥模式三方独立核查完成（三份证据报告存于 ~/.corum/research-reports/885858d9-…、5c35a73b-…、06867ebb-….md）。评审结论：方向成立，方案 A 证据链全绿；发现 1 处事实错误（§三 session-title 行）、1 处张冠李戴（§2.1 tool-executor 行）、7 处高危遗漏（见 §三·0 与 §六 修订）。
+> 评审记录：2026-10-27 由指挥模式三方独立核查完成（三份证据报告存于 ~/.corum/research-reports/e9de057a-…、abf2af7e-…、958879cc-….md）。评审结论：方向成立，方案 A 证据链全绿；发现 1 处事实错误（§三 session-title 行）、1 处张冠李戴（§2.1 tool-executor 行）、7 处高危遗漏（见 §三·0 与 §六 修订）。
 
 ---
 
@@ -224,7 +224,7 @@ packages/plugins/agent/corum-tools/
 
 > 评审补充：漏列的重要新增组（2026-10-27）
 
-- 🔴 **boot/ 四新包**：`plugin-manager`、`plugin-market`、`config-editor`、`dsh-hmr`（替代 `cordis-plugin-hmr`，0.2.1 `base/cordis.patch.yml:20-32` 行改名且配置变 `root: []`）——直接压着 corum 插件框架与热更新链路；corum override 把 `cordis-plugin-hmr` 钉在 1.0.17（官方已 1.0.20）。
+- 🔴 **boot/ 四新包**：`plugin-manager`、`plugin-market`、`config-editor`、`dsh-hmr`——直接压着 corum 插件框架与热更新链路；corum override 把 `cordis-plugin-hmr` 钉在 1.0.17（官方已 1.0.20）。**HMR 形态待阶段 -1 实证后裁决**（评审核实：dsh-hmr 在官方 apps/cli README 是 profile-manifest/patch watcher；corum 三份 cordis.patch.yml 没有 hmr 行，实际引用 = desktop-host dep + override + UI meta），当前已知 corum 触点 = desktop-host dep + override + UI meta。
 - 🔴 **session/session-format-v3-to-v4**：存量会话 V4 迁移（0.1.5 只有 v0→v3 链），阶段计划原本没提。
 - **preset/agent-preset + agent-preset-registry**：`dsh-agent-presets` 的落点（§三 被删包的目标包）。
 - **简列**：`ssh/` 五包、`telemetry/otel`、`session/working-directory`、`api/` 四个新 controller、`workflow-ptc`、`skill-office`、`mcp-resources`、`llm-deepseek-account` 等。
@@ -243,7 +243,7 @@ cordis 是 corum fork 的核心依赖（每个 fork 包都用）。0.2.1 的 cor
 
 ### 阶段 -1：官方升级指南映射（先于一切）
 
-0.2.1-rc.3 的 `docs/upgrade-guide/` 有 7 个版本目录约 40 篇（`v0.1.7-rc.2`×2、`v0.2.0-rc.2`×6、`v0.2.1-alpha.1`×22、`alpha.2`×10、`alpha.3`×1、`alpha.4`×1、`rc.2`×1）。与 corum 直接相关的至少：`subagent-activations`、`subagent-preset-composition`（直击 corum-subagent rebase）、`jsonl-persistence-plugin`、`working-directory`、`session-title-provider-strategy`、`plugin-engines-dsh`、`from-default-profile-replaces-target`、`new-session-blank-reuse`。产出 =「指南 → corum 影响映射表」，再进阶段 1。
+0.2.1-rc.3 的 `docs/upgrade-guide/` 有 7 个版本目录共 43 篇（`v0.1.7-rc.2`×2、`v0.2.0-rc.2`×6、`v0.2.1-alpha.1`×22、`alpha.2`×10、`alpha.3`×1、`alpha.4`×1、`rc.2`×1）。与 corum 直接相关的至少：`subagent-activations`、`subagent-preset-composition`（直击 corum-subagent rebase）、`jsonl-persistence-plugin`、`working-directory`、`session-title-provider-strategy`、`plugin-engines-dsh`（兼容性检查优先读 engines.dsh，与 HMR 无关）、`from-default-profile-replaces-target`（corum 不受影响 + 备忘）、`new-session-blank-reuse`（阶段 4 行为观察）、`web-listener-trust-config`（webRuntime→webStartup + trustedHosts 迁移）、`plugin-install-over-installed`（HMR 下 installBundle 对已安装包报 already-installed）。产出 =「指南 → corum 影响映射表」，再进阶段 1。
 
 ### 阶段 0：前置准备（必须先做）
 1. **完整备份当前 home**：`cp -a ~/.corum ~/.corum-backup-pre-0.2.1`
@@ -256,7 +256,7 @@ cordis 是 corum fork 的核心依赖（每个 fork 包都用）。0.2.1 的 cor
 - 改 fork 包源码 import
 - 改 `tsdown.config.ts` external
 - 对 `dsh-invariants`：**方案 A 已定**（跟随官方删除，详见 §三·1），4 个 fork 包删 `invariant.ts` + dep + external + 子路径导出 + 相关测试
-- **增补（评审 2026-10-27）**：`dsh-hmr` 替代 `cordis-plugin-hmr`（组合行改名 + 配置 schema 变化）；`desktop-host/package.json` 的 4 处被删包 dep（`:60`/`:75`/`:86`/`:114`）与 `build/host` 对应行；`session-title-llm` provider 迁移按官方指南
+- **增补（评审 2026-10-27）**：`dsh-hmr` 形态待阶段 -1 实证后裁决（当前已知 corum 触点 = desktop-host dep `:53` + override `:292` + UI meta；禁止未核实就替换 dep/override）；`desktop-host/package.json` 的 4 处被删包 dep（`:60`/`:75`/`:86`/`:114`）与 `build/host` 对应行；`session-title-llm` provider 迁移按官方指南
 
 ### 阶段 2：override 表重算
 - override 基线 217 条（`pnpm-workspace.yaml:43-306`），预计落点 250-300（非 800+）
@@ -301,7 +301,7 @@ corum 钉 electron 43.4.1，官方 0.2.1 用 `^44.7.0`，且 `SessionWriteLease`
 | cordis 4.0.2→4.0.5 的 11 个 commit | 低 | fork-drift 守卫会拦住 |
 | 三平台覆盖（macOS/Linux/Windows） | 中 | 阶段 4 实机验证 |
 | desktop-host 硬断链（4 处被删包 dep + override） | 高 | 阶段 1 必含（评审发现原清单遗漏） |
-| `dsh-hmr` / `cordis-plugin-*` 钉版冲突 | 高 | 阶段 1/2 处理 |
+| `dsh-hmr` / `cordis-plugin-*` 钉版冲突 | 高 | HMR 形态待阶段 -1 实证后裁决，再决定阶段 1/2 处置 |
 | Electron 43.4.1 vs 官方 44.7 的 flock addon 指纹差 | 中 | 阶段 4 前验证 |
 
 ---
@@ -325,7 +325,7 @@ corum 钉 electron 43.4.1，官方 0.2.1 用 `^44.7.0`，且 `SessionWriteLease`
 1. **先装回 corum-dev 扩展包**（已完成 ✅，重启 app 生效）
 2. **`dsh-invariants` 处置已定方案 A**（§三·1，待评审后落地）
 3. ✅ **已完成**（2026-10-27，结论：方向成立，方案 A 证据链全绿；勘误与遗漏已回写本文）
-4. **评审已通过 ⇒ 下一步先做阶段 -1（40 篇官方指南映射），再启动阶段 1**
+4. **评审已通过 ⇒ 下一步先做阶段 -1（43 篇官方指南映射），再启动阶段 1**
 5. 后续阶段按 §六 顺序推进
 
 > 本评估基于 2026-10-26 22:40 的 dsh `dsh-v0.2.1-rc.3` + corum `0.7.0` 状态。后续 0.2.1-rc.x 或 0.2.2 发布时需复核。

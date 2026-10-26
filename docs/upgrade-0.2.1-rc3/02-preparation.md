@@ -129,11 +129,11 @@ git -C /Users/kukucai/dsh rev-parse HEAD
 ```bash
 # 统计 overrides 段条目数（43-306 行）
 sed -n '43,306p' pnpm-workspace.yaml | grep -c "^\s*@deepseek-ai\|^\s*[a-z]"
-# 预期：217 条（评审报告 06867ebb §E1 核实）
+# 预期：217 条（评审报告 958879cc §E1 核实）
 
 # 统计 minimumReleaseAgeExclude 段条目数（307 行起）
 sed -n '307,$p' pnpm-workspace.yaml | grep -c "@deepseek-ai"
-# 预期：433 条（评审报告 06867ebb §E1 核实，全钉 0.1.3-alpha.1 陈旧）
+# 预期：433 条（评审报告 958879cc §E1 核实，全钉 0.1.3-alpha.1 陈旧）
 ```
 
 **5b. fork 包基线**
@@ -186,7 +186,7 @@ echo "目标版本：dsh-v0.2.1-rc.3"
 
 ### 步骤 6：新建实录文件 docs/UPGRADE-0.2.1-rc3.md 骨架
 
-创建实录文件，写入骨架结构：
+创建实录文件，写入骨架结构。**阶段 -1 的实录暂记在 01 册附录 B，本步骤需将附录 B 内容转录到实录文件的「阶段 -1」小节**：
 
 ```markdown
 # dsh 基座 0.1.5-rc.3 → 0.2.1-rc.3 升级实录
@@ -213,7 +213,7 @@ echo "目标版本：dsh-v0.2.1-rc.3"
 
 ## 阶段 -1：官方升级指南映射
 
-（执行时追加）
+（转录自 01 册附录 B——阶段 -1 执行时暂记）
 
 ## 阶段 0：前置准备
 
@@ -257,6 +257,9 @@ ls -la docs/UPGRADE-0.2.1-rc3.md
 # 确认骨架结构完整
 grep -c "^## " docs/UPGRADE-0.2.1-rc3.md
 # 应输出 9+（含基线快照 + 各阶段标题）
+# 确认阶段 -1 实录已从 01 附录 B 转录
+grep -c "阶段 -1" docs/UPGRADE-0.2.1-rc3.md
+# 应 ≥1
 ```
 
 > **注意**：`docs/` 被 `.gitignore` 忽略，实录文件需 `git add -f docs/UPGRADE-0.2.1-rc3.md`
@@ -295,7 +298,7 @@ scripts/corum-instance.sh --help 2>&1 | grep -- '--home'
 | 3 | fork-drift 守卫通过或既存失败已记录 | `./scripts/verify-fork-drift.sh` 退出码 0 或失败项已记入实录 | ☐ |
 | 4 | dsh 仓 tag `dsh-v0.2.1-rc.3` 存在 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.2.1-rc.3'` 非空 | ☐ |
 | 5 | 基线快照已记入实录 | 实录文件含基线快照表（override/fork/版本号） | ☐ |
-| 6 | 实录文件骨架已创建 | `docs/UPGRADE-0.2.1-rc3.md` 存在且含各阶段标题 | ☐ |
+| 6 | 实录文件骨架已创建 | `docs/UPGRADE-0.2.1-rc3.md` 存在且含各阶段标题 + 阶段 -1 实录已从 01 附录 B 转录 | ☐ |
 | 7 | 主实例 :9222 不可重启的纪律已确认 | 实录中记录「验证走 --home=verify」 | ☐ |
 
 ## 6. 风险与缓解
@@ -346,7 +349,7 @@ scripts/corum-instance.sh --help 2>&1 | grep -- '--home'
 3. **步骤 3**：fork-drift 守卫的完整输出 + 退出码 + 既存失败项清单（如有）。
 4. **步骤 4**：`git tag -l` 输出 + `git rev-parse dsh-v0.2.1-rc.3` 输出 + 当前 dsh HEAD。
 5. **步骤 5**：基线快照表（override 条目数 / fork 包数 / 版本号 / 官方包总数）。
-6. **步骤 6**：实录文件创建确认。
+6. **步骤 6**：实录文件创建确认 + **从 01 册附录 B 转录阶段 -1 实录**的确认。
 7. **步骤 7**：实例脚本可用性确认 + 「主实例不承载验证」纪律记录。
 8. **偏差记录**：若实际数字与预期不符（如 override 不是 217 条），记录实际值与偏差原因。
 9. **时间**：本阶段实际耗时。

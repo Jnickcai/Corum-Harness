@@ -18,7 +18,7 @@
 | 4 | `dsh-invariants` | 删除（方案 A 跟随官方） | 删 src + dep + external + 测试 + lib 残留 | `f028f25667`（PR #5517） |
 | 5 | `dsh-session-title` | 包未删；伴生包 `-llm` provider API 迁移 | 本体版本跟随 + `-llm` 按 guide 迁移 | 官方指南 `v0.2.1-alpha.1/session-title-provider-strategy` |
 | 6 | `dsh-subagent-in-process-driver` | 删除，驱动并入 dsh-subagent activation | 改 lib 产物模块名 + dep + override | `3d852a1cea` → `390fbe8852` |
-| 附 | `cordis-plugin-hmr` → `dsh-hmr` + vendor 齐升 | 组合行改名 + 配置 schema 变化；loader/include/timer/schemastery/cosmokit 版本跟随 | 改 override + dep + 组合行 | 0.2.1 `base/cordis.patch.yml:20-32` |
+| 附 | `cordis-plugin-hmr` / `dsh-hmr` 形态核查 + vendor 齐升 | HMR 形态待阶段 -1 裁决；loader/include/timer/schemastery/cosmokit 版本跟随 | 改 override + dep（HMR 待裁决后处置） | 0.2.1 `base/cordis.patch.yml` |
 
 ### 范围边界
 
@@ -32,7 +32,7 @@
 
 | # | 门禁项 | 验证命令 | 通过标准 |
 |---|---|---|---|
-| 2.1 | 阶段 -1 已完成：40 篇官方升级指南已映射 | 检查「指南 → corum 影响映射表」产出物存在 | 文件存在且覆盖 `subagent-preset-composition`、`session-title-provider-strategy`、`remove-runtime-invariants` 三篇 |
+| 2.1 | 阶段 -1 已完成：43 篇官方升级指南已映射 | 检查「指南 → corum 影响映射表」产出物存在 | 文件存在且覆盖 `subagent-preset-composition`、`session-title-provider-strategy`、`remove-runtime-invariants` 三篇 |
 | 2.2 | 当前工作区已 commit + push | `git status --porcelain` | 空输出 |
 | 2.3 | home 完整备份 | `ls ~/.corum-backup-pre-0.2.1` | 目录存在 |
 | 2.4 | fork-drift 守卫当前基线零漂移 | `DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 ./scripts/verify-fork-drift.sh` | 全绿（已知 24 项既存失败与本升级无关，需在门禁输出中标注） |
@@ -50,8 +50,8 @@
 
 ### 3.2 评审证据报告（含全部精确路径行号）
 
-- `~/.corum/research-reports/885858d9-8c4b-427e-ada0-87fbe675a96a.md`——被删包引用点核查。
-- `~/.corum/research-reports/5c35a73b-1c59-49ef-9bfa-d0d73763dbf6.md`——invariants 方案 A 证据链核查。
+- `~/.corum/research-reports/e9de057a-8f2e-4383-bf5a-1a57b6c77dc7.md`——被删包引用点核查。
+- `~/.corum/research-reports/abf2af7e-8ef0-4795-9be4-dbb45f086b78.md`——invariants 方案 A 证据链核查。
 
 ### 3.3 官方只读 checkout
 
@@ -71,7 +71,7 @@
 ③ dsh-subagent-in-process-driver 删除
 ④ dsh-agent-presets 删除（依赖阶段 -1 的指南映射）
 ⑤ dsh-session-title-llm provider 迁移
-⑥ dsh-hmr 替代 cordis-plugin-hmr + vendor 齐升
+⑥ dsh-hmr 形态核查（待阶段 -1 裁决）+ vendor 齐升
 ```
 
 > 理由：invariants 的处置范围最清晰且可独立验证（死代码零运行时影响）；code-runtime/worker-thread 是机械改名；in-process-driver 涉及 lib 产物注释和 dep；agent-presets 依赖阶段 -1 的 preset-composition 指南映射结果；session-title-llm 是 API 迁移（工程量集中在伴生包）；hmr + vendor 齐升压着热更新链路放最后。
@@ -521,39 +521,44 @@ git commit -m "upgrade(0.2.1-rc3): dsh-session-title 版本跟随 + -llm provide
 
 ---
 
-### 4.6 处置对象 ⑥：dsh-hmr 替代 cordis-plugin-hmr + vendor 齐升
+### 4.6 处置对象 ⑥：HMR 形态核查与迁移（以阶段 -1 裁决为准）
 
-> 0.2.1 `base/cordis.patch.yml:20-32` 行改名（`@deepseek-ai/cordis-plugin-hmr` → `@deepseek-ai/dsh-hmr`）且配置 schema 变 `root: []`（0.1.5 是 `root: ['.']`）；`disabled` 逻辑也变了（0.2.1 用 `!!js "!ctx.get('profileContext')"`，0.1.5 是 `disabled: true`）。
-> 0.2.1 新增 `packages/boot/hmr/`（`@deepseek-ai/dsh-hmr`，version `0.2.1-rc.3`）。
-> vendor 连带：loader 1.0.3→1.0.6、include 1.0.7→1.0.10、timer 1.1.4→1.1.7、hmr 1.0.17→1.0.20、schemastery 3.18.2→3.18.5、cosmokit 1.8.3→1.8.6。
+> **前置**：HMR 形态待阶段 -1 实证后裁决。评审核实：dsh-hmr 在官方 apps/cli README 是 profile-manifest/patch watcher；corum 三份 cordis.patch.yml 没有 hmr 行，实际引用 = `desktop-host/package.json:53` dep `cordis-plugin-hmr ^1.0.16` + `pnpm-workspace.yaml:292` override `1.0.17` + UI plugin-meta。
+> **禁止未核实就替换 dep/override**——阶段 -1 核查 `git -C /Users/kukucai/dsh show dsh-v0.2.1-rc.3:packages/bundle/base/cordis.patch.yml`、`packages/boot/hmr/package.json`、`apps/cli/README.md` 后，再决定本步骤动作。
+> vendor 连带：loader 1.0.3→1.0.6、include 1.0.7→1.0.10、timer 1.1.4→1.1.7、hmr 1.0.17→1.0.20、schemastery 3.18.2→3.18.5、cosmokit 1.8.3→1.8.6（vendor 齐升不依赖 HMR 裁决，可独立执行）。
 > corum override 钉 `cordis-plugin-hmr` 1.0.17（`:292`）、`cordis-plugin-include` 1.0.7（`:289`）、`cordis-plugin-timer` 1.1.4（`:294`）、`schemastery` 3.18.2（`:293`）、`cordis-plugin-group` 1.0.2（`:291`）；`desktop-host/package.json:53` dep `cordis-plugin-hmr ^1.0.16`。
 
-#### 步骤 ⑥-1：desktop-host 改 hmr dep
+#### 步骤 ⑥-1：desktop-host hmr dep（待阶段 -1 裁决）
 
-| 文件 | 行号 | 当前 | 改为 |
+> **前置**：阶段 -1 HMR 形态核查完成后，根据裁决结果决定此步骤动作。在裁决前**不修改** `desktop-host/package.json:53` 的 `cordis-plugin-hmr` dep。
+
+| 文件 | 行号 | 当前 | 裁决后可能改为 |
 |---|---|---|---|
-| `packages/desktop/desktop-host/package.json` | `:53` | `"@deepseek-ai/cordis-plugin-hmr": "^1.0.16"` | `"@deepseek-ai/dsh-hmr": "0.2.1-rc.3"` |
+| `packages/desktop/desktop-host/package.json` | `:53` | `"@deepseek-ai/cordis-plugin-hmr": "^1.0.16"` | 视阶段 -1 裁决（可能改为 `"@deepseek-ai/dsh-hmr": "0.2.1-rc.3"` 或保留并升级版本） |
 
 #### 步骤 ⑥-2：pnpm-workspace override 改名 + 版本齐升
+
+> **HMR override 行（`:292`）待阶段 -1 裁决后处置**；vendor 齐升（include/group/schemastery/timer/cosmokit）不依赖 HMR 裁决，可独立执行。
 
 | 行号 | 当前 | 改为 |
 |---|---|---|
 | `:289` | `'@deepseek-ai/cordis-plugin-include': '1.0.7'` | `'1.0.10'` |
 | `:291` | `'@deepseek-ai/cordis-plugin-group': '1.0.2'` | 检查 0.2.1 官方版本后决定（0.2.1 `vendor/group/` 存在） |
-| `:292` | `'@deepseek-ai/cordis-plugin-hmr': '1.0.17'` | 删除（改为 `@deepseek-ai/dsh-hmr` 的 override，版本 `0.2.1-rc.3`） |
+| `:292` | `'@deepseek-ai/cordis-plugin-hmr': '1.0.17'` | **待阶段 -1 裁决**（可能删除改为 `dsh-hmr` override，或保留并升级版本） |
 | `:293` | `'@deepseek-ai/schemastery': '3.18.2'` | `'3.18.5'`（或 `link:vendor/schemastery` 跟官方） |
 | `:294` | `'@deepseek-ai/cordis-plugin-timer': '1.1.4'` | `'1.1.7'` |
 
 > 另需检查 `cosmokit` 是否有 corum override（官方 `link:vendor/cosmokit`），若有则版本跟随 1.8.3→1.8.6。
 > `dsh-client-hmr`（`:73` override + `:327`/`:514` 历史 ignore）是 0.1.5 的客户端 hmr 包，需确认 0.2.1 是否仍存在或也被 `dsh-hmr` 取代。
 
-#### 步骤 ⑥-3：组合行处理
+#### 步骤 ⑥-3：组合行处理（待阶段 -1 裁决）
 
 corum 的组合文件（`packages/desktop/cordis.patch.yml` + `profile/corum/cordis.patch.yml`）当前**无 hmr 行**（grep 零命中）——hmr 行来自官方 `base/cordis.patch.yml`，corum 不覆写。
 
-0.2.1 升级后 base bundle 的 hmr 行自动变为 `@deepseek-ai/dsh-hmr` + `root: []`。corum 无需在自身组合文件中改 hmr 行，但需确认：
+阶段 -1 裁决后确认：
 - corum 是否有依赖 `cordis-plugin-hmr` API 的自定义代码（grep `cordis-plugin-hmr` 源码）。
-- `dsh-hmr` 的 `root: []` 配置含义（空数组 = 模块根为空，需按 profile 配置 opt-in）。
+- `dsh-hmr` 的职责与适用面（阶段 -1 已核查 `apps/cli/README.md` + `packages/boot/hmr/package.json`）。
+- 是否需要在 corum 自身组合文件中改 hmr 行。
 
 #### 步骤 ⑥-4：loader 升级验证
 
@@ -575,7 +580,7 @@ grep -rn "cordis-plugin-hmr" packages/ --include="*.ts" --include="*.json" | gre
 
 ```bash
 git add packages/desktop/desktop-host/package.json pnpm-workspace.yaml
-git commit -m "upgrade(0.2.1-rc3): dsh-hmr 替代 cordis-plugin-hmr + vendor 齐升"
+git commit -m "upgrade(0.2.1-rc3): HMR 形态核查（阶段 -1 裁决后）+ vendor 齐升"
 ```
 
 ---
@@ -639,7 +644,7 @@ find packages/desktop/build/host/node_modules/@corum -name "invariant.js" -o -na
 | 6.3 | `corum-tools/tests/invariant.spec.ts:7` import 官方子路径 `@deepseek-ai/dsh-tools/invariant`（官方也删了），若只删 InvariantRegistry import 会漏 | **中** | 步骤 ①-4 整文件删除 `corum-tools/tests/invariant.spec.ts` |
 | 6.4 | `corum-subagent/tests/continuation.spec.ts:723-724` 挂载行只挂载不断言，但删 import 后可能编译失败 | **中** | 步骤 ①-4 同步删 `:17`/`:24`/`:723-724` 四行，编译后验证 |
 | 6.5 | `corum-agent` 的 preset 面改写量取决于阶段 -1 映射结果，`import type {}` 空类型导入可能掩盖真实消费 | **中** | 步骤 ④-1 确认 `:378` 注释的 agentPreset 投影逻辑是否需要新包 `dsh-agent-preset` 的等价接口 |
-| 6.6 | `dsh-hmr` 的 `root: []` 配置 schema 变化可能影响 corum 热更新链路 | **中** | 步骤 ⑥-3 确认 corum 是否有依赖 `cordis-plugin-hmr` API 的自定义代码 |
+| 6.6 | `dsh-hmr` / `cordis-plugin-hmr` 形态未核实就替换 dep/override | **高** | 步骤 ⑥-1/⑥-2/⑥-3 待阶段 -1 裁决后再执行；禁止未核实就替换 |
 | 6.7 | vendor 齐升（loader 1.0.3→1.0.6 等）可能影响 plugin 加载行为 | **中** | 步骤 ⑥-4 升级后跑 fork-drift 守卫 |
 | 6.8 | UI 包构建三步缺一不可（`tsc -b && tsdown && node scripts/inline-css.mjs`） | **中** | 步骤 ②-3/④-5/⑤-5 的 UI 包重编译必须三步全跑 |
 | 6.9 | `desktop-host/package.json` 4 处被删包 dep（`:60`/`:75`/`:86`/`:114`）必须同步改 | **高** | 各处置对象步骤均含 desktop-host 改动 |
@@ -663,7 +668,7 @@ find packages/desktop/build/host/node_modules/@corum -name "invariant.js" -o -na
 | ③ in-process-driver | `upgrade(0.2.1-rc3): 删除 dsh-subagent-in-process-driver 依赖` | 恢复 dep + override |
 | ④ agent-presets | `upgrade(0.2.1-rc3): dsh-agent-presets → profile YAML + dsh-agent-preset` | 恢复旧包名 import + dep；profile YAML 迁移需手动回退 |
 | ⑤ session-title-llm | `upgrade(0.2.1-rc3): dsh-session-title 版本跟随 + -llm provider API 迁移` | 恢复旧版本号；provider API 迁移需手动回退 |
-| ⑥ hmr + vendor | `upgrade(0.2.1-rc3): dsh-hmr 替代 cordis-plugin-hmr + vendor 齐升` | 恢复旧 vendor override + dep |
+| ⑥ hmr + vendor | `upgrade(0.2.1-rc3): HMR 形态核查（阶段 -1 裁决后）+ vendor 齐升` | 恢复旧 vendor override + dep |
 
 ### 回滚后验证
 

@@ -3,7 +3,7 @@
 > 状态：待执行 | 前置：阶段 1（被删/更名包 + session-title API 迁移）已完成 | 工程量：中高（217 条逐条重算 + 433 条清理 + lock 重生成 + 闭包审计）
 >
 > 单一事实源：`docs/UPGRADE-0.2.1-rc3-feasibility.md`（含评审修订 §六 阶段 2）。
-> 评审证据：`~/.corum/research-reports/06867ebb-…md` E 节（override/lockfile/平台词表/指南清单详证）。
+> 评审证据：`~/.corum/research-reports/958879cc-…md` E 节（override/lockfile/平台词表/指南清单详证）。
 > 方法论参照：上次升级 0.1.3→0.1.5 的逐包循环纪律（交接文档 `HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2 三条方法论：包声明与根 override 必须同时改 / 直接验证可解析性不信扫描脚本 / 官方有系统性打包缺陷——运行时依赖被放进 devDependencies）。
 
 ---
@@ -23,10 +23,10 @@
 
 ## 2. 前置条件
 
-1. **阶段 1 已完成**：4 个被删/更名包（`dsh-code-runtime` → `dsh-ptc-runtime`、`dsh-agent-presets` → profile YAML、`dsh-invariants` 跟随删除、`dsh-subagent-in-process-driver` 并入 `dsh-subagent` activation）+ `dsh-session-title-llm` provider API 迁移 + `dsh-hmr` 替代 `cordis-plugin-hmr`（组合行改名 + 配置 schema 变化）均已落地。
+1. **阶段 1 已完成**：4 个被删/更名包（`dsh-code-runtime` → `dsh-ptc-runtime`、`dsh-agent-presets` → profile YAML、`dsh-invariants` 跟随删除、`dsh-subagent-in-process-driver` 并入 `dsh-subagent` activation）+ `dsh-session-title-llm` provider API 迁移 + HMR 形态经阶段 -1 裁决后处置均已落地。
 2. **阶段 1 的 desktop-host 依赖清单已清理**：`desktop-host/package.json` 的 4 处被删包 dep（`:60` dsh-agent-presets、`:75` dsh-code-runtime、`:86` dsh-invariants、`:114` dsh-subagent-in-process-driver）与 `build/host/package.json` 对应行已同步摘除或改名。
 3. **官方 dsh 检出已更新至 `dsh-v0.2.1-rc.3`**：`/Users/kukucai/dsh` checkout 指向该 tag。
-4. **阶段 -1（官方升级指南映射表）已完成**：7 个版本目录约 40 篇指南已产出「指南 → corum 影响映射表」。
+4. **阶段 -1（官方升级指南映射表）已完成**：7 个版本目录共 43 篇指南已产出「指南 → corum 影响映射表」。
 5. **备份就绪**：`~/.corum` 已备份（阶段 0）。
 
 ---
@@ -42,7 +42,7 @@
 | `packages/client/web/src/seed.ts` | dsh 仓 | 平台词表 9→11 对账 |
 | `packages/tooling/corum-plugin-build/src/index.ts:37` | 本仓 | `CLIENT_EXTERNALS_BASE`（6 词）决策点 |
 | `scripts/assert-packaged-boot.mjs` | 本仓 | 打包闭包审计脚本 |
-| 评审报告 E1/E2 节 | `06867ebb-…md` | override 数量修正、lockfile 风险、平台词表详证 |
+| 评审报告 E1/E2 节 | `958879cc-…md` | override 数量修正、lockfile 风险、平台词表详证 |
 
 ---
 
@@ -118,7 +118,7 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 \
 |---|---|---|---|---|
 | `@deepseek-ai/cordis` | 4.0.2 | **4.0.5** | `:288` 钉 4.0.2 | 改为 4.0.5 |
 | `@deepseek-ai/cordis-plugin-loader` | 1.0.3 | **1.0.6** | `:290` 钉 1.0.3 | 改为 1.0.6 |
-| `@deepseek-ai/cordis-plugin-hmr` | 1.0.17 | **1.0.20** | `:292` 钉 1.0.17 | ⚠️ 0.2.1 起 `base/cordis.patch.yml:20-32` 改名为 `dsh-hmr`（`packages/boot/dsh-hmr`），此处可能需删除该 override 改钉 `dsh-hmr`（阶段 1 已处理组合行改名） |
+| `@deepseek-ai/cordis-plugin-hmr` | 1.0.17 | **1.0.20** | `:292` 钉 1.0.17 | ⚠️ HMR 形态待阶段 -1 裁决（dsh-hmr 在官方 apps/cli README 是 profile-manifest/patch watcher；corum 实际引用 = desktop-host dep + override + UI meta）。此处 override 版本钉待裁决后处置 |
 | `@deepseek-ai/cordis-plugin-include` | 1.0.7 | **1.0.10** | `:289` 钉 1.0.7 | 改为 1.0.10 |
 | `@deepseek-ai/cordis-plugin-timer` | 1.1.4 | **1.1.7** | `:294` 钉 1.1.4 | 改为 1.1.7 |
 | `@deepseek-ai/schemastery` | 3.18.2 | **3.18.5** | `:293` 钉 3.18.2 | 改为 3.18.5 |
@@ -224,7 +224,7 @@ node scripts/assert-packaged-boot.mjs
 | 433 条 minimumReleaseAgeExclude 清理误删仍需要的豁免 | 中 | 逐条审查，保留 corum 仍装配的包 |
 | `CLIENT_EXTERNALS_BASE` 补 zod/react-virtual 触发白屏 | **高** | 红线 2：经 `dsh.client` 塞自定义共享模块 → 白屏，不许松绑；共享状态走 cordis 服务 |
 | `patchedDependencies` 在 lock 重生成后丢失 | 中 | 重生成后 `grep patchedDependencies pnpm-lock.yaml` 确认；丢失则手动 re-apply |
-| `dsh-hmr` 替代 `cordis-plugin-hmr` 后 override 残留旧钉 | 中 | 确认阶段 1 已处理组合行改名，此处只处理 override 版本钉 |
+| `dsh-hmr` / `cordis-plugin-hmr` 形态未核实就替换 override | **高** | HMR 形态待阶段 -1 裁决，禁止未核实就替换 override 钉版 |
 | cordis 4.0.2→4.0.5 的 11 个 commit 引入 API 变化 | 低 | cordis 是 vendored 源码级依赖，patch 升级相对稳定；fork-drift 守卫会拦住（阶段 3） |
 
 ---
