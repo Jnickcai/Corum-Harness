@@ -263,7 +263,7 @@ cordis 是 corum fork 的核心依赖（每个 fork 包都用）。0.2.1 的 cor
 
 ### 阶段 2：override 表重算
 - override 基线 217 条（`pnpm-workspace.yaml:43-306`），预计落点 250-300（非 800+）
-- 同步清理 433 条陈旧 `minimumReleaseAgeExclude`（`:307` 起，全钉 0.1.3-alpha.1）
+- 同步清理 433 条陈旧 `minimumReleaseAgeExclude`（`:307` 起，249 条钉 `0.1.3-alpha.1` + 184 条钉 `0.1.1-rc.2`）
 - 重算 `cordis-plugin-*`/cosmokit/schemastery 钉版
 - 逐包验证可解析性（参考 0.1.5 升级的"逐包循环"）
 - **增补（评审 2026-10-27）**：显式加「pnpm-lock 重生成 + `pnpm deploy --legacy` 闭包审计重跑（`scripts/assert-packaged-boot.mjs`）+ patchedDependencies（`node-pty@1.2.0-beta.15`、`@yao-pkg/pkg`）re-apply 验证」；平台词表 9→11 对账（0.2.1 `seed.ts` 新增 `zod` 与 `@tanstack/react-virtual`；决定 `packages/tooling/corum-plugin-build/src/index.ts:37` `CLIENT_EXTERNALS_BASE` 是否跟进）
@@ -317,7 +317,7 @@ corum 钉 electron 43.4.1，官方 0.2.1 用 `^44.7.0`，且 `SessionWriteLease`
 | 被删包 | 0 | 0 | **0/0/4+1 更名** |
 | 新增包组 | 少量 | 少量 | **大量** |
 | cordis 变化 | 无 | 无 | patch（4.0.2→4.0.5） |
-| 实测可参考 | §9 fork-delta | `docs/HANDOFF-2026-09-29-official-0.1.5-upgrade.md` | **无前例** |
+| 实测可参考 | §9 fork-delta | 历史交接口径（`HANDOFF-2026-09-29-official-0.1.5-upgrade.md`，当前不在库，仅作背景） | **无前例** |
 
 **建议**：本次升级的实录要新开 `docs/UPGRADE-0.2.1-rc3.md`，逐步记录，作为后续 0.2.x→0.3.x 的参照。
 

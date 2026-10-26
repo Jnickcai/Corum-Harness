@@ -40,7 +40,7 @@
 | 评审证据报告 B 节 | `~/.corum/research-reports/06867ebb-…-d847-4ac5-97e7-4edab2ac1d23.md` §B | 进程隔离全证、Electron 指纹 |
 | 评审证据报告 E2d 节 | 同上 §E2d | Electron 43.4.1 vs 44.7 指纹差 |
 | 评审证据报告 E3 节 | 同上 §E3 | acp 能力面分析（阶段 5 用，本阶段不直接用） |
-| 0.1.5 升级实录 | `docs/HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2 | 三条方法论（`--force`、npm 打包缺陷、实机不可替代） |
+| 0.1.5 升级实录 | 历史交接口径 `HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2（当前不在库，仅作背景） | 三条方法论（`--force`、npm 打包缺陷、实机不可替代） |
 | 0.1.5 会话清理前车之鉴 | 同上 §4 | 14 个 v2 会话无法迁移，备份在 `~/.corum/sessions-removed-20260929/` |
 
 ### 3.2 工具依赖
@@ -65,7 +65,7 @@
 tsc -b --force
 ```
 
-**必须 `--force`**。`tsc -b` 是增量编译，会藏住破坏点——0.1.5 升级时增量编译 0 错，`--force` 后冒出 31 处报错。这个教训已记入 `docs/HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2 方法论 ①，本次不得跳过。
+**必须 `--force`**。`tsc -b` 是增量编译，会藏住破坏点——0.1.5 升级时增量编译 0 错，`--force` 后冒出 31 处报错。这个教训已记入历史交接 `HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2 方法论 ①（当前不在库，仅作背景），本次不得跳过。
 
 **每步验证**：
 
@@ -91,17 +91,19 @@ pnpm -r run test
 **命令**：
 
 ```bash
+TMPDIR="$PWD/.corum-tmp" \
 DSH_CHECKOUT=/Users/kukucai/dsh \
 DSH_BASELINE_TAG=dsh-v0.2.1-rc.3 \
 ./scripts/verify-fork-drift.sh
 ```
 
-**判据**：退出码 0，无漂移项。
+**判据**：真实 tag 导出成功（无回落警告）+ 失败项数 ≤ 阶段 0 记录的基线 N 项（只许收敛不许扩大）。
 
 **注意**：
 
-- 0.1.5 基线有 24 项既存失败与本次升级无关（`docs/HANDOFF-2026-09-25-…` §6 已记录）。切换基线到 `dsh-v0.2.1-rc.3` 后这些既存失败应随官方方向收敛（官方也删了 `invariant.ts`，drift 应收窄而非扩大）。
+- 阶段 0 以真实 tag 导出重跑并记录了基线 N 项失败（历史交接称 24 项，但无当前在库证据；评审试跑得 23 项但 TMPDIR 失效回落 rc.2，不能当真实基线）。切换基线到 `dsh-v0.2.1-rc.3` 后既存失败应随官方方向收敛（官方也删了 `invariant.ts`，drift 应收窄而非扩大）。**未跑前不得宣称 0/23/24**。
 - `scripts/verify-fork-drift.sh` 的 `:1129` 循环清单与 `:1180` `SUBAGENT_DELTA_FILES` 已在阶段 1 去掉 `invariant.ts`（可行性文档 §三·1 新增步骤）。若未改，守卫自身误报——回阶段 1 补。
+- 运行守卫前必须设 `TMPDIR="$PWD/.corum-tmp"`（该目录已在 .gitignore），防止 `mktemp` 在 `/var/folders` 被沙箱拒后静默回落 rc.2 使基线从未真正建立。运行后确认日志无「无法导出/回落到检出工作区」。
 
 ### 4.4 实机 CDP 冲烟
 
@@ -132,11 +134,11 @@ node scripts/corum-smoke.mjs
 **Linux 冲烟**：
 
 - 参考 `corum-dev-preset/skills/corum-linux-verify` 技能流程。
-- 原生依赖必须在 Linux 上 install，交叉打包不通（`docs/HANDOFF-2026-10-08-…` §2 已验证）。
+- 原生依赖必须在 Linux 上 install，交叉打包不通（历史交接 `HANDOFF-2026-10-08-…` §2 已验证，当前不在库，仅作背景）。
 
 **Windows 冲烟**：
 
-- ⚠️ **既知缺口**：Windows 真机未验。唯一前置 = 那台闲置笔记本（`docs/HANDOFF-2026-10-08-…` §3.1）。若笔记本不可用，本阶段如实标注「Windows 未验」并记录为遗留缺口，不强制。
+- ⚠️ **既知缺口**：Windows 真机未验。唯一前置 = 那台闲置笔记本（历史交接 `HANDOFF-2026-10-08-…` §3.1，当前不在库，仅作背景）。若笔记本不可用，本阶段如实标注「Windows 未验」并记录为遗留缺口，不强制。
 
 ### 4.5 V3→V4 会话迁移预演（阶段 4 新增）
 
@@ -214,7 +216,7 @@ addon 在 43.4.1 下可加载？
 |---|---|---|
 | V1 | 全仓 typecheck | `tsc -b --force` 退出码 0，0 error |
 | V2 | 全仓测试 | 全 suite 通过，0 failed |
-| V3 | fork-drift 守卫 | `verify-fork-drift.sh` 退出码 0，0 漂移 |
+| V3 | fork-drift 守卫 | 真实 tag 导出成功（设 TMPDIR 防回落）+ 失败项数 ≤ 阶段 0 基线 N 项 |
 | V4 | macOS CDP 冲烟 | UI 渲染 + 行为 + 零 console error |
 | V5 | Linux 冲烟 | 参考 `corum-linux-verify` 技能流程通过 |
 | V6 | Windows | 如实标注「未验」或「已验」——不强制 |

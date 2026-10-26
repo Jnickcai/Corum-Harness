@@ -34,9 +34,9 @@
 |---|---|---|---|
 | 2.1 | 阶段 -1 已完成：43 篇官方升级指南已映射 | 检查「指南 → corum 影响映射表」产出物存在 | 文件存在且覆盖 `subagent-preset-composition`、`session-title-provider-strategy`、`remove-runtime-invariants` 三篇 |
 | 2.2 | 当前工作区已 commit + push | `git status --porcelain` | 空输出 |
-| 2.3 | home 完整备份 | `ls ~/.corum-backup-pre-0.2.1` | 目录存在 |
-| 2.4 | fork-drift 守卫当前基线零漂移 | `DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 ./scripts/verify-fork-drift.sh` | 全绿（已知 24 项既存失败与本升级无关，需在门禁输出中标注） |
-| 2.5 | 官方 checkout 在 `dsh-v0.2.1-rc.3` tag | `git -C /Users/kukucai/dsh describe --tags` | `dsh-v0.2.1-rc.3` |
+| 2.3 | home 完整备份 | `ls $HOME/corum-upgrade-backups/pre-0.2.1-rc3-*/home/` | 目录存在 |
+| 2.4 | fork-drift 守卫基线已建立 | `DSH_CHECKOUT=/Users/kukucai/dsh DSH_BASELINE_TAG=dsh-v0.1.5-rc.3 TMPDIR="$PWD/.corum-tmp" ./scripts/verify-fork-drift.sh` | 真实 tag 导出成功（无回落警告）+ 失败项 N 已归档（阶段 0 记录的基线 N 项，不宣称 0/23/24） |
+| 2.5 | 官方 checkout 的 `dsh-v0.2.1-rc.3` tag 存在 | `git -C /Users/kukucai/dsh for-each-ref refs/tags/dsh-v0.2.1-rc.3` | 非空（tag 存在即可，**不得要求 checkout**；当前 dsh 工作树停在 rc.2，跨版本对比用 `git show <tag>:<path>` 即可） |
 
 > **门禁失败则不得进入执行**。任一项不满足时，先完成前置再进阶段 1。
 

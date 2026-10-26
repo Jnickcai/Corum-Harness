@@ -10,7 +10,7 @@
 
 ## 1. 目标与范围
 
-将 `pnpm-workspace.yaml` 的 `overrides` 段从 0.1.5-rc.3 基线（217 条）全量重算至 0.2.1-rc.3 目标版本，同步清理陈旧的 `minimumReleaseAgeExclude` 段（433 条全钉 0.1.3-alpha.1），重算 vendor 连带钉版，重生成 lockfile，并完成打包闭包审计。
+将 `pnpm-workspace.yaml` 的 `overrides` 段从 0.1.5-rc.3 基线（217 条 = 216 个 `@deepseek-ai/*` + 1 个 `electron`）全量重算至 0.2.1-rc.3 目标版本，同步清理陈旧的 `minimumReleaseAgeExclude` 段（433 条 = 249 条 `0.1.3-alpha.1` + 184 条 `0.1.1-rc.2`），重算 vendor 连带钉版，重生成 lockfile，并完成打包闭包审计。
 
 **本阶段产出**：一份可解析、零冲突、lockfile 闭包审计全绿的 override 表。
 
@@ -55,10 +55,10 @@
 | 项 | 核实值 | 来源 |
 |---|---|---|
 | overrides 段行范围 | `pnpm-workspace.yaml:43-306` | `sed -n` 实测 |
-| overrides 总条目 | **217 条**（`@deepseek-ai/dsh-*` 209 条 + `cordis`/`cordis-plugin-*`/`schemastery`/`electron` 8 条） | `grep -c` 实测 |
+| overrides 总条目 | **217 条**（216 个 `@deepseek-ai/*` + 1 个 `electron`） | `awk '/^overrides:/{f=1;next}/^[a-zA-Z]/{f=0}f&&/^  [^ #]/{c++}END{print c+0}'` 实测 |
 | 注释自称 | 「列表 = 工作区实际安装的 206 个 dsh 包」 | `pnpm-workspace.yaml:47` |
-| 漂移 | 注释「206」与实际 209 条 dsh-* override 已漂移 **3 条** | 评审 E1 节指出 |
-| minimumReleaseAgeExclude 段 | 从 `:307` 起，共 **433 条**，全钉 `0.1.3-alpha.1` | `grep -c` 实测 |
+| 漂移 | 注释「206」与实际 216 条 `@deepseek-ai/*` override 已漂移 **10 条** | 评审 E1 节指出 |
+| minimumReleaseAgeExclude 段 | 从 `:307` 起，共 **433 条**（249 条 `0.1.3-alpha.1` + 184 条 `0.1.1-rc.2`） | `sed -n '308,$p' \| grep -cE "^\s+'@"` 实测 |
 
 **步骤 1**：修正注释口径。将 `pnpm-workspace.yaml:47` 注释中的「206 个 dsh 包」改为重算后的实际条目数，消除漂移。
 
@@ -99,12 +99,12 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 \
 
 ### 4.3 第三张表清理（minimumReleaseAgeExclude）
 
-**基线**：`pnpm-workspace.yaml:307` 起，共 **433 条**，全部钉 `@0.1.3-alpha.1`——这是历史遗留的陈旧发布年龄豁免尾。
+**基线**：`pnpm-workspace.yaml:307` 起，共 **433 条**（249 条钉 `@0.1.3-alpha.1` + 184 条钉 `@0.1.1-rc.2`）——这是历史遗留的陈旧发布年龄豁免尾。
 
 **清理策略**（评审 E1 节）：
 - **随新版重钉**：corum 仍需要的包，豁免版本从 `0.1.3-alpha.1` 更新为 `0.2.1-rc.3`
 - **删除**：corum 不再装配的包（阶段 1 被删包对应的豁免行直接删）
-- **整段评估**：433 条中大部分是 0.1.3-alpha.1 时代的发布年龄豁免；0.2.1-rc.3 是新发布，`minimumReleaseAge` 机制对新包天然不触发，多数行可删
+- **整段评估**：433 条中 249 条钉 `0.1.3-alpha.1` + 184 条钉 `0.1.1-rc.2`；0.2.1-rc.3 是新发布，`minimumReleaseAge` 机制对新包天然不触发，多数行可删
 
 **步骤 3**：逐条审查 433 条，按上述策略分类处理，产出新的 `minimumReleaseAgeExclude` 段。
 
@@ -205,8 +205,8 @@ node scripts/assert-packaged-boot.mjs
 | 1 | override 表每条可解析 | 217→250-300 条逐条 `pnpm view` 确认 registry 存在 | 逐包循环中即时验证 |
 | 2 | `pnpm install` 零报错 | 退出码 0，无 `ERR_PNPM_NO_MATCHING_VERSION` / `ERR_PNPM_INVALID_SELECTOR` | `pnpm install 2>&1 \| grep ERR_PNPM` 为空 |
 | 3 | vendor 钉版物化正确 | cordis 4.0.5、loader 1.0.6、include 1.0.10、timer 1.1.7、schemastery 3.18.5 | `ls node_modules/@deepseek-ai/cordis/package.json` + `grep version` |
-| 4 | minimumReleaseAgeExclude 清理完成 | 433 条陈旧豁免已按策略处理，无残留 0.1.3-alpha.1 钉版（除非有意保留） | `grep "0.1.3-alpha.1" pnpm-workspace.yaml` 结果可解释 |
-| 5 | 注释口径修正 | overrides 注释中的包数与实际条目数一致 | `grep -c` 对比 |
+| 4 | minimumReleaseAgeExclude 清理完成 | 433 条陈旧豁免已按策略处理，无残留 `0.1.3-alpha.1`/`0.1.1-rc.2` 钉版（除非有意保留） | `grep -E "0\.1\.3-alpha\.1|0\.1\.1-rc\.2" pnpm-workspace.yaml` 结果可解释 |
+| 5 | 注释口径修正 | overrides 注释中的包数（当前自称「206」）与实际条目数（216 个 `@deepseek-ai/*`）一致 | `awk` 段统计对比 |
 | 6 | 平台词表对账完成 | `CLIENT_EXTERNALS_BASE` 口径已拍板，与 `seed.ts` 11 词同步性已确认 | 代码检查 + build 无 `Module not found` |
 | 7 | lockfile 重生成成功 | `pnpm-lock.yaml` 重生成，`patchedDependencies` 段保留 | `grep patchedDependencies pnpm-lock.yaml` |
 | 8 | 闭包审计脚本通过 | `assert-packaged-boot.mjs` 退出码 0 | `node scripts/assert-packaged-boot.mjs && echo PASS` |
