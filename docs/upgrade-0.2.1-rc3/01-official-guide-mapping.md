@@ -1,6 +1,6 @@
 # 阶段 -1：官方升级指南映射
 
-> 状态：已完成（2026-10-22） | 前置：无（一切的前置） | 预估工程量：约 0.5-1 人日
+> 状态：已完成（2026-10-27） | 前置：无（一切的前置） | 预估工程量：约 0.5-1 人日
 > （43 篇英文正文实测约 952 行 / 75KB，阅读约 0.5h；主要工作量是逐篇 grep/映射分析）
 
 ## 1. 目标与范围
@@ -164,7 +164,7 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 docs/upgrade-gu
 | 2 | 每条影响都落到阶段 1-6 之一或标注「corum 不受影响」 | 逐行检查「归入阶段」列 | ✅ |
 | 3 | 13 篇高优先级指南有详细分析 | 每篇至少记录涉及包 + 引用点 + 动作 + 阶段 | ✅ |
 | 4 | 映射表已追加到本册附录 | 本文件附录 A 存在且非空 | ✅ |
-| 5 | 未改任何源码 | `git diff --stat HEAD` 只含 01 册（本阶段执行时）；`git status --porcelain` 非 `docs/` 路径为空 | 待指挥者核验 |
+| 5 | 未改任何源码 | `git diff --stat HEAD` 只含 01 册（本阶段执行时）；`git status --porcelain` 非 `docs/` 路径为空 | ✅（指挥者核验：commit 2637685c 仅修改01册，无源码改动） |
 
 > **门禁 5 机械判定**：`git status --porcelain` 中非 `docs/` 路径必须为空，且 `git diff --stat HEAD` 只含 01 册文件（本阶段执行时）。本阶段执行只允许修改 01 自身。**不得要求不存在的实录文件**——实录暂记本册附录 B（见 §9），阶段 0 建骨架时转录。
 
@@ -397,14 +397,14 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 docs/upgrade-gu
 7. **新发现：compile.ts preset 行含 backgroundMode**（#1/#2/#16）：corum-agent/src/compile.ts:259,265,271 的 tool-subagent-fork/codex/claude-code preset 行都含 `backgroundMode: 'continuable'/'one-shot'`，需随 subagent-activations 删除。预填未提及。已在附录 A #1/#26 补充。
 
 ### 时间
-- 2026-10-22 完成全部 43 篇通读 + 逐篇 grep 分析 + 附录 A/B 填写 + HMR 实证 + 自查提交。实际耗时约 3 小时。
+- 2026-10-27 完成全部 43 篇通读 + 逐篇 grep 分析 + 附录 A/B 填写 + HMR 实证 + 自查提交。实际耗时约 3 小时。
 ```
 
 ---
 
 ## 开放问题：0.2.1 HMR 形态——已实证并裁决
 
-> **状态：已实证（2026-10-22）。** 结论：`dsh-hmr` 是 `cordis-plugin-hmr` 的官方继任包（不是简单改名，职责扩展），corum 的 `desktop-host` dep + `pnpm-workspace` override **应替换为 `dsh-hmr`**。
+> **状态：已实证（2026-10-27）。** 结论：`dsh-hmr` 是 `cordis-plugin-hmr` 的官方继任包（不是简单改名，职责扩展），corum 的 `desktop-host` dep + `pnpm-workspace` override **应替换为 `dsh-hmr`**。
 
 ### 实证证据
 
