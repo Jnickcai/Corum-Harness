@@ -37,7 +37,7 @@
 | 输入 | 路径 / 来源 | 用途 |
 |---|---|---|
 | 可行性评估（单一事实源） | `docs/UPGRADE-0.2.1-rc3-feasibility.md` | 阶段定义、评审修订 |
-| 评审证据报告 B 节 | `~/.corum/research-reports/958879cc-…-048f-432f-af16-9c65743c5345.md` §B | 进程隔离全证、Electron 指纹 |
+| 评审证据报告 B 节 | `~/.corum/research-reports/06867ebb-…-d847-4ac5-97e7-4edab2ac1d23.md` §B | 进程隔离全证、Electron 指纹 |
 | 评审证据报告 E2d 节 | 同上 §E2d | Electron 43.4.1 vs 44.7 指纹差 |
 | 评审证据报告 E3 节 | 同上 §E3 | acp 能力面分析（阶段 5 用，本阶段不直接用） |
 | 0.1.5 升级实录 | `docs/HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2 | 三条方法论（`--force`、npm 打包缺陷、实机不可替代） |

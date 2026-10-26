@@ -129,11 +129,11 @@ git -C /Users/kukucai/dsh rev-parse HEAD
 ```bash
 # 统计 overrides 段条目数（43-306 行）
 sed -n '43,306p' pnpm-workspace.yaml | grep -c "^\s*@deepseek-ai\|^\s*[a-z]"
-# 预期：217 条（评审报告 958879cc §E1 核实）
+# 预期：217 条（评审报告 06867ebb §E1 核实）
 
 # 统计 minimumReleaseAgeExclude 段条目数（307 行起）
 sed -n '307,$p' pnpm-workspace.yaml | grep -c "@deepseek-ai"
-# 预期：433 条（评审报告 958879cc §E1 核实，全钉 0.1.3-alpha.1 陈旧）
+# 预期：433 条（评审报告 06867ebb §E1 核实，全钉 0.1.3-alpha.1 陈旧）
 ```
 
 **5b. fork 包基线**

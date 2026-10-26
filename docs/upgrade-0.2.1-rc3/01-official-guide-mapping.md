@@ -27,7 +27,7 @@ guide.zh.md + guide.i18n.yaml。本阶段只读英文 `guide.md`（43 个），�
 | # | 条件 | 验证方式 | 状态 |
 |---|---|---|---|
 | 1 | 可行性文档已通读 | `docs/UPGRADE-0.2.1-rc3-feasibility.md` 在 HEAD | ☐ |
-| 2 | 三份评审报告已可访问 | `~/.corum/research-reports/{e9de057a,abf2af7e,958879cc}-*.md` 可读 | ☐ |
+| 2 | 六份评审报告已可访问 | 原三份 `~/.corum/research-reports/{885858d9,5c35a73b,06867ebb}-*.md` 可读（后续阶段基础证据）；新增三份 `{e9de057a,abf2af7e,958879cc}-*.md` 可读（阶段 -1 专用） | ☐ |
 | 3 | dsh 仓 tag `dsh-v0.2.1-rc.3` 存在 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.2.1-rc.3'` | ☐ |
 
 > 无代码前置——本阶段纯文档工作。
@@ -38,7 +38,7 @@ guide.zh.md + guide.i18n.yaml。本阶段只读英文 `guide.md`（43 个），�
 |---|---|---|
 | 官方升级指南 | `dsh-v0.2.1-rc.3:docs/upgrade-guide/` | 逐篇通读（只读 guide.md） |
 | 可行性文档 §六阶段 -1 | `docs/UPGRADE-0.2.1-rc3-feasibility.md` | 已列必读清单 |
-| 评审报告 958879cc §E2-c | `~/.corum/research-reports/958879cc-*.md` | 确认 7 目录 43 篇 |
+| 评审报告 06867ebb §E2-c | `~/.corum/research-reports/06867ebb-*.md` | 确认 7 目录 43 篇 |
 | corum fork 包清单 | `packages/plugins/{agent,session,ui}/` 下 50 个包 | 评估影响面 |
 | corum 组合文件 | `packages/desktop/cordis.patch.yml` + `profile/corum/cordis.patch.yml` | 判断是否受影响 |
 | corum override 表 | `pnpm-workspace.yaml:43-306`（217 条） | 判断包依赖面 |
@@ -64,7 +64,7 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 docs/upgrade-gu
 | `v0.2.1-alpha.4/` | 1 | |
 | `v0.2.1-rc.2/` | 1 | |
 
-> 来源：评审报告 958879cc §E2-c（`git ls-tree` 实测）。全树 129 文件 = 43 篇 × 3（guide.md + guide.zh.md + guide.i18n.yaml）。
+> 来源：评审报告 06867ebb §E2-c（`git ls-tree` 实测）。全树 129 文件 = 43 篇 × 3（guide.md + guide.zh.md + guide.i18n.yaml）。
 
 ### 步骤 2：逐篇读取指南内容
 
@@ -106,7 +106,7 @@ wc -l /tmp/upgrade-guides-all.txt
 5. **归入哪个阶段**？阶段 1（被删包）/ 2（override）/ 3（fork rebase）/ 4（验证）/ 5（进程隔离）/ 6（sidecar）/ 标注「corum 不受影响」。
 6. **是否只改服务名/事件名/RPC 面/配置 schema 而不改包名**？若是，则必须 grep corum 的 `inject('...')` / `ctx.get('...')` 调用点、两份 `cordis.patch.yml`、`scripts/verify-fork-drift.sh` 的事件 allowlist——**不得只 grep 包名**（包名没变不代表无影响：服务名/RPC 面变了会断 inject）。
 
-**已知必读清单**（可行性文档 §六 + 评审报告 958879cc §E2-c 确认与 corum 直接相关，共 **13 篇**）：
+**已知必读清单**（可行性文档 §六 + 评审报告 06867ebb §E2-c 确认与 corum 直接相关，共 **13 篇**）：
 
 | 指南篇名 | 所在版本目录 | 为何必读 |
 |---|---|---|
@@ -172,8 +172,8 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 docs/upgrade-gu
 
 | 风险 | 等级 | 缓解 |
 |---|---|---|
-| 指南正文未明确包名，需交叉考古 commit | 中 | 以可行性文档 §三 + 评审报告 e9de057a 为权威引用点清单，指南只补充迁移手法 |
-| corum 引用点遗漏（grep 漏报） | 中 | 评审报告 e9de057a 已逐文件逐行核对 50 个 fork 包的 package.json + tsdown.config.ts + src/，以报告为准 |
+| 指南正文未明确包名，需交叉考古 commit | 中 | 以可行性文档 §三 + 评审报告 885858d9 为权威引用点清单，指南只补充迁移手法 |
+| corum 引用点遗漏（grep 漏报） | 中 | 评审报告 885858d9 已逐文件逐行核对 50 个 fork 包的 package.json + tsdown.config.ts + src/，以报告为准 |
 | 指南描述的 API 变化与 corum 实际用法不匹配 | 低 | 逐篇读指南时同步 grep corum 仓确认实际用法 |
 | 某篇指南涉及 corum 未装配的包 | 低 | 标注「corum 不受影响」即可，不影响后续阶段 |
 | 只 grep 包名漏掉服务名/RPC 面/事件名变更 | 中 | 步骤 3 第 6 问强制 grep `inject('...')`/`ctx.get('...')`/两份 patch/事件 allowlist |
@@ -215,7 +215,7 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 docs/upgrade-gu
 ## 附录 A：指南 → corum 影响映射表
 
 > **执行时填入**。以下为预填模板（高优先级 13 篇已预填，其余 30 篇执行时逐篇补全）。
-> 空行在执行阶段 -1 时逐篇补全。
+> **执行阶段 -1 时须逐篇补满 43 条有效记录，不得留占位行**（门禁计数要求有效映射条目 ≥ 43）。
 
 | # | 指南篇名 | 版本目录 | 涉及官方包 | corum 引用点 | 影响的 fork 包 | 所需动作 | 归入阶段 | 横切标签 |
 |---|---|---|---|---|---|---|---|---|
@@ -232,10 +232,9 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 docs/upgrade-gu
 | 11 | experimental-package-composition | v0.2.1-alpha.1 | 实验性包组合 | corum disabled 官方行 + insert fork 行四组（`packages/desktop/cordis.patch.yml:199/207/224/236`） | — | 阶段 3；新组合语义「只 enable 被删行的 patch 不插入插件」，四组 disabled+insert 需重验（关联红线 5：不得 filter disabled 行） | 3 | — |
 | 12 | web-listener-trust-config | v0.2.1-alpha.1 | webRuntime→webStartup、trustedHosts | `packages/desktop/cordis.patch.yml:36-41` trustedHosts:[] + `src/host/boot.ts:524-528` 四行链 | — | webRuntime→webStartup 配置迁移、trustedHosts 配置迁移 | 1+3 | — |
 | 13 | plugin-install-over-installed | v0.2.1-alpha.2 | installBundle/removeBundle | corum-extension-pack install-local/uninstall、corum-ide-plugin-manager-ui、corum-rpc-client | corum-extension-pack, corum-ide-plugin-manager-ui, corum-rpc-client | HMR 下 installBundle 对已安装包报 already-installed，需先 removeBundle | 3+4 | — |
-| 14~43 | _（逐篇补充其余 30 篇）_ | _ | _ | _ | _ | _ | _ | _ |
 
 > **填表纪律**：
-> - 「corum 引用点」列必须给出具体文件:行号（从评审报告 e9de057a 取或 grep 确认），不能只写「有」。
+> - 「corum 引用点」列必须给出具体文件:行号（从评审报告 885858d9 取或 grep 确认），不能只写「有」。
 > - 「归入阶段」列不能留空——要么写阶段号，要么写「corum 不受影响」。
 > - 待确认项在执行时补全，不留空行。
 

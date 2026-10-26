@@ -50,8 +50,8 @@
 
 ### 3.2 评审证据报告（含全部精确路径行号）
 
-- `~/.corum/research-reports/e9de057a-8f2e-4383-bf5a-1a57b6c77dc7.md`——被删包引用点核查。
-- `~/.corum/research-reports/abf2af7e-8ef0-4795-9be4-dbb45f086b78.md`——invariants 方案 A 证据链核查。
+- `~/.corum/research-reports/885858d9-8c4b-427e-ada0-87fbe675a96a.md`——被删包引用点核查。
+- `~/.corum/research-reports/5c35a73b-1c59-49ef-9bfa-d0d73763dbf6.md`——invariants 方案 A 证据链核查。
 
 ### 3.3 官方只读 checkout
 

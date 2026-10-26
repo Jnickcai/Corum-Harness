@@ -53,7 +53,7 @@
 | 输入 | 路径 / 来源 | 用途 |
 |---|---|---|
 | 可行性评估（单一事实源） | `docs/UPGRADE-0.2.1-rc3-feasibility.md` §六 阶段 5 | 定位改写原文 |
-| 评审证据 §E3 | `~/.corum/research-reports/958879cc-…-048f-432f-af16-9c65743c5345.md` §E3 | acp 能力面分析、BUG 路径证实 |
+| 评审证据 §E3 | `~/.corum/research-reports/06867ebb-…-d847-4ac5-97e7-4edab2ac1d23.md` §E3 | acp 能力面分析、BUG 路径证实 |
 | 评审证据 §B2 | 同上 §B2 | corum 装配的是 in-process 变体、打包产物实证 |
 | 原始 BUG | commit `cf58d502` | 卸载扩展包破坏活会话 |
 | fork-delta 台账 | `docs/fork-delta.md` §10 | corum-subagent fork 范围 |

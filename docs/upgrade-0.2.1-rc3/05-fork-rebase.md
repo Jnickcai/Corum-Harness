@@ -3,7 +3,7 @@
 > 状态：待执行 | 前置：阶段 1（被删/更名包）+ 阶段 2（override 重算 + lock 重生成）已完成 | 工程量：高（50 包 × 6026 commit 跨度，历次升级之最）
 >
 > 单一事实源：`docs/UPGRADE-0.2.1-rc3-feasibility.md`（含评审修订 §六 阶段 3）。
-> 评审证据：`~/.corum/research-reports/e9de057a-…md`（fork 台账落后：实 50 个、fork-delta.md 只登记到 17）；`958879cc-…md` E3 节（corum-subagent rebase 是单独大头）。
+> 评审证据：`~/.corum/research-reports/885858d9-…md`（fork 台账落后：实 50 个、fork-delta.md 只登记到 17）；`06867ebb-…md` E3 节（corum-subagent rebase 是单独大头）。
 > fork 台账 + 升级 runbook：`docs/fork-delta.md`（§5 runbook、§10 corum-subagent 详录、§10.3-5 沙箱钳制三接线回归门禁）。
 > 方法论参照：交接文档 `HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2（逐包循环 / 包声明与 override 同时改 / 直接验证可解析性 / 实机验证不可替代）。
 
@@ -142,7 +142,7 @@ ls -d packages/plugins/{agent,session,ui}/*/
 
 ### 4.4 单列大头：corum-subagent（独立小节 + 独立排期建议）
 
-**为何单独成批**（评审 E3 节 + 958879cc 报告）：
+**为何单独成批**（评审 E3 节 + 06867ebb 报告）：
 
 1. **fork 基线最旧**：corum-subagent fork 自官方 **0.1.3-alpha.1**（其余 fork 多为 0.1.5-rc.3），距官方 0.2.1 跨度最大。
 2. **官方热区直击 fork 增量**：
@@ -172,7 +172,7 @@ ls -d packages/plugins/{agent,session,ui}/*/
 
 ### 4.5 6026 commit 跨度的破坏性 API 变更发现与记录
 
-**背景**：0.1.5-rc.3 → 0.2.1-rc.3 共 6026 commit / 12855 文件 / 161 万新增行（已验证，958879cc 报告 A 节）。这是历次升级最大跨度（上次 0.1.3→0.1.5 约 200 commit）。
+**背景**：0.1.5-rc.3 → 0.2.1-rc.3 共 6026 commit / 12855 文件 / 161 万新增行（已验证，06867ebb 报告 A 节）。这是历次升级最大跨度（上次 0.1.3→0.1.5 约 200 commit）。
 
 **处置**：破坏性 API 变更**在逐包 rebase 中发现并记录**（可行性文档 §七 风险清单第 4 项）。不预先全量扫描 6026 commit——成本太高且 fork-delta 台账 + 官方升级指南已覆盖大部分热区。
 

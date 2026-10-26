@@ -57,7 +57,7 @@
 | 输入 | 路径 / 来源 | 用途 |
 |---|---|---|
 | 可行性评估（单一事实源） | `docs/UPGRADE-0.2.1-rc3-feasibility.md` §2.2 + §六 阶段 6 | 定位 + 可复用积木 |
-| 评审证据 §B3 | `~/.corum/research-reports/958879cc-…-048f-432f-af16-9c65743c5345.md` §B3 | 官方未做顶层进程化全证 |
+| 评审证据 §B3 | `~/.corum/research-reports/06867ebb-…-d847-4ac5-97e7-4edab2ac1d23.md` §B3 | 官方未做顶层进程化全证 |
 | 评审证据 §B4 | 同上 §B4 | SessionWriteLease 时间线 + flock addon |
 | 原始 BUG | commit `cf58d502` | 顶层会话路径问题定义 |
 | 红线 7（三平台） | `AGENTS.md` 红线 7 + `docs/dev-conventions.md` §16 | 三平台 fork/信号量差异 |

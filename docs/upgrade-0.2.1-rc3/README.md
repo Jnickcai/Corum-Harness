@@ -15,7 +15,8 @@
 **本册**：升级执行文档的索引与总览，不包含执行步骤本身。各阶段执行手册见下方索引表。
 
 > 单一事实源：`docs/UPGRADE-0.2.1-rc3-feasibility.md`（已含 2026-10-27 评审修订）。
-> 评审证据报告：`~/.corum/research-reports/e9de057a-…`、`abf2af7e-…`、`958879cc-….md`（只读参考）。
+> 评审证据报告（原三份，后续所有阶段的基础证据）：`~/.corum/research-reports/885858d9-…`（被删包引用点/50 fork 台账核查）、`5c35a73b-…`（invariants 方案 A 证据链）、`06867ebb-….md`（进程隔离/升级路径/数量级/override/acp）。
+> 阶段 -1 新增三份（只用于阶段 -1 相关输入/评审记录）：`e9de057a-…`（指南清单/目录/文本量）、`abf2af7e-…`（corum 触点/指南内容）、`958879cc-….md`（可执行性/门禁/实录）。
 > 实录文件：`docs/UPGRADE-0.2.1-rc3.md`（阶段 0 创建骨架；阶段 -1 实录暂记 01 册附录 B，阶段 0 建骨架时转录）。
 
 ---
@@ -103,8 +104,8 @@ graph TD
 | cordis 版本 | 无变化 | **4.0.2 → 4.0.5**（11 commits，patch 级） |
 | 时间跨度 | — | **2026-09-22 → 2026-10-23**（一个月） |
 
-> 数据来源：可行性文档 §一 + 评审报告 958879cc §A（`git rev-list --count` /
-> `git diff --shortstat` 原始命令输出验证）。override 基线 217 条由评审报告 958879cc §E1
+> 数据来源：可行性文档 §一 + 评审报告 06867ebb §A（`git rev-list --count` /
+> `git diff --shortstat` 原始命令输出验证）。override 基线 217 条由评审报告 06867ebb §E1
 > 核实（`pnpm-workspace.yaml:43-306`，其中 `@deepseek-ai/dsh-*` 211 条 + 其余 6 条）。
 
 ---

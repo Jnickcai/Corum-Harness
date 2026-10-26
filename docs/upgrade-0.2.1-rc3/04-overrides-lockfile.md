@@ -3,7 +3,7 @@
 > 状态：待执行 | 前置：阶段 1（被删/更名包 + session-title API 迁移）已完成 | 工程量：中高（217 条逐条重算 + 433 条清理 + lock 重生成 + 闭包审计）
 >
 > 单一事实源：`docs/UPGRADE-0.2.1-rc3-feasibility.md`（含评审修订 §六 阶段 2）。
-> 评审证据：`~/.corum/research-reports/958879cc-…md` E 节（override/lockfile/平台词表/指南清单详证）。
+> 评审证据：`~/.corum/research-reports/06867ebb-…md` E 节（override/lockfile/平台词表/指南清单详证）。
 > 方法论参照：上次升级 0.1.3→0.1.5 的逐包循环纪律（交接文档 `HANDOFF-2026-09-29-official-0.1.5-upgrade.md` §2 三条方法论：包声明与根 override 必须同时改 / 直接验证可解析性不信扫描脚本 / 官方有系统性打包缺陷——运行时依赖被放进 devDependencies）。
 
 ---
@@ -42,7 +42,7 @@
 | `packages/client/web/src/seed.ts` | dsh 仓 | 平台词表 9→11 对账 |
 | `packages/tooling/corum-plugin-build/src/index.ts:37` | 本仓 | `CLIENT_EXTERNALS_BASE`（6 词）决策点 |
 | `scripts/assert-packaged-boot.mjs` | 本仓 | 打包闭包审计脚本 |
-| 评审报告 E1/E2 节 | `958879cc-…md` | override 数量修正、lockfile 风险、平台词表详证 |
+| 评审报告 E1/E2 节 | `06867ebb-…md` | override 数量修正、lockfile 风险、平台词表详证 |
 
 ---
 
