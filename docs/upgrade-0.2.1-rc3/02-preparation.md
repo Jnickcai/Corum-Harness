@@ -1,6 +1,8 @@
 # 阶段 0：前置准备
 
-> 状态：待开工 | 前置：阶段 -1（官方升级指南映射） | 预估工程量：约 0.5 人日（备份 + 守卫 + 快照记录）
+> 状态：已完成 | 前置：阶段 -1（官方升级指南映射） | 预估工程量：约 0.5 人日（备份 + 守卫 + 快照记录）
+>
+> **执行完成时间**：2026-10-27 09:15。备份路径：`~/corum-upgrade-backups/pre-0.2.1-rc3-20261027-090017`。fork-drift 真实基线 N=3。实录文件：`docs/UPGRADE-0.2.1-rc3.md`。
 >
 > **平台范围**：本册及阶段 0-3 均在 macOS 执行；Linux/Windows 实机验证仅到阶段 4（`06-verification.md`），阶段 0 的备份/守卫/快照命令不承诺跨平台。
 
@@ -24,9 +26,9 @@
 
 | # | 条件 | 验证方式 | 状态 |
 |---|---|---|---|
-| 1 | 阶段 -1 退出门禁通过 | `01-official-guide-mapping.md` 附录 A 映射表已填全（43/43 篇）+ 附录 B 实录已填 | ☐ |
-| 2 | 当前工作区在 `main` 分支 | `git branch --show-current` 输出 `main` | ☐ |
-| 3 | dsh 仓 tag 可读 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.1.5-rc.3'` 返回非空 | ☐ |
+| 1 | 阶段 -1 退出门禁通过 | `01-official-guide-mapping.md` 附录 A 映射表已填全（43/43 篇）+ 附录 B 实录已填 | ✅ |
+| 2 | 当前工作区在 `main` 分支 | `git branch --show-current` 输出 `main` | ✅ |
+| 3 | dsh 仓 tag 可读 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.1.5-rc.3'` 返回非空 | ✅ |
 
 > **评审时快照（2026-10-27）**：HEAD=`ff51ee81`（`docs: 收口阶段-1指南映射门禁与完成状态`），本地 `main` 领先 `origin/main` **15 笔提交**。执行时须动态确认实际 HEAD 与领先数（`git log --oneline origin/main..HEAD | wc -l`），不得照抄此数字。
 
@@ -568,19 +570,19 @@ scripts/corum-instance.sh status --home=verify
 
 | # | 标准 | 判定方式 | 状态 |
 |---|---|---|---|
-| 1 | `~/.corum` 已完整备份（排除 engines/sd-models + bin/*.part） | `$BACKUP_ROOT/home/` 存在 + 关键子目录（sessions/profiles/skills/extension-packs/.agent-presets/storages）存在且非空 + 稳定文件 SHA256 一致（只显示 hash） | ☐ |
-| 2 | 主 user-data 已备份 | `$BACKUP_ROOT/user-data/` 存在 | ☐ |
-| 3 | Corum.app 已备份（版本 0.7.0） | `$BACKUP_ROOT/Corum.app/` 存在 + Info.plist 版本 = 0.7.0 | ☐ |
-| 4 | 备份 manifest 已生成 | `$BACKUP_ROOT/manifest.md` 存在（含起止时间、源/目标路径、git HEAD/branch、app 版本、排除项、磁盘占用） | ☐ |
-| 5 | kv.sqlite 一致性备份 | `sqlite3 $BACKUP_DB "PRAGMA integrity_check;"` 输出 ok + 备份目录无 WAL/SHM 残留 | ☐ |
+| 1 | `~/.corum` 已完整备份（排除 engines/sd-models + bin/*.part） | `$BACKUP_ROOT/home/` 存在 + 关键子目录（sessions/profiles/skills/extension-packs/.agent-presets/storages）存在且非空 + 稳定文件 SHA256 一致（只显示 hash） | ✅ |
+| 2 | 主 user-data 已备份 | `$BACKUP_ROOT/user-data/` 存在 | ✅ |
+| 3 | Corum.app 已备份（版本 0.7.0） | `$BACKUP_ROOT/Corum.app/` 存在 + Info.plist 版本 = 0.7.0 | ✅ |
+| 4 | 备份 manifest 已生成 | `$BACKUP_ROOT/manifest.md` 存在（含起止时间、源/目标路径、git HEAD/branch、app 版本、排除项、磁盘占用） | ✅ |
+| 5 | kv.sqlite 一致性备份 | `sqlite3 $BACKUP_DB "PRAGMA integrity_check;"` 输出 ok + 备份目录无 WAL/SHM 残留 | ✅ |
 | 6 | 工作区干净且已 push（或阻塞待授权） | `git status --short` 输出空 + `git log --oneline origin/main..HEAD` 输出空；未获 push 授权时标阻塞 | ☐ |
-| 7 | fork-drift 真实基线已建立 | 日志无「无法导出/回落」+ 真实 tag 导出成功 + 失败项数 N 已归档到实录 | ☐ |
-| 8 | dsh 仓 tag `dsh-v0.2.1-rc.3` 存在 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.2.1-rc.3'` 非空 | ☐ |
-| 9 | 基线快照已记入实录 | 实录文件含基线快照表（override/fork/版本号/node/pnpm/git HEAD/主实例形态/官方包数） | ☐ |
-| 10 | 实录文件骨架已创建 | `docs/UPGRADE-0.2.1-rc3.md` 存在 + 含各阶段标题 + 阶段 -1 实录已从 01 附录 B 完整转录（各小节可查）+ 回滚最低集合清单 | ☐ |
-| 11 | 实例状态已确认（只读） | 实录中记录主实例 + verify 实例形态/home/port/PID + verify 共写 home 风险 + 禁止启停纪律 | ☐ |
-| 12 | 稳定目录二次 rsync dry-run 无差异 | `rsync -a --dry-run --exclude='engines/sd-models/' --exclude='bin/*.part' ~/.corum/ $BACKUP_ROOT/home/` 无差异输出（live sessions/storages/run 允许备份窗口内变化并记录） | ☐ |
-| 13 | 当前会话 cf58d502 相关文件存在于备份 | `find $BACKUP_ROOT/home/sessions/ -path '*cf58d502*'` 返回非空（该会话为目录，内含 session.v3.jsonl.zstd + session.lock） | ☐ |
+| 7 | fork-drift 真实基线已建立 | 日志无「无法导出/回落」+ 真实 tag 导出成功 + 失败项数 N 已归档到实录 | ✅ |
+| 8 | dsh 仓 tag `dsh-v0.2.1-rc.3` 存在 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.2.1-rc.3'` 非空 | ✅ |
+| 9 | 基线快照已记入实录 | 实录文件含基线快照表（override/fork/版本号/node/pnpm/git HEAD/主实例形态/官方包数） | ✅ |
+| 10 | 实录文件骨架已创建 | `docs/UPGRADE-0.2.1-rc3.md` 存在 + 含各阶段标题 + 阶段 -1 实录已从 01 附录 B 完整转录（各小节可查）+ 回滚最低集合清单 | ✅ |
+| 11 | 实例状态已确认（只读） | 实录中记录主实例 + verify 实例形态/home/port/PID + verify 共写 home 风险 + 禁止启停纪律 | ✅ |
+| 12 | 稳定目录二次 rsync dry-run 无差异 | `rsync -a --dry-run --exclude='engines/sd-models/' --exclude='bin/*.part' ~/.corum/ $BACKUP_ROOT/home/` 无差异输出（live sessions/storages/run 允许备份窗口内变化并记录） | ✅ |
+| 13 | 当前会话 cf58d502 相关文件存在于备份 | `find $BACKUP_ROOT/home/sessions/ -path '*cf58d502*'` 返回非空（该会话为目录，内含 session.v3.jsonl.zstd + session.lock） | ✅ |
 
 ## 7. 风险与缓解
 
