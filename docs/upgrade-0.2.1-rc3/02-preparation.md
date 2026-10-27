@@ -575,7 +575,7 @@ scripts/corum-instance.sh status --home=verify
 | 3 | Corum.app 已备份（版本 0.7.0） | `$BACKUP_ROOT/Corum.app/` 存在 + Info.plist 版本 = 0.7.0 | ✅ |
 | 4 | 备份 manifest 已生成 | `$BACKUP_ROOT/manifest.md` 存在（含起止时间、源/目标路径、git HEAD/branch、app 版本、排除项、磁盘占用） | ✅ |
 | 5 | kv.sqlite 一致性备份 | `sqlite3 $BACKUP_DB "PRAGMA integrity_check;"` 输出 ok + 备份目录无 WAL/SHM 残留 | ✅ |
-| 6 | 工作区干净且已 push（或阻塞待授权） | `git status --short` 输出空 + `git log --oneline origin/main..HEAD` 输出空；未获 push 授权时标阻塞 | ☐ |
+| 6 | 工作区干净且已 push（或阻塞待授权） | `git status --short` 输出空 + `git log --oneline origin/main..HEAD` 输出空；未获 push 授权时标阻塞 | 🚧 阻塞（已授权但 main 受分支保护拒绝直推，需走 PR） |
 | 7 | fork-drift 真实基线已建立 | 日志无「无法导出/回落」+ 真实 tag 导出成功 + 失败项数 N 已归档到实录 | ✅ |
 | 8 | dsh 仓 tag `dsh-v0.2.1-rc.3` 存在 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.2.1-rc.3'` 非空 | ✅ |
 | 9 | 基线快照已记入实录 | 实录文件含基线快照表（override/fork/版本号/node/pnpm/git HEAD/主实例形态/官方包数） | ✅ |
