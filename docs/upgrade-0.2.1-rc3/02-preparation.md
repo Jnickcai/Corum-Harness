@@ -483,7 +483,7 @@ git -C /Users/kukucai/dsh ls-tree -r --name-only dsh-v0.2.1-rc.3 | grep 'package
 - 备份时间：<填>
 - 备份路径：<填 $BACKUP_ROOT>
 - 工作区 commit：<填 hash>
-- push 结果：<填或阻塞待授权>
+- push 结果：直推被 GH006 拒绝，改经 PR #155 合并完成远程回滚点
 - fork-drift 结果：<N 项，归档>
 - 偏差记录：<若有>
 
@@ -575,7 +575,7 @@ scripts/corum-instance.sh status --home=verify
 | 3 | Corum.app 已备份（版本 0.7.0） | `$BACKUP_ROOT/Corum.app/` 存在 + Info.plist 版本 = 0.7.0 | ✅ |
 | 4 | 备份 manifest 已生成 | `$BACKUP_ROOT/manifest.md` 存在（含起止时间、源/目标路径、git HEAD/branch、app 版本、排除项、磁盘占用） | ✅ |
 | 5 | kv.sqlite 一致性备份 | `sqlite3 $BACKUP_DB "PRAGMA integrity_check;"` 输出 ok + 备份目录无 WAL/SHM 残留 | ✅ |
-| 6 | 工作区干净且已 push（或阻塞待授权） | `git status --short` 输出空 + `git log --oneline origin/main..HEAD` 输出空；未获 push 授权时标阻塞 | 🚧 阻塞（已授权但 main 受分支保护拒绝直推，需走 PR） |
+| 6 | 工作区干净且已 push | `git status --short` 输出空 + `git log --oneline origin/main..HEAD` 输出空 | ✅ 完成（远程经 PR #155：直推被 GH006 拒绝，改经 PR 合并完成远程回滚点） |
 | 7 | fork-drift 真实基线已建立 | 日志无「无法导出/回落」+ 真实 tag 导出成功 + 失败项数 N 已归档到实录 | ✅ |
 | 8 | dsh 仓 tag `dsh-v0.2.1-rc.3` 存在 | `git -C /Users/kukucai/dsh tag -l 'dsh-v0.2.1-rc.3'` 非空 | ✅ |
 | 9 | 基线快照已记入实录 | 实录文件含基线快照表（override/fork/版本号/node/pnpm/git HEAD/主实例形态/官方包数） | ✅ |
@@ -593,7 +593,7 @@ scripts/corum-instance.sh status --home=verify
 | fork-drift 守卫 mktemp 在 /var/folders 被沙箱拒 | 高 | 设 `TMPDIR="$PWD/.corum-tmp"`（该目录已在 .gitignore）防止回落 rc.2；运行后必须确认日志无回落警告 |
 | fork-drift「24 项既存失败」无在库证据 | 中 | 阶段 0 必须以真实 tag 导出重跑记录实际 N 项；不宣称 0/23/24；不修改守卫登记或 fork 源码 |
 | 工作区有 untracked 文件遗漏提交 | 低 | `git status` 确认干净；fork 包源码都在 `packages/plugins/` 下 |
-| push 推送全部未推送提交 | 中 | push 标【需用户授权】，说明会推送全部未推送提交；未获授权标阻塞 |
+| push 推送全部未推送提交 | 中 | push 标【需用户授权】，说明会推送全部未推送提交；直推被 GH006 拒绝后改经 PR #155 合并完成远程回滚点 |
 | dsh 仓 checkout 被误改 | 低 | 只用 `git show` / `git ls-tree`，不 checkout；dsh 仓只读 |
 | 实录文件忘记 `git add -f` | 中 | `docs/` 被 `.gitignore:76` 忽略；新建文件必须 `git add -f`；已有升级文档靠强制跟踪入库 |
 | 备份目录命名冲突 | 低 | 统一带时间戳 `$HOME/corum-upgrade-backups/pre-0.2.1-rc3-YYYYmmdd-HHMMSS` + `test ! -e` 禁止覆盖 |
@@ -651,7 +651,7 @@ scripts/corum-instance.sh status --home=verify
 
 1. **步骤 1**：备份命令 + 备份根目录路径 + 备份目录大小 + 耗时 + 排除项 + manifest 内容。
 2. **步骤 2**：kv.sqlite `.backup` 命令 + integrity_check 输出 + WAL/SHM 删除确认 + user-data 热副本 caveat。
-3. **步骤 3**：工作区 `git status` 输出 + commit hash + push 结果（或阻塞待授权）。
+3. **步骤 3**：工作区 `git status` 输出 + commit hash + push 结果（直推被 GH006 拒绝 → 改经 PR #155 合并完成远程回滚点）。
 4. **步骤 4**：fork-drift 守卫的完整输出 + TMPDIR 设置 + 确认无回落 + exit code + 真实 tag + 失败项清单。
 5. **步骤 5**：`git tag -l` 输出 + `git rev-parse dsh-v0.2.1-rc.3` 输出 + 当前 dsh HEAD。
 6. **步骤 6**：基线快照表（override 条目数 217=216+1 / 433=249+184 / fork 包数 / 版本号 / node/pnpm / git HEAD+branch / 主实例形态 / 官方包总数 278→362 口径）。

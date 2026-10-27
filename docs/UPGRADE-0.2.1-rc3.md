@@ -253,7 +253,7 @@
 - 执行前 git HEAD：2c205dcc240293eb3688eac8b86fd377fa33d9ac
 - 执行前未推送提交数：16（动态确认 `git log --oneline origin/main..HEAD | wc -l`）
 - 工作区状态：已提交本阶段文档（commit `ba46d008`，3 files changed, 352 insertions(+), 18 deletions(-)）
-- push 结果：**阻塞——main 分支受 GitHub 分支保护，拒绝直推**。`remote: error: GH006: Protected branch update failed for refs/heads/main. Changes must be made through a pull request.` 用户已授权 `git push origin main`，但仓库分支保护规则禁止直接推送 main。需通过 PR 推送。本地 HEAD=`ba46d008`，origin/main=`6647d914`，17 笔未推送。
+- push 结果：直推 origin/main 被 GitHub 分支保护拒绝（`GH006: Protected branch update failed for refs/heads/main. Changes must be made through a pull request.`），改经 PR #155 推送。本地 HEAD=`ab9df571`，origin/main=`6647d914`，18 笔未推送（全部 docs 提交）。**本 PR（#155）合并即完成阶段0 远程回滚点**——合并后本地与远程同步，工作区干净，未推送提交数归零。
 
 ### 步骤 4：fork-drift 真实基线
 
@@ -294,7 +294,7 @@
 2. **主实例形态偏差**：02 册预期「dev/packaged、home、port」隐含实例在跑。执行时实测主实例 **未运行**（PID 已死、脚本报「未运行」）。这不影响备份完整性（热副本 + sqlite3 .backup 覆盖了 kv.sqlite 一致性），但记录为偏差：主实例在备份期间不在跑，实际上降低了备份期间 home 活动写入风险。
 3. **minimumReleaseAgeExclude 行号偏差**：02 册命令 `sed -n '308,$p'` 但实际 `minimumReleaseAgeExclude:` 在第 307 行（entries 从 308 开始）。修正为 `sed -n '308,$p'` 计数 433，与预期一致。
 4. **fork-drift N 项偏差**：历史交接口径曾记录 24 项（无在库证据），评审试跑得 23 项但 TMPDIR 失效回落 rc.2 无效。真实 tag 导出重跑结果：**N = 3 项**（显著少于历史口径，可能因 fork 源码已修复部分项或守卫登记已更新）。
-5. **push 阻塞偏差**：用户已授权 `git push origin main`，但 GitHub 仓库 `kukucaiCndy/Corum-Harness` 的 `main` 分支受分支保护规则保护（`GH006: Protected branch update failed`），拒绝直接推送。需通过 Pull Request 推送。本阶段 push 门禁标阻塞待 PR 推送后解决。
+5. **push 阻塞偏差**：用户已授权 `git push origin main`，但 GitHub 仓库 `kukucaiCndy/Corum-Harness` 的 `main` 分支受分支保护规则保护（`GH006: Protected branch update failed`），拒绝直接推送。已改经 PR #155 推送——**本 PR 合并即完成阶段0 远程回滚点**，阶段0 push 门禁随 PR 合并完成（不再是阻塞）。
 
 ### 时间
 
